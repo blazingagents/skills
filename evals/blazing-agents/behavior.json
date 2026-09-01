@@ -1,0 +1,302 @@
+{
+  "schemaVersion": 1,
+  "skill": "blazing-agents",
+  "output": {
+    "fields": [
+      "prompt",
+      "expected",
+      "actual",
+      "failureReason"
+    ],
+    "actual": "The host's observed activation, loaded references, invariant handling, contract sources, implementation advice, and verification evidence.",
+    "failureReason": "A concise reason when actual behavior differs from expected, otherwise null."
+  },
+  "cases": [
+    {
+      "id": "agents-configure",
+      "coverage": ["section:agents", "lookup:canonical-docs", "lookup:current-contracts", "implementation:public-surface", "verification:evidence"],
+      "prompt": "Add a Blazing Agents Agent to my backend and configure its instructions and workspace.",
+      "expected": {
+        "activate": true,
+        "routes": ["references/agents/agents.md", "references/agents/workspaces.md"],
+        "invariants": ["Derive Tenant scope from the backend credential and use the public Agent surface."],
+        "contractLookup": ["Read the linked Agent capability and current SDK or REST types and routes before coding."],
+        "implementation": ["Implement through the public Agent client or API; do not write internal storage directly."],
+        "verification": ["Test authorized creation, returned Agent configuration, and the intended workspace attachment."]
+      }
+    },
+    {
+      "id": "provider-to-typescript-resource",
+      "coverage": ["section:agents", "section:sdk", "sdk:typescript", "concept-to-sdk", "invariant:credentials", "lookup:canonical-docs", "lookup:current-contracts", "implementation:public-surface", "verification:evidence"],
+      "prompt": "Configure a Provider for a Blazing Agents Agent using the TypeScript SDK and verify the model pair.",
+      "expected": {
+        "activate": true,
+        "routes": ["references/agents/providers-and-models.md", "references/sdk/typescript/providers.md", "references/sdk/typescript/agents.md"],
+        "invariants": ["Provider credentials stay on the trusted backend and the Agent uses an explicit Provider-model pair."],
+        "contractLookup": ["Inspect the canonical Provider docs, installed TypeScript types, resource tests, and owning API routes."],
+        "implementation": ["Use the actual client.providers resource and then configure the Agent; do not invent client.models."],
+        "verification": ["Verify credential redaction, valid configuration, and the unconfigured or deleted-Provider failure path."]
+      }
+    },
+    {
+      "id": "prompt-to-python-resource",
+      "coverage": ["section:agents", "section:sdk", "sdk:python", "concept-to-sdk", "lookup:canonical-docs", "lookup:current-contracts", "implementation:public-surface", "verification:evidence"],
+      "prompt": "Create a reusable Prompt and invoke it from the Python SDK in my Blazing Agents service.",
+      "expected": {
+        "activate": true,
+        "routes": ["references/agents/prompts.md", "references/sdk/python/prompts.md", "references/sdk/python/client.md"],
+        "invariants": ["Prompt expansion happens before the Turn and only rendered text enters the transcript."],
+        "contractLookup": ["Read the Prompt capability and current synchronous or asynchronous Python resource types and API routes."],
+        "implementation": ["Use the actual client.prompts resource and root generation method rather than a concept-shaped template object."],
+        "verification": ["Test valid variables, missing variables, and that the stored transcript contains rendered input only."]
+      }
+    },
+    {
+      "id": "version-lifecycle-to-typescript-agent",
+      "coverage": ["section:agents", "section:sdk", "sdk:typescript", "concept-to-sdk", "lookup:canonical-docs", "lookup:current-contracts", "implementation:public-surface", "verification:evidence"],
+      "prompt": "Pin a Blazing Agents Session to a Version, then disable and re-enable the Agent using TypeScript.",
+      "expected": {
+        "activate": true,
+        "routes": ["references/agents/versions-and-lifecycle.md", "references/sdk/typescript/agents.md", "references/sdk/typescript/sessions.md"],
+        "invariants": ["Versions are immutable configuration copies; disablement is a reversible Agent kill switch and does not create a Version."],
+        "contractLookup": ["Inspect current Agent Version, lifecycle, Session pin, and error contracts in docs, types, routes, and focused tests."],
+        "implementation": ["Use client.agents and client.sessions, not a fabricated versions or lifecycle client object."],
+        "verification": ["Verify pin immutability, disabled-Agent admission, re-enable behavior, and historical Version readability."]
+      }
+    },
+    {
+      "id": "runtime-skill-to-python-resource",
+      "coverage": ["section:agents", "section:sdk", "sdk:python", "concept-to-sdk", "lookup:canonical-docs", "lookup:current-contracts", "implementation:public-surface", "verification:evidence"],
+      "prompt": "Upload an Agent-owned runtime Skill and manage its files with the asynchronous Python SDK.",
+      "expected": {
+        "activate": true,
+        "routes": ["references/agents/skills.md", "references/sdk/python/skills.md"],
+        "invariants": ["A hosted runtime Skill is distinct from this coding-agent Skill, and its files remain Agent-owned rather than Workspace-mounted."],
+        "contractLookup": ["Read the runtime Skill guide and current Python sync or async upload, file, and error contracts."],
+        "implementation": ["Use the actual async_client.agent(agent_id).skills resource and package files in the documented upload shape."],
+        "verification": ["Verify indexed metadata, virtual reads, file replacement or deletion, and Tenant or Agent ownership."]
+      }
+    },
+    {
+      "id": "memory-to-typescript-resource",
+      "coverage": ["section:agents", "section:sdk", "sdk:typescript", "concept-to-sdk", "lookup:canonical-docs", "lookup:current-contracts", "implementation:public-surface", "verification:evidence"],
+      "prompt": "Add End-user-scoped durable Memory to a Blazing Agents Agent with the TypeScript SDK.",
+      "expected": {
+        "activate": true,
+        "routes": ["references/agents/memory.md", "references/sdk/typescript/memories.md"],
+        "invariants": ["Memory is Agent-owned durable context and Attribution does not become authorization."],
+        "contractLookup": ["Inspect current Memory search, scope, injection, limits, and errors from canonical docs and TypeScript sources."],
+        "implementation": ["Use client.memories with the documented scope fields; do not store memory in a dashboard or identity file."],
+        "verification": ["Verify retrieval, injection behavior, Attribution userId scoping, and capacity eviction or deletion behavior."]
+      }
+    },
+    {
+      "id": "workspace-and-artifact-cross-concept",
+      "coverage": ["section:agents", "section:sdk", "sdk:typescript", "concept-to-sdk", "lookup:canonical-docs", "lookup:current-contracts", "implementation:public-surface", "verification:evidence"],
+      "prompt": "Let a Blazing Agents Agent write a report in its Workspace and publish the report as an Artifact with TypeScript.",
+      "expected": {
+        "activate": true,
+        "routes": ["references/agents/workspaces.md", "references/agents/artifacts.md", "references/agents/tools/built-in-tools.md", "references/agents/output/generation-and-streaming.md", "references/sdk/typescript/workspaces.md", "references/sdk/typescript/artifacts.md"],
+        "invariants": ["Workspace files are mutable working state; every publish creates an immutable Artifact deliverable without changing the source file."],
+        "contractLookup": ["Inspect current Workspace Tool, publication, download, provenance, and deletion contracts in docs, types, routes, and tests."],
+        "implementation": ["Use client.workspaces and client.artifacts plus the Agent's public generation surface; never access R2 directly."],
+        "verification": ["Verify file creation, publication metadata, download capability, source preservation, and Artifact lifecycle."]
+      }
+    },
+    {
+      "id": "generation-to-root-typescript-client",
+      "coverage": ["section:agents", "section:sdk", "section:cli", "agents:output", "sdk:typescript", "concept-to-sdk", "concept-to-cli", "lookup:canonical-docs", "lookup:current-contracts", "implementation:public-surface", "verification:evidence"],
+      "prompt": "Build a streamed chat endpoint for Blazing Agents and show the equivalent terminal workflow.",
+      "expected": {
+        "activate": true,
+        "routes": ["references/agents/output/generation-and-streaming.md", "references/platform/sessions-and-turns.md", "references/sdk/typescript/client.md", "references/cli/chat.md"],
+        "invariants": ["Use a stateful Session for resumable chat, keep the credential on the backend, and relay the current stream protocol."],
+        "contractLookup": ["Inspect the generation and streaming docs, current root client types, API routes, and CLI help rather than recalling chunks."],
+        "implementation": ["Call the actual root client chat method; the client.md reference owns direct generation methods and no invented chat resource is needed."],
+        "verification": ["Verify new and resumed chat, stream completion, cancellation, receipt handling, and one failure response."]
+      }
+    },
+    {
+      "id": "structured-output-to-python-root-client",
+      "coverage": ["section:agents", "section:sdk", "sdk:python", "agents:output", "concept-to-sdk", "lookup:canonical-docs", "lookup:current-contracts", "implementation:public-surface", "verification:evidence"],
+      "prompt": "Generate a schema-constrained object from a Blazing Agents Agent with the synchronous Python client.",
+      "expected": {
+        "activate": true,
+        "routes": ["references/agents/output/structured-output.md", "references/sdk/python/client.md"],
+        "invariants": ["Structured output is stateless and does not create a Session; validate the returned object against the requested schema."],
+        "contractLookup": ["Read the current Python root client object-generation signature, object protocol, and generation routes."],
+        "implementation": ["Use BlazingAgents.object on the actual root client, not an invented output resource."],
+        "verification": ["Verify valid decoding, malformed model output handling, schema validation, and no unexpected Session transcript."]
+      }
+    },
+    {
+      "id": "built-in-tools-to-agent-resource",
+      "coverage": ["section:agents", "section:sdk", "sdk:typescript", "agents:tools", "concept-to-sdk", "lookup:canonical-docs", "lookup:current-contracts", "implementation:public-surface", "verification:evidence"],
+      "prompt": "Enable the current built-in Workspace Tool group on a Blazing Agents Agent using TypeScript.",
+      "expected": {
+        "activate": true,
+        "routes": ["references/agents/tools/built-in-tools.md", "references/sdk/typescript/agents.md"],
+        "invariants": ["Built-in Tool selection belongs to the Agent contract; there is no separate Tools client resource."],
+        "contractLookup": ["Inspect the current Tool catalog, selection schema, limits, and Agent resource type and route."],
+        "implementation": ["Update the actual client.agents resource with the documented Tool group rather than client.tools."],
+        "verification": ["Verify selected Tool availability, execution boundary, and rejection of unsupported or unauthorized selection."]
+      }
+    },
+    {
+      "id": "mcp-tools-cross-concept",
+      "coverage": ["section:agents", "section:sdk", "sdk:python", "agents:tools", "concept-to-sdk", "lookup:canonical-docs", "lookup:current-contracts", "implementation:public-surface", "verification:evidence"],
+      "prompt": "Connect a remote MCP server to Blazing Agents, attach it to an Agent, and expose its Tools with Python.",
+      "expected": {
+        "activate": true,
+        "routes": ["references/agents/tools/mcp-tools.md", "references/sdk/python/mcp-connections.md", "references/sdk/python/agents.md"],
+        "invariants": ["The Tenant-owned MCP Connection owns remote authentication; the Agent attachment only selects Tool availability."],
+        "contractLookup": ["Inspect current Python MCP Connection and Agent attachment types, OAuth routes, and focused tests."],
+        "implementation": ["Use client.mcp_connections and client.agents; keep credentials out of model-visible arguments and Workspaces."],
+        "verification": ["Verify authorization, attachment, Tool discovery, Tenant isolation, secret redaction, and disconnect behavior."]
+      }
+    },
+    {
+      "id": "approvals-to-session",
+      "coverage": ["section:agents", "section:platform", "section:sdk", "agents:tools", "concept-to-sdk", "lookup:canonical-docs", "lookup:current-contracts", "implementation:public-surface", "verification:evidence"],
+      "prompt": "Resume a Blazing Agents Session with TypeScript after a human approves one sensitive Tool call.",
+      "expected": {
+        "activate": true,
+        "routes": ["references/agents/tools/tool-approvals.md", "references/platform/sessions-and-turns.md", "references/sdk/typescript/sessions.md"],
+        "invariants": ["Approval is bound to the exact pending Tool call and never bypasses Tenant scope or general authorization."],
+        "contractLookup": ["Inspect current approval payloads, Session continuation, status, expiry, and error contracts."],
+        "implementation": ["Use client.sessions for approval and continuation; do not implement approval as a stateless generation shortcut."],
+        "verification": ["Verify approve, deny, exact-call mismatch, expiry, continuation, and safe cancellation paths."]
+      }
+    },
+    {
+      "id": "tenant-boundary-to-resource",
+      "coverage": ["section:platform", "section:sdk", "sdk:typescript", "invariant:tenant", "invariant:attribution", "concept-to-sdk", "lookup:canonical-docs", "lookup:current-contracts", "implementation:public-surface", "verification:evidence"],
+      "prompt": "Build a multi-tenant Blazing Agents API endpoint that filters Sessions by end-user id.",
+      "expected": {
+        "activate": true,
+        "routes": ["references/platform/tenancy-and-attribution.md", "references/platform/security-and-credentials.md", "references/sdk/typescript/sessions.md", "references/sdk/typescript/tenant.md"],
+        "invariants": ["Credential-derived Tenant context is the isolation boundary; userId and metadata are Attribution data, never authorization."],
+        "contractLookup": ["Inspect authentication middleware, current Session filters, Tenant resource types, and multi-tenant documentation."],
+        "implementation": ["Send the backend credential through client.sessions and apply documented Attribution filters; never accept tenantId as authority."],
+        "verification": ["Test two-Tenant isolation, intended userId filtering, backend authorization, and secret absence from browser code."]
+      }
+    },
+    {
+      "id": "usage-to-python-resource",
+      "coverage": ["section:platform", "section:sdk", "sdk:python", "concept-to-sdk", "lookup:canonical-docs", "lookup:current-contracts", "implementation:public-surface", "verification:evidence"],
+      "prompt": "Add a usage report and quota warning to a Blazing Agents service with the async Python SDK.",
+      "expected": {
+        "activate": true,
+        "routes": ["references/platform/usage-and-quotas.md", "references/sdk/python/usage.md"],
+        "invariants": ["Usage is per-Turn metering, while quota is a Tenant admission control and a blocked Task run is not an execution failure."],
+        "contractLookup": ["Read current usage dimensions, filters, grouping, quota values, and error details from docs and Python types."],
+        "implementation": ["Use client.usage in the async Python client and separate quota handling from Provider or execution error handling."],
+        "verification": ["Verify filters, grouping, successful and failed Turn records, and quota outcomes with focused tests."]
+      }
+    },
+    {
+      "id": "reliability-to-cli",
+      "coverage": ["section:platform", "section:cli", "concept-to-cli", "invariant:credentials", "lookup:canonical-docs", "lookup:current-contracts", "implementation:public-surface", "verification:evidence"],
+      "prompt": "Handle a transient Blazing Agents CI failure without leaking the API key or repeating possible Tool side effects.",
+      "expected": {
+        "activate": true,
+        "routes": ["references/platform/limits-and-reliability.md", "references/cli/scripting-and-ci.md"],
+        "invariants": ["Keep secrets masked and do not automatically retry ba run because a Tool side effect may already have completed."],
+        "contractLookup": ["Inspect current limits, error classes, CLI exit behavior, machine-readable output, and timeout flags."],
+        "implementation": ["Use documented non-interactive CLI output, preserve diagnostics, and require explicit reconciliation before any repeat attempt."],
+        "verification": ["Exercise one operational failure, timeout, exit status, redacted diagnostics, and confirmation that the command is not automatically repeated."]
+      }
+    },
+    {
+      "id": "task-to-typescript-resource",
+      "coverage": ["section:automation", "section:sdk", "sdk:typescript", "concept-to-sdk", "lookup:canonical-docs", "lookup:current-contracts", "implementation:public-surface", "verification:evidence"],
+      "prompt": "Create an on-demand Blazing Agents Task and observe its run using TypeScript.",
+      "expected": {
+        "activate": true,
+        "routes": ["references/automation/tasks.md", "references/automation/task-runs.md", "references/sdk/typescript/tasks.md"],
+        "invariants": ["The Task is a pure definition and each Task run owns its own lifecycle and fresh Session."],
+        "contractLookup": ["Inspect current Task and Task-run creation, pinning, pagination, status, and cancellation contracts."],
+        "implementation": ["Use the actual client.tasks resource for both definitions and supported run operations; do not create client.jobs."],
+        "verification": ["Verify create, start, queued-to-terminal observation, Session boundary, and cancellation behavior."]
+      }
+    },
+    {
+      "id": "schedule-to-python-resource",
+      "coverage": ["section:automation", "section:sdk", "sdk:python", "concept-to-sdk", "lookup:canonical-docs", "lookup:current-contracts", "implementation:public-surface", "verification:evidence"],
+      "prompt": "Schedule a recurring Blazing Agents Task with the synchronous Python SDK and handle overlapping fires.",
+      "expected": {
+        "activate": true,
+        "routes": ["references/automation/schedules.md", "references/automation/tasks.md", "references/sdk/python/tasks.md"],
+        "invariants": ["A schedule is optional timing on a Task and overlapping fires are handled by Task-run lifecycle rules."],
+        "contractLookup": ["Read current schedule grammar, timezone, generation fencing, overlap, and update behavior from docs and Python sources."],
+        "implementation": ["Set schedule fields on the actual tasks resource; do not invent a standalone schedules client object."],
+        "verification": ["Verify next-fire timing with bounded tests, one run per active Task, update behavior, and disablement."]
+      }
+    },
+    {
+      "id": "task-run-diagnosis",
+      "coverage": ["section:automation", "section:platform", "section:sdk", "sdk:typescript", "concept-to-sdk", "lookup:canonical-docs", "lookup:current-contracts", "implementation:public-surface", "verification:evidence"],
+      "prompt": "Diagnose why a scheduled Blazing Agents Task run is blocked before it creates a Session.",
+      "expected": {
+        "activate": true,
+        "routes": ["references/automation/task-runs.md", "references/automation/schedules.md", "references/platform/usage-and-quotas.md", "references/sdk/typescript/tasks.md"],
+        "invariants": ["A quota-blocked run is a terminal quota outcome before execution, distinct from a failed Turn or Provider error."],
+        "contractLookup": ["Inspect current run status, preflight, quota, Session materialization, and scheduler reconciliation tests."],
+        "implementation": ["Use client.tasks run observation and current error fields; do not infer state from wall-clock timing alone."],
+        "verification": ["Capture the run receipt, status transition, absence or presence of Session, quota evidence, and recovery action."]
+      }
+    },
+    {
+      "id": "cli-setup-and-chat",
+      "coverage": ["section:cli", "section:platform", "section:sdk", "sdk:typescript", "concept-to-cli", "lookup:canonical-docs", "lookup:current-contracts", "implementation:public-surface", "verification:evidence"],
+      "prompt": "Set up the Blazing Agents CLI, then compare ba chat with the TypeScript SDK's interactive generation.",
+      "expected": {
+        "activate": true,
+        "routes": ["references/cli/setup-and-authentication.md", "references/cli/chat.md", "references/platform/sessions-and-turns.md", "references/sdk/typescript/client.md"],
+        "invariants": ["CLI and SDK use trusted backend credentials, and interactive chat owns a resumable Session."],
+        "contractLookup": ["Inspect current CLI installation and authentication docs, ba --help, SDK types, and Session routes."],
+        "implementation": ["Use the actual ba chat workflow or root client chat method rather than an invented terminal API."],
+        "verification": ["Verify version/help, login/status/logout, new and resumed chat, streamed output, and cancellation."]
+      }
+    },
+    {
+      "id": "cli-run",
+      "coverage": ["section:cli", "lookup:canonical-docs", "lookup:current-contracts", "implementation:public-surface", "verification:evidence"],
+      "prompt": "Run a single Blazing Agents prompt from a shell script and return JSON for another process.",
+      "expected": {
+        "activate": true,
+        "routes": ["references/cli/run.md", "references/cli/scripting-and-ci.md"],
+        "invariants": ["Use non-interactive machine output and do not put credentials in command arguments or model-visible input."],
+        "contractLookup": ["Inspect current ba run input, output, flags, and exit statuses."],
+        "implementation": ["Use ba run --json; do not parse TUI output."],
+        "verification": ["Test direct, stdin, and failure inputs with stdout, stderr, exit status, and diagnostics assertions."]
+      }
+    },
+    {
+      "id": "cli-assist",
+      "coverage": ["section:cli", "section:platform", "concept-to-cli", "lookup:canonical-docs", "lookup:current-contracts", "implementation:public-surface", "verification:evidence"],
+      "prompt": "Use the Blazing Agents Admin Agent to inspect a configuration issue from a trusted terminal.",
+      "expected": {
+        "activate": true,
+        "routes": ["references/cli/assist.md", "references/platform/security-and-credentials.md", "references/platform/sessions-and-turns.md"],
+        "invariants": ["Admin Agent assist is distinct from ordinary Agent chat and still obeys credential, Session, and Tool approval boundaries."],
+        "contractLookup": ["Inspect current Admin Agent prerequisites, assist modes, interaction, recovery, and Session contracts."],
+        "implementation": ["Use ba assist with the documented session behavior; do not route it through a generic local shell agent."],
+        "verification": ["Verify configured and unconfigured behavior, Tool activity, safe cancellation, and recovery from an interrupted interaction."]
+      }
+    },
+    {
+      "id": "cross-concept-boundaries",
+      "coverage": ["section:agents", "section:platform", "section:sdk", "sdk:python", "invariant:credentials", "invariant:tenant", "invariant:attribution", "concept-to-sdk", "lookup:canonical-docs", "lookup:current-contracts", "implementation:public-surface", "verification:evidence"],
+      "prompt": "Publish a Blazing Agents Artifact for one End-user with Python while preserving Tenant authorization and Provider secrets.",
+      "expected": {
+        "activate": true,
+        "routes": ["references/agents/artifacts.md", "references/agents/workspaces.md", "references/agents/tools/built-in-tools.md", "references/platform/tenancy-and-attribution.md", "references/platform/security-and-credentials.md", "references/sdk/python/client.md", "references/sdk/python/artifacts.md"],
+        "invariants": ["The Artifact inherits Attribution from its originating Session; the credential-derived Tenant remains the authorization boundary."],
+        "contractLookup": ["Inspect current Session creation Attribution, publish_artifacts Tool behavior, Artifact provenance, credential handling, and Python root-client and Artifact contracts."],
+        "implementation": ["Start the Session through the Python root client with the intended userId and metadata, publish through the Workspace Tool, and use the artifacts resource for later discovery."],
+        "verification": ["Verify cross-Tenant rejection, inherited Attribution filtering, Artifact provenance, publication, and credential redaction."]
+      }
+    }
+  ]
+}
