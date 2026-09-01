@@ -1,8 +1,21 @@
-# Blazing Agents Skills
+<div align="center">
+  <a href="https://docs.blazingagents.com">
+    <img src="https://raw.githubusercontent.com/blazingagents/docs/main/public/brand/icon.svg" alt="Blazing Agents logo" width="96">
+  </a>
+  <h1>Blazing Agents Skills</h1>
+  <p>Reusable agent skills for building with Blazing Agents.</p>
+  <p>
+    <a href="https://docs.blazingagents.com/agents/skills">Documentation</a> ·
+    <a href="https://skills.sh/blazingagents/skills">skills.sh</a>
+  </p>
+</div>
 
-[![skills.sh](https://skills.sh/b/blazingagents/skills)](https://skills.sh/blazingagents/skills)
+## Features
 
-Agent skills for building with [Blazing Agents](https://docs.blazingagents.com/).
+- Reusable instructions for coding agents working with Blazing Agents.
+- Interactive installation of one or every skill in the repository.
+- Support for Codex and other agents compatible with the `skills` CLI.
+- Simple listing and update commands for installed skills.
 
 ## Install
 
@@ -44,6 +57,11 @@ npx skills update blazing-agents
 ```
 
 See the [`skills` CLI documentation](https://skills.sh/docs/cli) for more options.
+
+## Documentation
+
+Read the [Blazing Agents Skills guide](https://docs.blazingagents.com/agents/skills)
+to learn how Skills extend an Agent.
 
 ## License
 
