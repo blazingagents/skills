@@ -1,0 +1,7 @@
+{
+  "name": "@blazing-agents/skills",
+  "private": true,
+  "scripts": {
+    "check": "count=0; for skill in skills/*/; do test -d \"$skill\" || continue; uvx --from skills-ref==0.1.1 agentskills validate \"$skill\"; count=$((count + 1)); done; test \"$count\" -gt 0"
+  }
+}
