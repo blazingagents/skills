@@ -9,6 +9,8 @@ BA API credentials and Provider credentials belong at trusted backend boundaries
 3. Keep frontend requests behind the Tenant backend and send only required Attribution/input to BA.
 4. Rotate or revoke through current public credential workflows.
 
+An explicitly requested native developer client using its operator's own Tenant key is outside the documented backend deployment model. Identify that support boundary while preserving the requested architecture; successful API calls do not establish official native support. This differs from distributing an application's shared Tenant key, which stays on its backend.
+
 Read [Security and credentials](https://docs.blazingagents.com/platform/security-and-credentials), [connect your app](https://docs.blazingagents.com/getting-started/connect-your-app), and [REST authentication](https://docs.blazingagents.com/api-reference/rest-api/authentication).
 
 ## Mistakes and verification
