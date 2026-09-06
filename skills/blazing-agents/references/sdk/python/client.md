@@ -13,3 +13,5 @@ Read [connect your app](https://docs.blazingagents.com/getting-started/connect-y
 ## Mistakes and verification
 
 Use one concurrency model per call path and preserve transport ownership. Verify construction, response observation/correlation, close behavior, one resource call, and each generation mode used. Credential placement belongs to [Security and credentials](../../platform/security-and-credentials.md); resource details belong to their sibling references.
+
+For interactive input retention, fresh-ID resend, Stop, and regeneration, read the [chatbot guide](../../platform/chatbot.md). Failed/canceled execution preserves history and usage; a lost response may still hide a saved exchange.
