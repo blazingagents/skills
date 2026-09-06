@@ -1,6 +1,6 @@
 ---
 name: blazing-agents
-description: Blazing Agents integration work for BA Agents, Providers, Prompts, Sessions, Turns, runtime Skills, Tools, MCP Connections, Memory, Workspaces, Artifacts, Tasks, usage, CLI, and SDK clients. Use when Blazing Agents or BA context is explicit. Do not use for generic AI-agent, Vercel AI SDK, sandbox, or task questions without BA context.
+description: Build and integrate applications with Blazing Agents Agents, Turns, runtime Skills, Tools, automation, CLI, and SDK clients. Use for BA implementation work; use ba-admin instead for direct Tenant administration. Do not use for generic AI-agent work without BA context.
 metadata:
   author: Blazing Agents
   version: "0.1.0"
@@ -47,7 +47,7 @@ storage.
 
 - [Chatbot implementation](references/platform/chatbot.md): build send, Stop, edit/resend, regeneration, and navigation after errors; includes an SDK-native example and FAQ.
 
-- [Sessions and Turns](references/platform/sessions-and-turns.md): persist interactive history and reason about one metered execution.
+- [Sessions and Turns](references/platform/sessions-and-turns.md): persist interactive history, reason about one metered execution, and fetch each Agent's latest Session for an Agent Inbox.
 - [Tenancy and Attribution](references/platform/tenancy-and-attribution.md): preserve credential-derived Tenant isolation and optional end-user data.
 - [Security and credentials](references/platform/security-and-credentials.md): place API and Provider credentials at trusted boundaries.
 - [Usage and quotas](references/platform/usage-and-quotas.md): query metering and handle quota outcomes.

@@ -13,6 +13,7 @@
 ## Features
 
 - Reusable instructions for coding agents working with Blazing Agents.
+- Tenant administration through the `ba-admin` skill and public SDK.
 - Interactive installation of one or every skill in the repository.
 - Support for Codex and other agents compatible with the `skills` CLI.
 - Simple listing and update commands for installed skills.
@@ -35,6 +36,12 @@ Install the Blazing Agents skill:
 
 ```bash
 npx skills add blazingagents/skills --skill blazing-agents
+```
+
+Install the BA Admin skill:
+
+```bash
+npx skills add blazingagents/skills --skill ba-admin
 ```
 
 Install every skill in the repository:
