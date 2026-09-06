@@ -13,3 +13,5 @@ Read [Limits and reliability](https://docs.blazingagents.com/platform/limits-and
 ## Mistakes and verification
 
 Avoid blanket retries, stale copied limits, and treating request IDs as idempotency keys. Verify timeout, cancellation, retryable and terminal errors, duplicate-attempt behavior, and recovery. Task-specific durability belongs to [Task runs](../automation/task-runs.md).
+
+For interactive input retention, fresh-ID resend, Stop, and regeneration, read the [chatbot guide](chatbot.md). Failed/canceled execution preserves history and usage; a lost response may still hide a saved exchange.

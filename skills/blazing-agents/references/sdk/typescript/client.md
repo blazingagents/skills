@@ -19,3 +19,5 @@ For chat and terminal continuation results, use `toResponse()` in runtimes whose
 ## Mistakes and verification
 
 Preserve caller/server request-ID ownership and the native stream. Verify construction and reuse, correlation/observation, one resource call, and each generation mode used. Credential placement belongs to [Security and credentials](../../platform/security-and-credentials.md); resource details belong to sibling references.
+
+For interactive input retention, fresh-ID resend, Stop, and regeneration, read the [chatbot guide](../../platform/chatbot.md). Failed/canceled execution preserves history and usage; a lost response may still hide a saved exchange.

@@ -45,6 +45,8 @@ storage.
 
 ## Platform
 
+- [Chatbot implementation](references/platform/chatbot.md): build send, Stop, edit/resend, regeneration, and navigation after errors; includes an SDK-native example and FAQ.
+
 - [Sessions and Turns](references/platform/sessions-and-turns.md): persist interactive history and reason about one metered execution.
 - [Tenancy and Attribution](references/platform/tenancy-and-attribution.md): preserve credential-derived Tenant isolation and optional end-user data.
 - [Security and credentials](references/platform/security-and-credentials.md): place API and Provider credentials at trusted boundaries.

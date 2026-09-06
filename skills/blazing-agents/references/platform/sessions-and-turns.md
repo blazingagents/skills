@@ -13,3 +13,5 @@ Read [Sessions and Turns](https://docs.blazingagents.com/platform/sessions-and-t
 ## Mistakes and verification
 
 Do not call every Turn a Session or assume stateless output creates one. Inspect the current public contract, route, and focused tests together for admission, materialization, and transcript effects; report any disagreement instead of choosing one source silently. Verify create/resume, success/failure/cancellation, and usage. Terminal Session workflows use [`ba chat`](../cli/chat.md), explicit-Session [`ba run`](../cli/run.md), or Admin Agent [`ba assist`](../cli/assist.md). Approvals belong to [Tool approvals](../agents/tools/tool-approvals.md).
+
+For interactive input retention, fresh-ID resend, Stop, and regeneration, read the [chatbot guide](chatbot.md). Failed/canceled execution preserves history and usage; a lost response may still hide a saved exchange.
