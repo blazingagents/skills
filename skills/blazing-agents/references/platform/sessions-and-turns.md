@@ -14,10 +14,11 @@ Read [Sessions and Turns](https://docs.blazingagents.com/platform/sessions-and-t
 
 For an Agent Inbox (one row per Agent showing its most recent Session), call `GET /v1/sessions/latest` (TypeScript `client.sessions.listLatest`, Python `client.sessions.list_latest`) instead of listing Agents and then calling the per-Agent Session list once per Agent. Semantics:
 
-- One item per Agent; an Agent appears at most once and only when it has at least one non-deleted Session.
+- One item per Agent; an Agent appears at most once and only when it has at least one non-deleted, nonempty Session.
 - The item is that Agent's most recently updated Session (`updatedAt` desc). Optional `userId` narrows every Agent to that end user's latest Session with it.
-- Items are the per-Agent Session list item plus `agentId`, ordered `updatedAt` desc then `id` asc across Agents.
+- Items are the per-Agent Session list item plus `agentId`, nullable `model`, nullable `thinkingLevel`, and `status` (`active` or `disabled`), ordered `updatedAt` desc then `id` asc across Agents.
 - `limit` and keyset `cursor`/`nextCursor` are identical to the per-Agent list; a malformed cursor is `400 invalid_cursor`.
+- Agent fields describe current state, independently of the Session's pinned Version; disabled Agents remain included.
 - Tenant scope comes from the credential, as everywhere else.
 
 ## Mistakes and verification

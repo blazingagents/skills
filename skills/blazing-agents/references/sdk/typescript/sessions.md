@@ -10,7 +10,9 @@ Read [Sessions](https://docs.blazingagents.com/platform/sessions-and-turns) and 
 
 ## Latest Session per Agent
 
-`client.sessions.listLatest({ userId?, cursor?, limit?, abortSignal? })` calls `GET /v1/sessions/latest` and returns `{ data: LatestSessionListItem[], nextCursor }`, one item per Agent (the per-Agent list item plus `agentId`). Use it for an Agent Inbox instead of `client.sessions.list` per Agent; `userId` is sent whenever it is defined, including an empty string.
+`client.sessions.listLatest({ userId?, cursor?, limit?, abortSignal? })` calls `GET /v1/sessions/latest` and returns `{ data: LatestSessionListItem[], nextCursor }`, one item per Agent (the per-Agent list item plus `agentId`, `model`, `thinkingLevel`, and `status`). Use it for an Agent Inbox instead of `client.sessions.list` per Agent; `userId` is sent whenever it is defined, including an empty string.
+
+The extra Agent fields describe current configuration and status, independently of the Session's pinned Version. Model and Thinking level may be null; disabled Agents remain included.
 
 ```ts
 const page = await client.sessions.listLatest({ userId, limit: 50 });

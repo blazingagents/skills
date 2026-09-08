@@ -10,7 +10,9 @@ Read [Sessions](https://docs.blazingagents.com/platform/sessions-and-turns) and 
 
 ## Latest Session per Agent
 
-`client.sessions.list_latest(*, user_id=OMITTED, cursor=OMITTED, limit=OMITTED)` calls `GET /v1/sessions/latest` and returns a page with `data` and `next_cursor`, one item per Agent (the per-Agent list item plus `agent_id`). Use it for an Agent Inbox instead of `sessions.list` per Agent; the asynchronous client awaits the same method.
+`client.sessions.list_latest(*, user_id=OMITTED, cursor=OMITTED, limit=OMITTED)` calls `GET /v1/sessions/latest` and returns a page with `data` and `next_cursor`, one item per Agent (the per-Agent list item plus `agent_id`, `model`, `thinking_level`, and `status`). Use it for an Agent Inbox instead of `sessions.list` per Agent; the asynchronous client awaits the same method.
+
+The extra Agent fields describe current configuration and status, independently of the Session's pinned Version. Model and Thinking level may be null; disabled Agents remain included.
 
 ```python
 page = client.sessions.list_latest(user_id=user_id, limit=50)
