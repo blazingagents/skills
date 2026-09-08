@@ -8,6 +8,8 @@ The synchronous and asynchronous Python clients expose `prompts` to manage reusa
 
 Read [Prompts](https://docs.blazingagents.com/agents/prompts), the [structured-output guide](https://docs.blazingagents.com/agents/output/structured-output), and the exact [Python SDK reference](https://docs.blazingagents.com/sdk/python/prompts).
 
+Use `agent_id` on create/update and list in both clients; `None` clears a link. See the [Prompt concept](../../agents/prompts.md#agent-association) for cascade deletion and Attribution.
+
 ## Mistakes and verification
 
 The [Prompt concept](../../agents/prompts.md) owns template and invocation boundaries. Verify sync or async model conversion and valid/invalid variable handling for the operations used.
