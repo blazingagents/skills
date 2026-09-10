@@ -29,7 +29,7 @@ storage.
 
 ## Agents
 
-- [Agents](references/agents/agents.md): choose and configure the hosted behavior boundary.
+- [Agents](references/agents/agents.md): configure hosted behavior, automatic context compaction, and its token reserve.
 - [Providers and models](references/agents/providers-and-models.md): connect Tenant credentials and select a model.
 - [Prompts](references/agents/prompts.md): manage reusable parameterized input.
 - [Versions and lifecycle](references/agents/versions-and-lifecycle.md): pin, inspect, restore, enable, or disable Agent configuration.
