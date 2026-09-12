@@ -13,3 +13,7 @@ Read [Tasks](https://docs.blazingagents.com/automation/tasks) and exact [TypeScr
 ## Mistakes and verification
 
 Keep Task definition separate from Task-run state and do not call it a generic job. Verify create/update, on-demand start, Version selection, and resulting run. Run lifecycle belongs to [Task runs](task-runs.md); timing to [Schedules](schedules.md).
+
+Before running work with restricted Tools, inspect the selected Version's
+`approvalInTasks` policy. Read [Tool approvals](../agents/tools/tool-approvals.md#choose-the-execution-context)
+for immediate unattended denial and reporting partially completed work.

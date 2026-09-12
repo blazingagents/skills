@@ -15,3 +15,7 @@ Read [Generation and streaming](https://docs.blazingagents.com/agents/output/gen
 ## Mistakes and verification
 
 Preserve the native protocol and verify headers, relay, terminal result, and the selected stateful or stateless outcome. Credential placement belongs to [Security and credentials](../../platform/security-and-credentials.md); admission and transcript behavior belongs to [Sessions and Turns](../../platform/sessions-and-turns.md). Structured data belongs to [Structured output](structured-output.md); durable files are [Artifacts](../artifacts.md).
+
+Stateless generation applies `approvalInChat` but has no human continuation
+path. Read [Tool approvals](../tools/tool-approvals.md#choose-the-execution-context)
+when configuring manual or automatic review for stateless calls.

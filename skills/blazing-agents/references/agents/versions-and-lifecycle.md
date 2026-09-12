@@ -13,3 +13,7 @@ Read [Versions and lifecycle](https://docs.blazingagents.com/agents/versions-and
 ## Mistakes and verification
 
 Preserve immutable history and distinguish lifecycle changes from configuration changes. Verify status, latest Version, and any pinned execution path. Task pinning belongs to [Tasks](../automation/tasks.md).
+
+Both approval policies are versioned configuration. Verify that restoring a
+Version restores its chat and Task policies; existing signed approvals may be
+invalidated by relevant changes. See [Tool approvals](tools/tool-approvals.md).

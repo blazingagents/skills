@@ -27,3 +27,9 @@ if (page.nextCursor) {
 ## Mistakes and verification
 
 The [Sessions and Turns concept](../../platform/sessions-and-turns.md) owns persistence boundaries. Verify query serialization, typed pagination, and approval/error handling for the methods used.
+
+## Human approval context
+
+SDK 0.8.0 adds optional `tool`, `assistantMessageId`, `createdAt`, and `decidedAt`
+approval metadata. Use existing list/decide/join methods for the
+[human approval workflow](../../agents/tools/tool-approvals.md#decision-and-workflow).

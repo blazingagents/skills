@@ -41,7 +41,7 @@ storage.
 - [Structured output](references/agents/output/structured-output.md): generate schema-constrained data in a stateless Turn.
 - [Built-in Tools](references/agents/tools/built-in-tools.md): select BA-hosted Tool groups and understand execution boundaries.
 - [MCP Tools](references/agents/tools/mcp-tools.md): attach an MCP Connection to expose remote Tools to an Agent.
-- [Tool approvals](references/agents/tools/tool-approvals.md): continue an exact sensitive Tool call after a durable human decision.
+- [Tool approvals](references/agents/tools/tool-approvals.md): configure chat/Task defaults and Tool overrides, choose automatic or human review, and continue durable human approvals.
 
 ## Platform
 
