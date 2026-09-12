@@ -1,6 +1,6 @@
 ---
 name: blazing-agents
-description: Build and integrate applications with Blazing Agents Agents, Turns, runtime Skills, Tools, automation, CLI, and SDK clients. Use for BA implementation work; use ba-admin instead for direct Tenant administration. Do not use for generic AI-agent work without BA context.
+description: Build and integrate applications with Blazing Agents Agents, Turns, runtime Skills, Tools, automation, Slack/Telegram connections, CLI, and SDK clients. Use for BA implementation work; use ba-admin instead for direct Tenant administration. Do not use for generic AI-agent work without BA context.
 metadata:
   author: Blazing Agents
   version: "0.1.0"
@@ -44,6 +44,8 @@ storage.
 - [Tool approvals](references/agents/tools/tool-approvals.md): configure chat/Task defaults and Tool overrides, choose automatic or human review, and continue durable human approvals.
 
 ## Platform
+
+- [Slack and Telegram](references/chat-integrations.md): connect Agents, configure platform callbacks, inspect health, and repair delivery.
 
 - [Chatbot implementation](references/platform/chatbot.md): build send, Stop, edit/resend, regeneration, and navigation after errors; includes an SDK-native example and FAQ.
 
