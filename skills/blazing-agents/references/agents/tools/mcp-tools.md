@@ -13,3 +13,7 @@ Read [MCP Tools](https://docs.blazingagents.com/agents/tools/mcp-tools), exact C
 ## Mistakes and verification
 
 Do not model an MCP Tool without a Connection or expose credentials to the model or Workspace. Verify authorization, attachment, discovery, invocation, and secret boundaries.
+
+For per-Tool review, configure [Tool approvals](tool-approvals.md) with the
+Connection ID and original discovered Tool name. This identity is distinct from
+the generated runtime alias; verify discovery errors name both fields.
