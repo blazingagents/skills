@@ -21,3 +21,9 @@ and a custom reserve in the saved Agent and its Version. Summary calls count
 toward Turn token usage; current context size is not cumulative billed usage.
 Read the [compaction policy](https://docs.blazingagents.com/agents/agents#automatic-context-compaction)
 for threshold behavior, unknown-model capacity, and overflow recovery.
+
+## Tool approval policies
+
+SDK 0.8.0 supports `approvalInChat`, `approvalInTasks`, and policy restoration
+through `restoreVersion`. Use `ApprovalPolicy` and `ToolReference`; follow
+[Tool approvals](../../agents/tools/tool-approvals.md) for modes and update semantics.

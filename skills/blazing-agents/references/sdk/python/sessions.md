@@ -25,3 +25,9 @@ if page.next_cursor:
 ## Mistakes and verification
 
 The [Sessions and Turns concept](../../platform/sessions-and-turns.md) owns persistence boundaries. Verify sync or async pagination, model conversion, and approval/error handling for the operations used.
+
+## Human approval context
+
+SDK 0.5.0 adds `tool`, `assistant_message_id`, `created_at`, and `decided_at`
+approval metadata. Both clients use existing list/decide/join methods for the
+[human approval workflow](../../agents/tools/tool-approvals.md#decision-and-workflow).
