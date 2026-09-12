@@ -30,8 +30,6 @@ The [Sessions and Turns concept](../../platform/sessions-and-turns.md) owns pers
 
 ## Human approval context
 
-SDK 0.8.0 exposes optional structured `tool`, `assistantMessageId`, `createdAt`,
-and `decidedAt` alongside the existing approval fields; `tool` and `decidedAt`
-can be null. Use `toolApprovals`, `decideToolApproval`, and
-`joinToolApprovalContinuation` for the [human approval workflow](../../agents/tools/tool-approvals.md#decision-and-workflow).
-Keep policy decisions separate from persisted approval decision states.
+SDK 0.8.0 adds optional `tool`, `assistantMessageId`, `createdAt`, and `decidedAt`
+approval metadata. Use existing list/decide/join methods for the
+[human approval workflow](../../agents/tools/tool-approvals.md#decision-and-workflow).

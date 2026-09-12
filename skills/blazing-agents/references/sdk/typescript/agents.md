@@ -24,9 +24,6 @@ for threshold behavior, unknown-model capacity, and overflow recovery.
 
 ## Tool approval policies
 
-SDK 0.8.0 adds `ApprovalDecision`, `ApprovalPolicy`, and `ToolReference`. Configure
-`approvalInChat` and `approvalInTasks` through Agent create/update; read them on
-Agent and Version responses. `restoreVersion` copies both policies into the new
-latest Version. Follow [Tool approvals](../../agents/tools/tool-approvals.md) for
-mode selection, exact builtin/MCP references, and update semantics. Verify the
-saved policies and restoration, including an explicitly empty override list.
+SDK 0.8.0 supports `approvalInChat`, `approvalInTasks`, and policy restoration
+through `restoreVersion`. Use `ApprovalPolicy` and `ToolReference`; follow
+[Tool approvals](../../agents/tools/tool-approvals.md) for modes and update semantics.

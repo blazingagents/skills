@@ -28,9 +28,6 @@ The [Sessions and Turns concept](../../platform/sessions-and-turns.md) owns pers
 
 ## Human approval context
 
-SDK 0.5.0 exposes structured `tool`, `assistant_message_id`, `created_at`, and
-`decided_at` on approval responses; absent or nullable metadata is represented
-according to the response models. MCP identity uses `tool.connection_id`. Both
-clients use `tool_approvals`, `decide_tool_approval`, and
-`join_tool_approval_continuation` for the [human approval workflow](../../agents/tools/tool-approvals.md#decision-and-workflow).
-Keep policy decisions separate from persisted approval decision states.
+SDK 0.5.0 adds `tool`, `assistant_message_id`, `created_at`, and `decided_at`
+approval metadata. Both clients use existing list/decide/join methods for the
+[human approval workflow](../../agents/tools/tool-approvals.md#decision-and-workflow).

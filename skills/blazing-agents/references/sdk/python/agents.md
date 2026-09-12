@@ -24,10 +24,7 @@ for threshold behavior, unknown-model capacity, and overflow recovery.
 
 ## Tool approval policies
 
-SDK 0.5.0 adds `ApprovalDecision`, `ApprovalPolicyInput`, and `ToolReferenceInput`,
-with typed response models. Both clients accept `approval_in_chat` and
-`approval_in_tasks`; nested MCP input uses `connection_id`. Responses expose the
-same snake-case policy attributes. `restore_version` restores both policies.
-Follow [Tool approvals](../../agents/tools/tool-approvals.md) for mode selection
-and exact references. Preserve `OMITTED` for unchanged policy fields; supplying a
-policy replaces it. Verify sync/async serialization and restored policy values.
+SDK 0.5.0 supports `approval_in_chat`, `approval_in_tasks`, and policy restoration
+through `restore_version` in both clients. Use `ApprovalPolicyInput` and
+`ToolReferenceInput`; nested MCP references use `connection_id`. Preserve `OMITTED`
+for unchanged fields. See [Tool approvals](../../agents/tools/tool-approvals.md).
