@@ -45,7 +45,7 @@ storage.
 
 ## Platform
 
-- [Slack and Telegram](references/chat-integrations.md): connect Agents, configure platform callbacks, inspect health, and repair delivery.
+- [Slack and Telegram](references/chat-integrations.md): connect Agents, configure platform callbacks, inspect health, and manage credentials.
 
 - [Chatbot implementation](references/platform/chatbot.md): build send, Stop, edit/resend, regeneration, and navigation after errors; includes an SDK-native example and FAQ.
 
