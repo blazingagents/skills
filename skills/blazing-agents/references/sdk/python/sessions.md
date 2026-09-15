@@ -8,18 +8,18 @@ The synchronous and asynchronous Python clients expose `sessions` to list and de
 
 Read [Sessions](https://docs.blazingagents.com/platform/sessions-and-turns) and the exact [Python SDK reference](https://docs.blazingagents.com/sdk/python/sessions).
 
-## Latest Session per Agent
+## Latest Sessions
 
-`client.sessions.list_latest(*, user_id=OMITTED, cursor=OMITTED, limit=OMITTED)` calls `GET /v1/sessions/latest` and returns a page with `data` and `next_cursor`, one item per Agent (the per-Agent list item plus `agent_id`, `model`, `thinking_level`, and `status`). Use it for an Agent Inbox instead of `sessions.list` per Agent; the asynchronous client awaits the same method.
+`client.sessions.list_latest(*, user_id=OMITTED, by_agent: bool | None = None, cursor=OMITTED, limit=OMITTED)` calls `GET /v1/sessions/latest` and returns a page with `data` and `next_cursor`. `by_agent=None` uses the API default and returns recent Sessions globally, as does explicit `False`; either mode may repeat an Agent. Set `by_agent=True` for at most one latest Session per Agent and use that mode for an Agent Inbox instead of `sessions.list` per Agent; the asynchronous client awaits the same method.
 
 The extra Agent fields describe current configuration and status, independently of the Session's pinned Version. Model and Thinking level may be null; disabled Agents remain included.
 
 ```python
-page = client.sessions.list_latest(user_id=user_id, limit=50)
+page = client.sessions.list_latest(user_id=user_id, by_agent=True, limit=50)
 for session in page.data:
     render(session.agent_id, session.last_message_preview, session.updated_at)
 if page.next_cursor:
-    client.sessions.list_latest(user_id=user_id, limit=50, cursor=page.next_cursor)
+    client.sessions.list_latest(user_id=user_id, by_agent=True, limit=50, cursor=page.next_cursor)
 ```
 
 ## Mistakes and verification
