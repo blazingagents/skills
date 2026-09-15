@@ -53,8 +53,8 @@ These are the supported administrative methods:
 | Skills | `client.agent(agentId).skills.list/get/getFile` | `create`, `upload`, `putFile`, `deleteFile`, `copy`, `delete` |
 | Prompts | `client.prompts.list/get` | `create`, `update`, `delete` |
 | Tasks | `client.tasks.list/get/listRuns/getRun/runMessages` | `create`, `update`, `delete`, `createRun`, `cancelRun` |
-| Usage | `client.usage.get()`, `getForAgent(agentId)` | — |
-| Sessions | `client.sessions.list/messages` | `delete` |
+| Usage | `client.usage.overview()`, `get()`, `getForAgent(agentId)` | — |
+| Sessions | `client.sessions.list/listLatest/messages` | `delete` |
 | Artifacts | `client.artifacts.list()` | — |
 
 Resource method names are invoked on the object shown in the first column's
