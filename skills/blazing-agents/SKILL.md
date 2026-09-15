@@ -49,10 +49,10 @@ storage.
 
 - [Chatbot implementation](references/platform/chatbot.md): build send, Stop, edit/resend, regeneration, and navigation after errors; includes an SDK-native example and FAQ.
 
-- [Sessions and Turns](references/platform/sessions-and-turns.md): persist interactive history, reason about one metered execution, and fetch each Agent's latest Session for an Agent Inbox.
+- [Sessions and Turns](references/platform/sessions-and-turns.md): persist interactive history, reason about one metered execution, and fetch recent Sessions globally or per Agent.
 - [Tenancy and Attribution](references/platform/tenancy-and-attribution.md): preserve credential-derived Tenant isolation and optional end-user data.
 - [Security and credentials](references/platform/security-and-credentials.md): place API and Provider credentials at trusted boundaries.
-- [Usage and quotas](references/platform/usage-and-quotas.md): query metering and handle quota outcomes.
+- [Usage and quotas](references/platform/usage-and-quotas.md): query grouped or dashboard-ready metering and handle quota outcomes.
 - [Limits and reliability](references/platform/limits-and-reliability.md): look up current limits and design retries, idempotency, and recovery.
 
 ## Automation

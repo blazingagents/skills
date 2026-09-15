@@ -8,19 +8,19 @@ The TypeScript client exposes `client.sessions` to list and delete durable inter
 
 Read [Sessions](https://docs.blazingagents.com/platform/sessions-and-turns) and the exact [TypeScript SDK reference](https://docs.blazingagents.com/sdk/typescript/sessions).
 
-## Latest Session per Agent
+## Latest Sessions
 
-`client.sessions.listLatest({ userId?, cursor?, limit?, abortSignal? })` calls `GET /v1/sessions/latest` and returns `{ data: LatestSessionListItem[], nextCursor }`, one item per Agent (the per-Agent list item plus `agentId`, `model`, `thinkingLevel`, and `status`). Use it for an Agent Inbox instead of `client.sessions.list` per Agent; `userId` is sent whenever it is defined, including an empty string.
+`client.sessions.listLatest({ userId?, byAgent?, cursor?, limit?, abortSignal? })` calls `GET /v1/sessions/latest` and returns `{ data: LatestSessionListItem[], nextCursor }`. The default `byAgent: false` returns recent Sessions globally and may repeat an Agent. Set `byAgent: true` for at most one latest Session per Agent and use that mode for an Agent Inbox instead of `client.sessions.list` per Agent. `userId` is sent whenever it is defined, including an empty string.
 
 The extra Agent fields describe current configuration and status, independently of the Session's pinned Version. Model and Thinking level may be null; disabled Agents remain included.
 
 ```ts
-const page = await client.sessions.listLatest({ userId, limit: 50 });
+const page = await client.sessions.listLatest({ userId, byAgent: true, limit: 50 });
 for (const session of page.data) {
 	render(session.agentId, session.lastMessagePreview, session.updatedAt);
 }
 if (page.nextCursor) {
-	await client.sessions.listLatest({ userId, limit: 50, cursor: page.nextCursor });
+	await client.sessions.listLatest({ userId, byAgent: true, limit: 50, cursor: page.nextCursor });
 }
 ```
 
