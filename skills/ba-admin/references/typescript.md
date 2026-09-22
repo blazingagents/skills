@@ -5,6 +5,9 @@ Otherwise create an isolated temporary Node project and install the current SDK
 and its `ai@^7` peer dependency there. Do not add dependencies to the user's
 application solely for an administrative call.
 
+Skill file operations (`getFile`, `putFile`, and `deleteFile`) require SDK
+version 0.9.3 or later.
+
 ## Program shape
 
 Create an ESM script in the temporary project. Replace the marked expression
