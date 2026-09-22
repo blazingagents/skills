@@ -2,6 +2,8 @@
 
 A Task run is one asynchronous execution of a Task, with its own lifecycle and fresh Session once execution begins.
 
+A run snapshots the Task's `userId` and `metadata` when it is enqueued. Later Task edits do not change that run's attribution; its Session and usage carry the same snapshot.
+
 ## Decision and workflow
 
 1. Start through the Task resource or identify the run created by a schedule.
