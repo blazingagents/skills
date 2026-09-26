@@ -62,7 +62,7 @@ if (pyFiles.length) {
     "uv",
     [
       ...["run", "--no-project", "--python", "3.12"],
-      ...["--with", "blazing-agents==0.8.0", "--with", "pyright==1.1.414"],
+      ...["--with", "blazing-agents==0.8.0", "--with", "pyright==1.1.414", "--with", "fastapi==0.141.1"],
       ...["pyright", "--outputjson", ...pyFiles],
     ],
     { cwd: out, encoding: "utf8" },

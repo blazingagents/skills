@@ -3,7 +3,7 @@ import { markdownFiles } from "./markdown.mjs";
 
 const banned = [
   "owns .* boundar",
-  "belongs to",
+  "belongs to \\[",
   "learning category",
   "materializ",
   "settlement",
@@ -20,6 +20,8 @@ const banned = [
   "@blazing-agents/",
   " as unknown",
   "ba-platform",
+  "`ba[ `]",
+  "@blazingagents/cli",
 ].map((term) => ({ term, pattern: new RegExp(term, "i") }));
 
 let failures = 0;

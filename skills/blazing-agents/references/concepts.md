@@ -38,7 +38,7 @@ Not the same as: a deployment or release. Without a pin, every new turn uses the
 
 ### Admin Agent
 
-A BA-managed agent that every tenant gets automatically. It powers BA Assist (`ba assist`), the built-in assistant that manages your tenant in plain language. You choose its Provider and model; BA controls everything else, and you cannot disable, delete, or give it tasks. It shows up in `agents.list()`, so skip it when you list your own agents.
+A BA-managed agent that every tenant gets automatically. It powers BA Assist, the built-in assistant that manages your tenant in plain language. You choose its Provider and model; BA controls everything else, and you cannot disable, delete, or give it tasks. It shows up in `agents.list()`, so skip it when you list your own agents.
 
 Not the same as: an agent for your product. Build your own agents for your users.
 
