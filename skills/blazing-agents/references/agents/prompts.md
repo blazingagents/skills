@@ -20,4 +20,4 @@ list filters to select an Agent's Prompts for an End-user.
 
 ## Mistakes and verification
 
-Keep Prompt lifecycle separate from Agent Versions and never assume missing variables are filled. Verify creation plus one representative invocation. Output behavior belongs to [Generation and streaming](output/generation-and-streaming.md) or [Structured output](output/structured-output.md); terminal invocation is supported by [`ba run --prompt-id`](../cli/run.md).
+Keep Prompt lifecycle separate from Agent Versions and never assume missing variables are filled. Verify creation plus one representative invocation. Output behavior belongs to [Generation and streaming](output/generation-and-streaming.md) or [Structured output](output/structured-output.md).
