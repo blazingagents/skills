@@ -1,0 +1,15 @@
+{
+  "name": "skills-snippets",
+  "private": true,
+  "description": "Pinned dependencies for type-checking code blocks in skills/**/*.md.",
+  "dependencies": {
+    "@ai-sdk/react": "^4.0.119",
+    "@blazingagents/sdk": "0.11.0",
+    "@types/node": "^26.6.3",
+    "@types/react": "^19.3.0",
+    "ai": "^7.0.116",
+    "react": "^19.3.0",
+    "typescript": "^7.0.2",
+    "zod": "^4.6.5"
+  }
+}

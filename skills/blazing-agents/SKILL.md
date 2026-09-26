@@ -1,94 +1,80 @@
 ---
 name: blazing-agents
-description: Build and integrate applications with Blazing Agents Agents, Turns, runtime Skills, Tools, automation, Slack/Telegram connections, and SDK clients. Use for BA implementation work; use ba-admin instead for direct Tenant administration. Do not use for generic AI-agent work without BA context.
+description: Build products on Blazing Agents (BA), the hosted platform that runs production AI agents behind your backend. Use when the user wants to add an agent, chat, background or scheduled agent work, structured output, agent files, MCP tools, tool approvals, Slack/Telegram bots, usage dashboards, or token billing to their app with the BA TypeScript or Python SDK, or asks what BA is or can do. Use ba-admin instead for one-off Tenant administration. Do not use for generic AI-agent work without BA.
 metadata:
   author: Blazing Agents
-  version: "0.1.0"
+  version: "0.2.0"
 ---
 
 # Blazing Agents
 
-Blazing Agents (BA) supplies hosted infrastructure for production agents:
-configuration, execution, Tools, secure Workspaces, automation, and usage
-tracking. This coding-agent Skill guides development against BA; a runtime
-Skill is an Agent-owned resource loaded by the BA runtime.
+Blazing Agents (BA) runs production agents so the developer only writes the
+agent's configuration and their own product. BA runs each Turn against the
+developer's own model Provider and stores what an agent needs between Turns:
+Session history, a Workspace with files and a shell, Skills, Memory, MCP
+Connections, Tool approvals, background Tasks and schedules, and usage records.
+It can also send each Turn's token usage to the developer's own Polar or Dodo
+account so they can bill their customers.
 
-Keep credentials on a backend. Tenant context comes from the credential, never
-from caller-selected input. Attribution is data for filtering and reporting,
-not authentication or authorization. Use public APIs instead of internal
-storage.
+The developer's backend is the only thing that calls BA. It signs in its users,
+decides what each may access, and calls BA with the Tenant API key through the
+TypeScript SDK (`@blazingagents/sdk`, 0.11.0 or later) or the Python SDK
+(`blazing-agents`, 0.8.0 or later). Chat streams use the Vercel AI SDK UI message
+format, so `useChat` renders them directly.
 
-1. Understand the outcome, stack, and trust boundary. This is complete when
-   every BA concept in the request maps directly to a reference below.
-2. Inspect the selected public docs and current contracts. This is complete
-   when every signature, schema, limit, error, and behavior the change depends
-   on has a canonical source; report any missing source instead of guessing.
-3. Implement against the public surface, then verify proportionally. This is
-   complete after focused checks for a narrow change or the consuming
-   project's full required gate for an integration change passes.
+BA does not fit when the app must call it from the browser with no server, when
+every Turn must run inside the developer's own infrastructure, or when the
+developer wants to write the agent loop step by step.
 
-## Agents
+## What you can build
 
-- [Agents](references/agents/agents.md): configure hosted behavior, automatic context compaction, and its token reserve.
-- [Providers and models](references/agents/providers-and-models.md): connect Tenant credentials and select a model.
-- [Prompts](references/agents/prompts.md): manage reusable parameterized input.
-- [Versions and lifecycle](references/agents/versions-and-lifecycle.md): pin, inspect, restore, enable, or disable Agent configuration.
-- [Runtime Skills](references/agents/skills.md): package progressively loaded Agent guidance and resources.
-- [Memory](references/agents/memory.md): store and retrieve durable Agent context.
-- [Workspaces](references/agents/workspaces.md): attach durable file state used by Workspace Tools.
-- [Artifacts](references/agents/artifacts.md): deliberately publish files as durable deliverables.
-- [Generation and streaming](references/agents/output/generation-and-streaming.md): choose stateful chat or stateless text generation and relay output.
-- [Structured output](references/agents/output/structured-output.md): generate schema-constrained data in a stateless Turn.
-- [Built-in Tools](references/agents/tools/built-in-tools.md): select BA-hosted Tool groups and understand execution boundaries.
-- [MCP Tools](references/agents/tools/mcp-tools.md): attach an MCP Connection to expose remote Tools to an Agent.
-- [Tool approvals](references/agents/tools/tool-approvals.md): configure chat/Task defaults and Tool overrides, choose automatic or human review, and continue durable human approvals.
+| The product needs | Read |
+| --- | --- |
+| A first working agent, from API key to streamed answer | [Getting started](references/getting-started.md) |
+| Chat inside a web or mobile app, with saved history | [Chat in your app](references/recipes/chat-in-your-app.md) |
+| Many end users behind one Tenant key, an inbox of conversations | [Multi-user apps](references/recipes/multi-user-apps.md) |
+| Agent work with no user present, on demand or on a schedule | [Background and scheduled work](references/recipes/background-and-scheduled.md) |
+| JSON in a fixed shape, such as extraction or classification | [Structured output](references/recipes/structured-output.md) |
+| An agent that reads and writes files, runs commands, and hands back files | [Files and deliverables](references/recipes/files-and-deliverables.md) |
+| An agent that calls your services or third-party tools | [External tools with MCP](references/recipes/external-tools-mcp.md) |
+| A person or a reviewing model approving risky tool calls | [Human approval](references/recipes/human-approval.md) |
+| The same agent in Slack or Telegram | [Slack and Telegram](references/recipes/slack-and-telegram.md) |
+| Better instructions, reusable prompts, Skills, Memory, rollback | [Shape agent behavior](references/recipes/shape-agent-behavior.md) |
+| Usage dashboards, quotas, and billing end users for tokens | [Usage and billing](references/recipes/usage-dashboards.md) |
 
-## Platform
+## Workflow
 
-- [Slack and Telegram](references/chat-integrations.md): connect Agents, configure platform callbacks, inspect health, and manage credentials.
+1. Map the request to rows in the table above and read those recipes. Read
+   [Concepts](references/concepts.md) when a BA term is unclear.
+2. Check the project's stack and the SDK version it has installed. Take method
+   names and fields from [the TypeScript SDK](references/sdk-typescript.md) or
+   [the Python SDK](references/sdk-python.md), and confirm anything not shown
+   there against the installed package's types or the linked docs. Never guess
+   a method, field, or limit.
+3. Make sure the Tenant has a Provider and an Agent. Create them in code as in
+   [Getting started](references/getting-started.md), in the BA dashboard, or with
+   the `ba-admin` skill for a one-off setup.
+4. Build the integration in the project's backend and frontend, following the
+   recipe's steps.
+5. Run the recipe's "Check it works" steps and the project's own checks. Before
+   launch, walk through [Production](references/production.md). When something
+   fails, start from [Troubleshooting](references/troubleshooting.md).
 
-- [Chatbot implementation](references/platform/chatbot.md): build send, Stop, edit/resend, regeneration, and navigation after errors; includes an SDK-native example and FAQ.
+## Rules
 
-- [Sessions and Turns](references/platform/sessions-and-turns.md): persist interactive history, reason about one metered execution, and fetch recent Sessions globally or per Agent.
-- [Tenancy and Attribution](references/platform/tenancy-and-attribution.md): preserve credential-derived Tenant isolation and optional end-user data.
-- [Security and credentials](references/platform/security-and-credentials.md): place API and Provider credentials at trusted boundaries.
-- [Usage and quotas](references/platform/usage-and-quotas.md): query grouped or dashboard-ready metering and handle quota outcomes.
-- [Limits and reliability](references/platform/limits-and-reliability.md): look up current limits and design retries, idempotency, and recovery.
-
-## Automation
-
-- [Tasks](references/automation/tasks.md): define asynchronous Agent work and optional scheduling.
-- [Task runs](references/automation/task-runs.md): start, observe, cancel, and troubleshoot one Task execution.
-- [Schedules](references/automation/schedules.md): choose one-time, interval, or cron timing for a Task.
-
-## SDK
-
-Python uses synchronous `BlazingAgents` and asynchronous `AsyncBlazingAgents`;
-their resource coverage is identical.
-
-- [Python client](references/sdk/python/client.md): construct and own the root clients, request options, lifecycle, and generation methods.
-- [Python Agents](references/sdk/python/agents.md): `agents` resource.
-- [Python Artifacts](references/sdk/python/artifacts.md): `artifacts` resource.
-- [Python Providers](references/sdk/python/providers.md): `providers` resource.
-- [Python MCP Connections](references/sdk/python/mcp-connections.md): `mcp_connections` resource.
-- [Python Memories](references/sdk/python/memories.md): `memories` resource.
-- [Python Prompts](references/sdk/python/prompts.md): `prompts` resource.
-- [Python Sessions](references/sdk/python/sessions.md): `sessions` resource.
-- [Python Skills](references/sdk/python/skills.md): `agent(agent_id).skills` resource.
-- [Python Tasks](references/sdk/python/tasks.md): `tasks` resource, including Task runs.
-- [Python Workspaces](references/sdk/python/workspaces.md): `workspaces` resource.
-- [Python Tenant](references/sdk/python/tenant.md): `tenant` resource.
-- [Python Usage](references/sdk/python/usage.md): `usage` resource.
-- [TypeScript client](references/sdk/typescript/client.md): construct the root client, request options, and direct generation methods.
-- [TypeScript Agents](references/sdk/typescript/agents.md): `agents` resource.
-- [TypeScript Artifacts](references/sdk/typescript/artifacts.md): `artifacts` resource.
-- [TypeScript Providers](references/sdk/typescript/providers.md): `providers` resource.
-- [TypeScript MCP Connections](references/sdk/typescript/mcp-connections.md): `mcpConnections` resource.
-- [TypeScript Memories](references/sdk/typescript/memories.md): `memories` resource.
-- [TypeScript Prompts](references/sdk/typescript/prompts.md): `prompts` resource.
-- [TypeScript Sessions](references/sdk/typescript/sessions.md): `sessions` resource.
-- [TypeScript Skills](references/sdk/typescript/skills.md): `agent(agentId).skills` resource.
-- [TypeScript Tasks](references/sdk/typescript/tasks.md): `tasks` resource, including Task runs.
-- [TypeScript Workspaces](references/sdk/typescript/workspaces.md): `workspaces` resource.
-- [TypeScript Tenant](references/sdk/typescript/tenant.md): `tenant` resource.
-- [TypeScript Usage](references/sdk/typescript/usage.md): `usage` resource.
+- Keep the BA API key on the backend, read from `BLAZING_AGENTS_API_KEY`. Never
+  ship it in browser or mobile code, logs, or Workspace files.
+- The API key selects the Tenant. Never accept a Tenant from a request.
+- `userId` and `metadata` label Sessions, Tasks, and usage for filtering and
+  reporting. They grant no access. The backend decides which user may use which
+  Agent and Session.
+- Relay BA's stream as it is. Return `toResponse()` in TypeScript or forward the
+  raw bytes in Python, and let `useChat` render it. Never parse the stream by hand.
+- A chat Session ID arrives with the response. Save it and pass it back to
+  continue the conversation. Load history from BA instead of storing your own copy.
+- A resend or retry is a new attempt, and tool side effects can happen again.
+  Start every Task run with an idempotency key so a retry returns the same run.
+- Changing an Agent's Provider requires `model` in the same update. Every Agent
+  update saves a new Version. Skills, Memory, and the Workspace are not part of
+  a Version. Sessions, Tasks, and generation calls can pin a Version; without a
+  pin, each Turn uses the latest one.
