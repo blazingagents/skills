@@ -12,4 +12,4 @@ Read [Structured output](https://docs.blazingagents.com/agents/output/structured
 
 ## Mistakes and verification
 
-Do not create or resume a Session, treat partial objects as final, or call the result an Artifact. Verify schema rejection, final validation, and stateless behavior. Text/chat belongs to [Generation and streaming](generation-and-streaming.md); the CLI's machine-readable envelope is [`ba run --json`](../../cli/run.md), not schema-constrained model output.
+Do not create or resume a Session, treat partial objects as final, or call the result an Artifact. Verify schema rejection, final validation, and stateless behavior. Text/chat belongs to [Generation and streaming](generation-and-streaming.md).

@@ -10,7 +10,7 @@ Output is model-generated text or structured data. Choose stateful chat for hist
 
 For TypeScript relay selection or native streaming, read [Chat transport and runtime](../../sdk/typescript/client.md#chat-transport-and-runtime) before choosing a transport or consuming a result.
 
-Read [Generation and streaming](https://docs.blazingagents.com/agents/output/generation-and-streaming), [Sessions and Turns](https://docs.blazingagents.com/platform/sessions-and-turns), and exact [TypeScript](https://docs.blazingagents.com/sdk/typescript/client), [Python](https://docs.blazingagents.com/sdk/python/client), [REST](https://docs.blazingagents.com/api-reference/rest-api/generation), and [streaming protocol](https://docs.blazingagents.com/api-reference/protocols/streaming) references. For terminal execution, route to [`ba chat`](../../cli/chat.md), [`ba run`](../../cli/run.md), or the Admin Agent's [`ba assist`](../../cli/assist.md).
+Read [Generation and streaming](https://docs.blazingagents.com/agents/output/generation-and-streaming), [Sessions and Turns](https://docs.blazingagents.com/platform/sessions-and-turns), and exact [TypeScript](https://docs.blazingagents.com/sdk/typescript/client), [Python](https://docs.blazingagents.com/sdk/python/client), [REST](https://docs.blazingagents.com/api-reference/rest-api/generation), and [streaming protocol](https://docs.blazingagents.com/api-reference/protocols/streaming) references.
 
 ## Mistakes and verification
 

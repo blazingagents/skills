@@ -15,4 +15,4 @@ Read [Security and credentials](https://docs.blazingagents.com/platform/security
 
 ## Mistakes and verification
 
-Keep secrets out of browser code, logs, metadata, Tool arguments, and Workspaces. Verify authorized success, invalid/revoked failure, redaction, and secret boundaries. Tenant-authority mistakes belong to [Tenancy and Attribution](tenancy-and-attribution.md); terminal credential handling belongs to [CLI setup and authentication](../cli/setup-and-authentication.md); Provider setup belongs to [Providers and models](../agents/providers-and-models.md).
+Keep secrets out of browser code, logs, metadata, Tool arguments, and Workspaces. Verify authorized success, invalid/revoked failure, redaction, and secret boundaries. Tenant-authority mistakes belong to [Tenancy and Attribution](tenancy-and-attribution.md), and Provider setup belongs to [Providers and models](../agents/providers-and-models.md).
