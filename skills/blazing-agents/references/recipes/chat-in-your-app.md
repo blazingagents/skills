@@ -15,25 +15,24 @@ Your browser talks only to your backend. Your backend signs the user in, checks 
 1. Install the packages. Your backend needs `@blazingagents/sdk` (or `blazing-agents` for Python). Your React frontend needs `@blazingagents/sdk`, `ai`, and `@ai-sdk/react`.
 
 ```bash
-npm install @blazingagents/sdk ai @ai-sdk/react zod
+npm install @blazingagents/sdk ai @ai-sdk/react
 # Python backend instead:
 pip install blazing-agents fastapi uvicorn
 ```
 
-2. Add the backend. `chat` relays one Turn and `history` returns a Session's saved messages. Mount them as `POST /api/chat` and `GET /api/chat/history` in your framework. In the Next.js App Router, export them as `POST` and `GET` handlers. In Hono, call `chat(c.req.raw)`.
+2. Add the backend. `chat` relays one Turn and `history` returns a Session's saved messages. Mount them as `POST /api/chat` and `GET /api/chat/history` in your framework. In the Next.js App Router, export them as `POST` and `GET` handlers. In Hono, call `chat(c.req.raw)`. `createChatRelay` validates the body, rejects a `sessionId` the user does not own (403), passes the user's ID and the request's abort signal to `client.chat()`, records the owner of each new Session, and turns errors into JSON responses.
 
 ```ts
-import { BlazingAgents } from "@blazingagents/sdk";
-import { safeValidateUIMessages } from "ai";
-import { z } from "zod";
+import {
+  BlazingAgents,
+  createChatRelay,
+  type SessionOwnershipStore,
+} from "@blazingagents/sdk";
 
 /** Your sign-in check. Returns your user's ID, or null when signed out. */
 declare function authenticate(request: Request): Promise<string | null>;
 /** Your database table that maps each Session ID to the user who owns it. */
-declare const sessionOwners: {
-  get(sessionId: string): Promise<string | undefined>;
-  set(sessionId: string, userId: string): Promise<void>;
-};
+declare const sessions: SessionOwnershipStore;
 
 function env(name: string): string {
   const value = process.env[name];
@@ -44,55 +43,28 @@ function env(name: string): string {
 const client = new BlazingAgents({ apiKey: env("BLAZING_AGENTS_API_KEY") });
 const agentId = env("BLAZING_AGENTS_AGENT_ID");
 
-const chatBody = z.object({
-  message: z.unknown(),
-  messageId: z.string().min(1).optional(),
-  sessionId: z.string().optional(),
-  trigger: z
-    .enum(["submit-message", "regenerate-message"])
-    .default("submit-message"),
+export const chat = createChatRelay({
+  client,
+  sessions,
+  async resolveContext(request) {
+    const userId = await authenticate(request);
+    return userId === null ? null : { agentId, userId };
+  },
 });
-
-function error(status: number, message: string): Response {
-  return Response.json({ error: message }, { status });
-}
-
-export async function chat(request: Request): Promise<Response> {
-  const userId = await authenticate(request);
-  if (!userId) return error(401, "Sign in first.");
-  const body = chatBody.safeParse(await request.json().catch(() => null));
-  if (!body.success) return error(400, "Invalid request body.");
-  const validated = await safeValidateUIMessages({
-    messages: [body.data.message],
-  });
-  const [message] = validated.success ? validated.data : [];
-  if (message?.role !== "user") return error(400, "Invalid message.");
-  const { messageId, sessionId, trigger } = body.data;
-  if (sessionId && (await sessionOwners.get(sessionId)) !== userId) {
-    return error(403, "Session not found.");
-  }
-
-  const turn = { agentId, message, messageId, userId, abortSignal: request.signal };
-  const result = sessionId
-    ? await client.chat({ ...turn, sessionId, trigger })
-    : await client.chat(turn);
-  if (!sessionId) await sessionOwners.set(await result.sessionId, userId);
-  return result.toResponse();
-}
 
 export async function history(request: Request): Promise<Response> {
   const userId = await authenticate(request);
-  if (!userId) return error(401, "Sign in first.");
+  if (!userId) return Response.json({ error: "Sign in first." }, { status: 401 });
   const sessionId = new URL(request.url).searchParams.get("sessionId");
-  if (!sessionId || (await sessionOwners.get(sessionId)) !== userId) {
-    return error(403, "Session not found.");
+  if (!sessionId || (await sessions.ownerOf(sessionId)) !== userId) {
+    return Response.json({ error: "Session not found." }, { status: 403 });
   }
   const page = await client.sessions.messages({ agentId, sessionId, limit: 200 });
   return Response.json({ messages: page.data });
 }
 ```
 
-The same backend in Python with FastAPI. The SDK returns the raw stream bytes; relay them unchanged and copy the `Location` header on the first Turn so the frontend learns the Session ID.
+The same backend in Python with FastAPI does these steps by hand. The SDK returns the raw stream bytes; relay them unchanged and copy the `Location` header on the first Turn so the frontend learns the Session ID.
 
 ```python
 import os
@@ -137,15 +109,15 @@ async def chat(body: ChatBody, user_id: str = Depends(current_user)):
     if body.sessionId is not None and owner_of(body.sessionId) != user_id:
         raise HTTPException(403, "Session not found.")
     headers = {"cache-control": "no-cache", "x-vercel-ai-ui-message-stream": "v1"}
+    extra: dict[str, Any] = {"message_id": body.messageId} if body.messageId else {}
     try:
         if body.sessionId is None:
             stream = await client.chat(
-                agent_id=AGENT_ID, message=body.message, user_id=user_id
+                agent_id=AGENT_ID, message=body.message, user_id=user_id, **extra
             )
             record_owner(stream.session_id, user_id)
             headers["location"] = stream.headers["location"]
         else:
-            extra: dict[str, Any] = {"message_id": body.messageId} if body.messageId else {}
             stream = await client.chat(
                 agent_id=AGENT_ID,
                 session_id=body.sessionId,
@@ -155,10 +127,17 @@ async def chat(body: ChatBody, user_id: str = Depends(current_user)):
                 **extra,
             )
     except APIStatusError as exc:
-        return JSONResponse({"error": exc.code}, status_code=exc.status_code)
+        error = {"code": exc.code, "message": str(exc)}
+        return JSONResponse({"error": error}, status_code=exc.status_code)
     except BlazingAgentsError:
-        return JSONResponse({"error": "upstream_error"}, status_code=502)
-    return StreamingResponse(stream, media_type="text/event-stream", headers=headers)
+        error = {"code": "upstream_error", "message": "Request failed."}
+        return JSONResponse({"error": error}, status_code=502)
+    return StreamingResponse(
+        stream,
+        status_code=stream.status_code,
+        media_type="text/event-stream",
+        headers=headers,
+    )
 
 
 @app.get("/api/chat/history")
@@ -315,15 +294,15 @@ function Chat({
 
 ## Gotchas
 
-- **History lives in BA.** Send only the newest user message. The transport already does this; a custom client that posts the whole `messages` array gets rejected by your `chat` handler.
-- **Take `agentId` and `userId` from your server state, never the request body.** `userId` is Attribution for usage and reporting. It grants no access; your `sessionOwners` check is what keeps users out of each other's Sessions.
+- **History lives in BA.** Send only the newest user message. The transport already does this; a custom client that posts the whole `messages` array gets a 400 from your `chat` handler.
+- **Take `agentId` and `userId` from your server state, never the request body.** `userId` is Attribution for usage and reporting. It grants no access; your Session ownership check is what keeps users out of each other's Sessions.
 - **Save the owner before returning the stream.** The Session ID arrives before the answer streams. Keep it even when the first Turn fails or is stopped; the Session exists and is simply empty.
 - **Keep one transport per conversation.** `useChat` ignores a new transport after mount. To switch Session or user, remount `Chat` with a new `key`, as `ChatPage` does.
 - **Resend is a new attempt.** Give every send a fresh message ID; message IDs are not idempotency keys. A failed or stopped Turn adds nothing to history, so the edited or unchanged text is simply sent again.
 - **Tool effects can repeat.** Stop cancels the Turn but cannot undo a Tool call that already ran, and a resend can run it again (for example, a second email). Make side-effecting Tools safe to repeat or gate them with [human approval](human-approval.md).
 - **A lost response may already be saved.** A dropped connection is not proof of failure. Reload history before telling the user their message was lost.
 - **Regenerate only after a successful answer.** A prompt that failed was never saved, so there is nothing to regenerate. If regeneration fails or is stopped, the old answer stays.
-- **`session_busy` (HTTP 409)** means a Tool approval is pending or an approved call is still running. Show the error and let the user send again later.
+- **`session_busy` (HTTP 409)** means a Tool approval is pending, an approved call is still running, or another Turn holds the Session. Show the error and let the user send again later.
 - **Older history.** `sessions.messages` returns the newest page, oldest first. Pass `nextCursor` back as `cursor` to load earlier pages for long conversations.
 - **Proxies must not buffer the stream.** `toResponse()` sets `cache-control: no-cache`; make sure every proxy in front of your backend passes chunks through as they arrive.
 

@@ -4,7 +4,7 @@ You will tag every conversation, Task, Prompt, and Memory with your own user ID,
 
 ## When to use this
 
-Your product has signed-in users, and each one needs their own chat history, background jobs, remembered preferences, or usage numbers. If you only need a single chat box first, read [Add chat to your app](chat-in-your-app.md). If you want to show or bill usage per user, read [Show usage to your team or bill your customers](usage-dashboards.md).
+Your product has signed-in users, and each one needs their own chat history, background jobs, remembered preferences, or usage numbers. If you only need a single chat box first, read [Add chat to your app](chat-in-your-app.md). If you want to show or bill usage per user, read [Show usage and bill your users](usage-dashboards.md).
 
 ## How it works
 
@@ -71,7 +71,6 @@ def run_turn(
         stream = client.chat(
             agent_id="ag_0123456789abcdef", message=message, user_id=user_id
         )
-        record_owner(stream.session_id, user_id)
     else:
         stream = client.chat(
             agent_id="ag_0123456789abcdef",
@@ -80,6 +79,8 @@ def run_turn(
             user_id=user_id,
         )
     with stream:
+        if session_id is None:
+            record_owner(stream.session_id, user_id)
         yield from stream
 ```
 

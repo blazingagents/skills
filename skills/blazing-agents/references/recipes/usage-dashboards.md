@@ -8,7 +8,7 @@ You want an internal page that shows token and request trends, a per-customer us
 
 ## How it works
 
-Every Turn records input tokens, output tokens, one request, and duration, together with its Agent, model, Session, and Attribution. Failed and canceled Turns are recorded too. `usage.overview()` returns what a dashboard needs in one call: exact totals, one bucket per day, the top Agents, top users, and a model mix. `usage.get()` covers your whole account and `usage.getForAgent()` covers one Agent; both group by one dimension and filter by date, Agent, Session, or `userId`. A quota is an optional monthly ceiling checked before each Turn starts. When it is reached, new chats fail and new Task runs end as `blocked`.
+Every Turn records input tokens, output tokens, one request, and duration, together with its Agent, model, Session, and Attribution. Failed and canceled Turns are recorded too. `usage.overview()` returns what a dashboard needs in one call: exact totals, one bucket per day, the top Agents, top users, and a model mix. `usage.get()` covers your whole account and `usage.getForAgent()` covers one Agent; both group by one dimension and filter by date, Agent, Session, or `userId`. A quota is an optional monthly ceiling checked before each Turn starts. When it is reached, new chat and generation calls fail with `quota_exceeded` and new Task runs end as `blocked`.
 
 Billing is off until you turn on the tenant switch `monetizationEnabled`. Once on, each Turn sends one `ba.model_tokens.v1` usage event to your Polar or Dodo account, tagged with the customer you linked to the Turn's `userId`. Your provider sets prices, allowances, and invoices; Blazing Agents never handles your customers' payments. An optional guard checks the user's plan or balance before each Turn starts. Billing setup is available in the TypeScript SDK and the dashboard; the Python SDK does not manage it yet.
 
@@ -73,7 +73,7 @@ for row in overview.by_model:
     print(label, row.input_tokens + row.output_tokens)
 ```
 
-2. Drill in with `usage.get()` or `usage.getForAgent()`. Group by `user`, `agent`, `model`, `day`, or `session`; `limit` sets how many top Sessions come back when you group by `session`.
+2. Drill in with `usage.get()` or `usage.getForAgent()`. Group by `user`, `agent`, `model`, `day`, or `session`; `limit` (1 to 200, default 50) sets how many top Sessions come back when you group by `session`; other groupings return every group and ignore it.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
@@ -173,7 +173,7 @@ def customer_usage(signed_in_user_id: str) -> dict[str, object]:
     }
 ```
 
-4. Handle quota and plan outcomes. A chat or generation call that starts over the ceiling throws `quota_exceeded`, and one refused by the billing guard from step 7 throws a `merchant_*` code. A Task run that would start over the ceiling ends with status `blocked` instead of `failed`.
+4. Handle quota and plan outcomes. A chat or generation call that starts over the ceiling throws `quota_exceeded`, and one refused by the billing guard from step 7 throws a `merchant_*` code. A Task run stopped by the quota, your Blazing Agents plan, or the billing guard ends with status `blocked` instead of `failed`.
 
 ```ts
 import { BlazingAgents, BlazingAgentsError } from "@blazingagents/sdk";
@@ -319,8 +319,7 @@ export async function releaseAfterLinking(eventId: string) {
 
 ## Gotchas
 
-- `byAgent`, `byUser`, and the top models are capped at `limit`. Read totals from `totals` and the Agent count from `activeAgentCount`, not from the length or sum of a ranking.
-- The model remainder bucket (`provider` and `model` both `null`) holds every model outside the top list, so `byModel` adds up to `totals`. Render it as "Other models" instead of dropping it.
+- In `usage.overview()`, `byAgent`, `byUser`, and the top models are capped at `limit` (1 to 20, default 5). Read totals from `totals` and the Agent count from `activeAgentCount`, not from a ranking. Render the model remainder bucket as "Other models" instead of dropping it, or `byModel` no longer adds up to `totals`.
 - `userId: ""` in a bucket is real usage with no user label. `userId: null` means the query was not grouped by user. Show `""` as a row such as "No user".
 - `from` and `to` are inclusive UTC dates. Pass both or neither (the default is the last 30 days), and keep the range to 31 days or fewer, or the call fails with `validation_failed`. Page longer periods month by month.
 - Usage from `client.usage` is summed per day and includes finished Turns only. Show it to people, but charge customers from the events your provider receives, not from these numbers.

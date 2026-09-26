@@ -1,14 +1,14 @@
 # Blazing Agents concepts
 
-Every Blazing Agents (BA) term a tenant meets, in plain words. Each entry says what the thing is, when you need it, and what it is easy to confuse it with. Use these names exactly when you read the SDKs and docs; they mean the same thing everywhere.
+Every Blazing Agents (BA) term you meet while building on BA, in plain words. Each entry says what the thing is, when you need it, and what it is easy to confuse it with. Use these names exactly when you read the SDKs and docs; they mean the same thing everywhere.
 
 ## Account and access
 
 ### Tenant
 
-Your BA account: you (or your company) building a product on top of BA. Everything you create lives inside your tenant, and nothing is visible across tenants. You have one tenant; your own customers are not tenants.
+Your BA account: you (or your company) building a product on top of BA. Everything you create lives inside your tenant, and nothing is visible across tenants. Your own customers are not tenants.
 
-Not the same as: an end user of your app. BA stores no end-user records. See [Attribution](#attribution-userid-and-metadata).
+Not the same as: an end user of your app. BA has no end-user accounts; you label work with your own user IDs instead. See [Attribution](#attribution-userid-and-metadata).
 
 ### API key
 
@@ -20,7 +20,7 @@ Not the same as: a Provider key (your model account key) or a per-user token. BA
 
 ### Provider
 
-Your saved model account credential: a name, a provider type (such as `openrouter`), an optional base URL, and your model API key. BA stores the key encrypted and never returns it. You need at least one Provider before any agent can answer, because model calls run on your own model account (bring your own key).
+Your saved model account credential: a name, a provider type (such as `openrouter`), an optional base URL, and your model API key. BA stores the key and never returns it; responses show only its last four characters. You need at least one Provider before any agent can answer, because model calls run on your own model account (bring your own key).
 
 Not the same as: a model. The Provider is the account; the agent picks the model identifier (such as `openai/gpt-6-luna`) that runs on it.
 
@@ -32,13 +32,13 @@ Not the same as: a Session. The agent is configuration; a session is one convers
 
 ### Version
 
-A numbered, read-only snapshot of an agent's configuration. Version 1 is created with the agent, and every update saves the next one; there is no draft or publish step. You use versions to roll back a bad change or to pin a session, task, or call to a known-good configuration. Skills, the Workspace attachment, the avatar, and the enabled/disabled state are not part of a version.
+A numbered, read-only snapshot of an agent's configuration. Version 1 is created with the agent, and every update saves the next one; there is no draft or publish step. You use versions to roll back a bad change or to pin a session, task, or call to a known-good configuration. Skills, Memories, the Workspace attachment, the Provider key, MCP credentials, `userId`, the avatar, and the enabled/disabled state are not part of a version, so they always use their current state.
 
 Not the same as: a deployment or release. Without a pin, every new turn uses the latest version immediately.
 
 ### Admin Agent
 
-A BA-managed agent that every tenant gets automatically. It powers BA Assist, the built-in assistant that manages your tenant in plain language. You choose its Provider and model; BA controls everything else, and you cannot disable, delete, or give it tasks. It shows up in `agents.list()`, so skip it when you list your own agents.
+A BA-managed agent that every tenant gets automatically. It powers BA's built-in assistant for managing your tenant, and the dashboard marks it **Powers BA Assist for this tenant**. You choose its Provider, model, and thinking level; BA controls everything else, so you cannot rename, disable, delete, or restore it, change its instructions or tools, or give it tasks (`admin_agent_managed`). It shows up in `agents.list()` next to your own agents, so keep your own record of the agent IDs your app created instead of treating every listed agent as yours.
 
 Not the same as: an agent for your product. Build your own agents for your users.
 
@@ -52,7 +52,7 @@ Not the same as: a Session. A session holds many turns; one-off generation runs 
 
 ### Session
 
-One stored conversation with one agent, identified by `ss_...`. BA returns the ID on the first chat call; pass it on the next call and the agent sees the whole history, so your backend never stores or replays messages. You need sessions for chat. Deleting a session asks whether to delete its Artifacts too.
+One stored conversation with one agent, identified by `ss_...`. BA returns the ID on the first chat call; pass it on the next call and the agent sees the whole history, so your backend never stores or replays messages. You need sessions for chat. When you delete a session you choose whether its Artifacts go too (`deleteArtifacts`, `delete_artifacts` in Python).
 
 Not the same as: Memory. A session is one conversation; memories carry facts across conversations.
 
@@ -140,7 +140,7 @@ Not the same as: an MCP Connection, which gives an agent tools rather than a pla
 
 ### Attribution (`userId` and `metadata`)
 
-A label you stamp on resources and turns to say which of your end users they are for: an opaque `userId` string you choose plus optional `metadata`. Set it when you create an agent, task, or memory, or on the first turn of a session; it cannot change later, and you can filter lists and usage by it. An empty `userId` means a tenant-level resource. Use it so you can list one user's sessions and bill or report per user without your own mapping tables.
+A label you stamp on resources and turns to say which of your end users they are for: an opaque `userId` string you choose plus optional `metadata`. Set it when you create an agent, workspace, prompt, task, or memory, or on a turn (a session takes the label of its first turn); a `userId` never changes once set, and you can filter lists and usage by it. An empty `userId` means a tenant-level resource. Use it so you can list one user's sessions and bill or report per user without your own mapping tables.
 
 Not the same as: permission. Your API key sees the whole tenant regardless of `userId`, so your backend must check that the signed-in user may reach a resource before calling BA.
 
@@ -152,7 +152,7 @@ Not the same as: your BA bill or plan credit. Usage is what your turns consumed;
 
 ### Quota
 
-An optional monthly ceiling on tokens, requests, or both that you set on your tenant, with a reset day. BA checks it before each turn; over the ceiling, chat calls fail with `quota_exceeded` and task runs end as `blocked`. It is a safety valve against runaway loops: with no quota usage is unlimited, and a turn already running may overshoot.
+An optional monthly ceiling on tokens, requests, or both that you set on your tenant, with a reset day. BA checks it before each turn; over the ceiling, chat and generation calls fail with `quota_exceeded` (HTTP 429) and task runs end as `blocked`. It is a safety valve against runaway loops: with no quota usage is unlimited, and a turn already running may overshoot.
 
 Not the same as: your plan, usage credit, or rate limits. A quota is a limit you choose, not one BA sells you.
 
@@ -175,8 +175,8 @@ Tenant ── API key (your backend only)
   ├─ Admin Agent (BA Assist, managed by BA)
   └─ Usage (per Turn, by agent/model/session/userId) ── checked against Quota
 
-Attribution (userId, metadata) labels Agents, Sessions, Tasks, Task runs,
-Memories, Artifacts, and Usage so you can filter per end user.
+Attribution (userId, metadata) labels Agents, Workspaces, Prompts, Sessions,
+Tasks, Task runs, Memories, Artifacts, and Usage so you can filter per end user.
 ```
 
 Every path ends in a Turn: that is the unit BA runs, meters, and checks against your quota.

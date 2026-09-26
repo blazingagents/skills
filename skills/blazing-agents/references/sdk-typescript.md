@@ -4,8 +4,11 @@ Use this page to write backend TypeScript that calls Blazing Agents: install the
 client, run chat, text, and structured output, call every resource method, page
 through lists, handle errors, and connect `useChat` to your own backend.
 
-This page describes `@blazingagents/sdk` 0.11.0, the supported floor. The
-method table is derived from that release's source.
+The supported floor is `@blazingagents/sdk` 0.11.0.
+
+For the same surface in Python, read [Python SDK reference](sdk-python.md). For
+end-to-end builds, start from a recipe such as
+[Add chat to your app](recipes/chat-in-your-app.md).
 
 ## Install
 
@@ -67,7 +70,7 @@ Per-call options:
 
 The root client has three generation methods. All three take `agentId`, and
 `userId` plus `metadata` for Attribution. Pass the ID of the end user who caused
-the Turn as `userId`; omitting it bills the Turn to the Tenant with no user.
+the Turn as `userId`; omitting it records the Turn at Tenant level with no user.
 
 | Method | Use it for | State |
 | --- | --- | --- |
@@ -423,8 +426,9 @@ export async function allSessionIds(
 }
 ```
 
-Transcripts (`sessions.messages`, `tasks.runMessages`) return newest messages
-first and also carry `latestCursor`. To watch a transcript grow, pass
+Transcripts (`sessions.messages`, `tasks.runMessages`) return the newest page
+first, with messages in chronological order inside each page, and also carry
+`latestCursor`. To watch a transcript grow, pass
 `latestCursor` back as `after` on the next poll.
 
 ## Handle errors
@@ -477,8 +481,10 @@ export async function findAgentName(agentId: string): Promise<string | null> {
 ```
 
 Errors before streaming starts reject the `chat`, `completion`, or `object`
-promise. Errors after streaming starts surface as `stream_error` from the stream
-or from awaiting `text` or `object`.
+promise. After streaming starts, a failed chat Turn ends its stream with an
+`{ type: "error", errorText }` event, which `useChat` already understands. For
+`completion` and `object`, the stream throws and awaiting `text` or `object`
+rejects with `stream_error`.
 
 ## Connect `useChat` through your backend
 
@@ -499,22 +505,18 @@ Options are AI SDK `HttpChatTransportInitOptions` (`api`, `headers`,
 
 import { useChat } from "@ai-sdk/react";
 import { BlazingAgentsChatTransport } from "@blazingagents/sdk";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 export function Chat({ initialSessionId }: { initialSessionId?: string }) {
-  const [sessionId, setSessionId] = useState(initialSessionId);
   const [input, setInput] = useState("");
-  const transport = useMemo(
+  // Create the transport once. It keeps the Session ID itself after the first reply.
+  const [transport] = useState(
     () =>
       new BlazingAgentsChatTransport({
         api: "/api/chat",
-        sessionId,
-        onSessionId: (id) => {
-          localStorage.setItem("chat-session", id);
-          setSessionId(id);
-        },
-      }),
-    [sessionId]
+        sessionId: initialSessionId,
+        onSessionId: (id) => localStorage.setItem("chat-session", id),
+      })
   );
   const { messages, sendMessage, status } = useChat({ transport });
 
@@ -584,7 +586,7 @@ onSessionId? })` drives `useChat` through `client.chat()` without a relay.
   Pick one accessor per result.
 - Sending `version` together with `sessionId` fails to type-check. A Session
   keeps the Version it started on; pin only when creating.
-- `agents.delete` and `sessions.delete` require `includeArtifacts` and
+- `agents.delete` requires `includeArtifacts` and `sessions.delete` requires
   `deleteArtifacts`. Decide explicitly whether published files go too.
 - Forgetting `userId` records every Turn at Tenant level, so per-user usage is
   lost. Pass your end user's ID on every generation call.

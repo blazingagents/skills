@@ -4,7 +4,7 @@ By the end, people message your own Slack app or Telegram bot and your existing 
 
 ## When to use this
 
-You already have an Agent with a Provider and model, and you want it reachable from Slack or Telegram without running a bot server. BA receives the platform's messages, keeps a Session per conversation, posts replies, and renders approval cards.
+You already have an Agent with a Provider and model, an active Blazing Agents plan, and you want it reachable from Slack or Telegram without running a bot server. BA receives the platform's messages, keeps a Session per conversation, posts replies, and renders approval cards.
 If you instead want chat inside your own web or mobile app, read [Add chat to your app](chat-in-your-app.md).
 
 ## How it works
@@ -174,6 +174,7 @@ def remove(client: BlazingAgents, chat_connection_id: str) -> None:
 - `update()` changes only `name` and `configuration`. Create a new connection to switch the Agent or bot.
 - Keep bot tokens and signing secrets in backend environment variables. Responses never return them; log only `id`, `enabled`, `credentialFragment`, and health results.
 - A health check `status` of `unknown` means BA could not tell. Verify that platform setting by hand.
+- The bot stays silent. Confirm the connection and its Agent are both enabled, your plan is active, and the bot is in the channel, then run a fresh health check. See [Troubleshooting](../troubleshooting.md#chat-connection-health-unknown).
 - Messages sent while the Agent is still replying in the same conversation may be dropped.
 - `/reset` in a chat starts fresh only after you deleted that conversation's Session. It does not replace a Session that still exists.
 

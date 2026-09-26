@@ -174,7 +174,7 @@ def check_tool_call(agent_id: str) -> None:
 - Put credentials only in the Connection's credential fields. Keep tokens out of the Connection name, URL, Agent instructions, Prompts, Turn `metadata`, and messages; anything there can reach the model or your logs. Responses never return stored credentials.
 - The URL must be HTTPS with no credentials, query string, or fragment. Put API keys in `bearerToken` or OAuth fields, not in `?key=`.
 - Sending `mcpConnectionIds` replaces the list. Read the Agent first and merge, or you detach other Connections.
-- A Connection in `needs_auth`, an unreachable server, or a failing tool fails the whole Turn. Blazing Agents never quietly runs with fewer tools. Handle the failed Turn and prompt an administrator to reconnect.
+- A Connection in `needs_auth` or an unreachable server fails the whole Turn with `mcp_connection_discovery_failed` (502), and a failing tool can fail it too. Blazing Agents never quietly runs with fewer tools. Handle the failed Turn and prompt an administrator to reconnect, or detach the Connection.
 - Forwarded `userId` and metadata are information for the server, not authorization. Your MCP server must still check what that user may do. Forward only what the server needs.
 - Tools are discovered live every Turn. Rerun `test()` after you change credentials or deploy the server.
 - `reconnect()` swaps URL and credentials under the same ID, which also changes what pinned older Agent versions use. Detach a Connection from every Agent before you delete it.

@@ -161,7 +161,7 @@ Every Agent update saves a new numbered Agent Version. Calls without a version u
 - **Tasks:** set `agentVersion` on the Task. Each run records the version it actually used.
 - **Usage:** each turn's usage record shows the version that ran, so you can compare versions.
 
-A Version stores references, not copies. The Provider key, MCP credentials, Workspace, Skills, and Memories always use their current state, even for a pinned Version. Deleting a Provider that a pinned Version names makes that Version fail with `provider_not_found`.
+A Version stores references, not copies. The Provider key, MCP credentials, Workspace, Skills, and Memories always use their current state, even for a pinned Version. Deleting a Provider that a pinned Version names needs `confirmVersionInvalidation: true`, and afterwards that Version fails with `provider_not_found`.
 
 To roll back a bad edit, call `client.agents.restoreVersion({ agentId, version })` (`restore_version` in Python). It copies the old configuration into a new latest Version.
 

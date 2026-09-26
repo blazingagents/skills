@@ -13,7 +13,7 @@ An Agent holds versioned configuration: Provider and model, thinking level, inst
 
 ## Build it
 
-1. Set the model and instructions. Confirm the model is offered by the Provider, and send `providerId` and `model` together.
+1. Set the model, instructions, and context compaction in one update. Confirm the model is offered by the Provider, and send `providerId` and `model` together. `autoCompaction` (default `true`) summarizes older messages near the model's context limit; `compactionReserveTokens` (default `16384`) is how much room to keep free, so a larger value compacts sooner.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
@@ -33,6 +33,7 @@ const agent = await client.agents.update({
   model: "openai/gpt-6-luna",
   instructions: "You are the support assistant for Acme. Answer in two short paragraphs.",
   tools: ["workspace", "memory"],
+  compactionReserveTokens: 32_768,
 });
 console.log(`Now at version ${agent.version}`);
 ```
@@ -52,6 +53,7 @@ def configure(client: BlazingAgents, agent_id: str, provider_id: str) -> None:
         model="openai/gpt-6-luna",
         instructions="You are the support assistant for Acme. Answer in two short paragraphs.",
         tools=["workspace", "memory"],
+        compaction_reserve_tokens=32_768,
     )
     print(f"Now at version {agent.version}")
 ```
@@ -144,7 +146,7 @@ def add_skill(client: BlazingAgents, agent_id: str) -> None:
     )
 ```
 
-4. Store Memory for one End-user and turn on injection so every Turn with that `userId` starts with the notes. Use list with `search`, `update()`, and `delete()` to curate them.
+4. Store Memory for one End-user and turn on injection so every Turn with that `userId` starts with the newest notes it can see, general and that user's (up to 4,000 words). Use list with `search`, `update()`, and `delete()` to curate them.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
@@ -186,29 +188,7 @@ def curate_memory(client: BlazingAgents, agent_id: str, user_id: str) -> None:
     client.memories.delete(agent_id=agent_id, memory_id=memory.id)
 ```
 
-5. Tune context compaction for long conversations. `autoCompaction` (default `true`) summarizes older messages near the model's context limit; `compactionReserveTokens` (default `16384`) is how much room to keep free, so a larger value compacts sooner.
-
-```ts
-import { BlazingAgents } from "@blazingagents/sdk";
-
-declare const client: BlazingAgents;
-
-await client.agents.update({
-  agentId: "ag_0123456789abcdef",
-  autoCompaction: true,
-  compactionReserveTokens: 32_768,
-});
-```
-
-```python
-from blazing_agents import BlazingAgents
-
-
-def tune_compaction(client: BlazingAgents, agent_id: str) -> None:
-    client.agents.update(agent_id, auto_compaction=True, compaction_reserve_tokens=32_768)
-```
-
-6. Pin, roll back, and pause with Versions. Pass `version` to run a known-good configuration. `restoreVersion()` copies an old Version into a new latest one. `disable()` stops new Turns without deleting anything.
+5. Pin, roll back, and pause with Versions. Pass `version` to run a known-good configuration. `restoreVersion()` copies an old Version into a new latest one. `disable()` stops new Turns without deleting anything.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";

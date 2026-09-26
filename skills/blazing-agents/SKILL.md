@@ -12,8 +12,9 @@ Blazing Agents (BA) runs production agents so the developer only writes the
 agent's configuration and their own product. BA runs each Turn against the
 developer's own model Provider and stores what an agent needs between Turns:
 Session history, a Workspace with files and a shell, Skills, Memory, MCP
-Connections, Tool approvals, background Tasks and schedules, usage records,
-and token billing events.
+Connections, Tool approvals, background Tasks and schedules, and usage records.
+It can also send each Turn's token usage to the developer's own Polar or Dodo
+account so they can bill their customers.
 
 The developer's backend is the only thing that calls BA. It signs in its users,
 decides what each may access, and calls BA with the Tenant API key through the
@@ -72,6 +73,8 @@ developer wants to write the agent loop step by step.
 - A chat Session ID arrives with the response. Save it and pass it back to
   continue the conversation. Load history from BA instead of storing your own copy.
 - A resend or retry is a new attempt, and tool side effects can happen again.
-  Use idempotency keys where BA offers them, such as Task runs.
-- Provider and model are set together on an Agent. Every Agent change creates a
-  Version, and a Task can pin one.
+  Start every Task run with an idempotency key so a retry returns the same run.
+- Changing an Agent's Provider requires `model` in the same update. Every Agent
+  update saves a new Version. Skills, Memory, and the Workspace are not part of
+  a Version. Sessions, Tasks, and generation calls can pin a Version; without a
+  pin, each Turn uses the latest one.

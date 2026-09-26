@@ -4,7 +4,7 @@ By the end of this page, one small backend program creates a Provider and an Age
 
 ## When to use this
 
-Use this page when the developer has no Blazing Agents (BA) code yet and wants to see an Agent answer. If they already have an Agent and want chat in their product, read [Add chat to your app](recipes/chat-in-your-app.md).
+Use this page when you have no Blazing Agents (BA) code yet and want to see an Agent answer. If you already have an Agent and want chat in your product, read [Add chat to your app](recipes/chat-in-your-app.md).
 
 ## How it works
 
@@ -152,7 +152,7 @@ with client.chat(agent_id=agent.id, message=message) as stream:
 ## Gotchas
 
 - The Tenant API key reaches every Agent in the Tenant. Keep it in backend configuration. Browser and mobile code call your backend, never BA.
-- `providers.create` stores the OpenRouter key without checking it. A bad key surfaces at `agents.create` as `model_validation_unavailable`. Fix the key, delete the Provider (`client.providers.delete({ providerId })` or `client.providers.delete(provider_id)`), and run again.
+- `providers.create` stores the OpenRouter key without checking it. A bad key surfaces at `agents.create` as `model_validation_unavailable` (503). The same code can mean OpenRouter was briefly unreachable, so retry once after a short wait. If it persists, fix the key, delete the Provider (`client.providers.delete({ providerId })` or `client.providers.delete(provider_id)`), and run again.
 - `model_not_found` at `agents.create` means the model ID is not offered by that Provider. List valid IDs with `client.providers.listModels({ providerId })` or `client.providers.list_models(provider_id=...)`.
 - Each `chat()` without a Session ID starts a new Session with no memory of earlier calls. Pass `sessionId` (`session_id` in Python) to continue one.
 - In Python, use the stream inside `with` so the connection closes when you are done.

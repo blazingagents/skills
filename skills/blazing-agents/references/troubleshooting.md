@@ -100,7 +100,7 @@ Blazing Agents has no separate "forbidden" code for API keys. A bad key is alway
 
 `provider_required` (400) means the Agent Version that would run has no Provider and model. Nothing ran and nothing was billed.
 
-- Update the Agent with `providerId` and `model` together. Sending only one is rejected.
+- Update the Agent with a `providerId` and a `model` the Provider offers. Changing `providerId` without `model` in the same update is rejected; changing only `model` keeps the current Provider.
 - If the Session or Task pins an older Version, that Version may have no model. Pin a Version that has one. A Session's pin cannot change, so start a new Session.
 - `agent_version_not_found` (404) means the pin names a Version number that never existed.
 - `agent_disabled` (409) means the Agent is disabled. Enable it.
@@ -240,7 +240,7 @@ For every check that is `fail` or `unknown`, verify that setting by hand on the 
 
 - `webhook_url` (Telegram): the bot's webhook points at the connection's `webhookUrl`. A valid token alone does not prove messages arrive. Enable the connection again to re-register it. `chat_webhook_conflict` (409) means the bot already has a webhook set by another service. Remove it, or use a new bot.
 - `channel_membership`: the bot is in the listed channel or chat. `channelIds` and `chatIds` choose where checks look; they do not restrict where the bot answers.
-- `bot_identity`: the bot identity read from the token matches the connection. On failure, check that the token is current and for the same bot, and rotate with the full credential set.
+- `bot_identity`: the bot identity read from the token matches the connection. On failure, check that the token is current and for the same bot. Rotate with the full credential set for Slack, or only the new bot token for Telegram.
 - Also confirm that both the connection and its Agent are enabled, your subscription is active, and, for Slack, that both the Event Subscriptions and Interactivity request URLs point at `webhookUrl`.
 - If the agent finished but no reply appeared, list the connection's deliveries. `confirmed` means the platform accepted the reply, `failed` means it did not, and `ambiguous` means it may have been sent. Repairing a delivery posts the saved reply without running the agent again, and it can post a duplicate.
 

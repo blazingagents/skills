@@ -8,7 +8,7 @@ The Agent's job produces a file: a report, a CSV export, a generated document, o
 
 ## How it works
 
-Every Agent has a Workspace: a private file system with a shell, rooted at `/workspace`. Files there outlive Sessions, so the next Session, Task run, or another Agent sharing the Workspace sees them. The Agent touches the Workspace only through Workspace Tools (`read`, `write`, `edit`, `grep`, `glob`, `bash`, `publish_artifacts`), which you switch on with the `workspace` tool group. Workspace files are private. To hand one to your app, the Agent calls `publish_artifacts`, which makes a fixed copy called an Artifact that belongs to the Session. Your backend lists Artifacts by Agent or Session and creates short-lived download URLs.
+Every Agent has a Workspace: a private file system with a shell, rooted at `/workspace`. Files there outlive Sessions, so the next Session, Task run, or another Agent sharing the Workspace sees them. The Agent touches the Workspace only through Workspace Tools (`read`, `write`, `edit`, `grep`, `glob`, `bash`, `publish_artifacts`), which you switch on with the `workspace` tool group. Workspace files are private. To hand one to your app, the Agent calls `publish_artifacts`, which makes a fixed copy called an Artifact, attached to the Session that published it. Your backend lists Artifacts by Agent or Session and creates short-lived download URLs.
 
 ## Build it
 
@@ -85,7 +85,7 @@ def share_workspace(client: BlazingAgents, agent_ids: list[str]) -> str:
     return workspace.id
 ```
 
-3. Ask for the file in a chat turn, read the stream to the end, then list the Session's Artifacts. Pass `userId` so each Artifact records which of your users it belongs to.
+3. Ask for the file in a chat turn, read the stream to the end, then list the Session's Artifacts. Pass `userId` so each Artifact carries the Session's user ID, which you check before download.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
@@ -140,7 +140,7 @@ def write_report(client: BlazingAgents, agent_id: str, user_id: str) -> list[str
     return [artifact.artifact_id for artifact in page.data]
 ```
 
-4. Serve downloads from your backend. Check that the signed-in user owns the Artifact, then redirect to a fresh download URL.
+4. Serve downloads from your backend. Compare the Artifact's `userId` with the `userId` you send for the signed-in user on chat calls, then redirect to a fresh download URL.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";

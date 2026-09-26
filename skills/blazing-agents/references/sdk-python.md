@@ -111,7 +111,7 @@ async def start_chat(
     )
 ```
 
-To relay, pass the stream object itself as the body of your framework's streaming response. In FastAPI that is `StreamingResponse(stream, status_code=stream.status_code, media_type="text/event-stream", headers={"x-vercel-ai-ui-message-stream": "v1", "x-session-id": stream.session_id})`. The header name for the Session ID is your choice. The [FastAPI example](https://github.com/blazingagents/examples/tree/main/vite-fastapi-ai-sdk) shows the full endpoint.
+To relay, pass the stream object itself as the body of your framework's streaming response. In FastAPI that is `StreamingResponse(stream, media_type="text/event-stream", headers=headers)` with `headers = {"x-vercel-ai-ui-message-stream": "v1"}`. When the call started a new Session, also copy `stream.headers["location"]` into `headers["location"]`: `BlazingAgentsChatTransport` in your frontend reads the new Session ID from that header. The [FastAPI example](https://github.com/blazingagents/examples/tree/main/vite-fastapi-ai-sdk) shows the full endpoint.
 
 Outside a web request, iterate the chunks yourself:
 
@@ -211,7 +211,7 @@ Signatures below drop `extra_headers` and `timeout`, which every method accepts.
 
 | Method | Returns |
 | --- | --- |
-| `create(*, path="SKILL.md", content)` | `SkillDetail` |
+| `create(*, path, content)` | `SkillDetail` (`path` must be `"SKILL.md"`; `content` starts with YAML frontmatter that sets `name` and `description`) |
 | `upload(*, archive_type, file, filename=None)` | `SkillDetail` (`archive_type`: `"zip"`, `"tar"`, `"tar.gz"`) |
 | `list(*, cursor=..., limit=...)` | `SkillsPage` |
 | `iter(*, cursor=..., limit=...)` | `Iterator[Skill]` |
@@ -230,7 +230,7 @@ Signatures below drop `extra_headers` and `timeout`, which every method accepts.
 | `iter(*, agent_id, user_id=..., cursor=..., limit=...)` | `Iterator[Session]` |
 | `list_latest(*, user_id=..., cursor=..., limit=..., by_agent=None)` | `LatestSessionsPage` |
 | `messages(*, agent_id, session_id, cursor=..., after=..., limit=...)` | `SessionMessagesPage` |
-| `tool_approvals(*, agent_id, session_id)` | `ToolApprovals` (`.data`) |
+| `tool_approvals(*, agent_id, session_id)` | `ToolApprovals` (`.data`, `.continuation`) |
 | `decide_tool_approval(*, agent_id, session_id, approval_id, approved, reason=...)` | `ToolApprovalDecision` |
 | `join_tool_approval_continuation(*, agent_id, session_id, continuation_id)` | `ByteStream` (same SSE format as `chat()`) |
 | `delete(*, agent_id, session_id, delete_artifacts: bool)` | `None` |
@@ -254,7 +254,7 @@ Start and continue Sessions with `client.chat()`, not through this resource. `li
 | `run_messages(task_id, run_id, *, cursor=..., after=..., limit=...)` | `TaskRunMessagesPage` |
 | `cancel_run(task_id, run_id)` | `None` |
 
-`schedule` is `{"kind": "once", "config": {"at": "<ISO datetime with offset>"}}`, `{"kind": "interval", "config": {"every_ms": 60000}}` (at least 60000), or `{"kind": "cron", "config": {"expression": "0 9 * * 1", "timezone": "Pacific/Auckland"}}`. Pass `schedule=None` on update to remove it.
+`schedule` is `{"kind": "once", "config": {"at": "<ISO datetime with offset>"}}`, `{"kind": "interval", "config": {"every_ms": 60000}}` (at least 60000), or `{"kind": "cron", "config": {"expression": "0 9 * * 1", "timezone": "Pacific/Auckland"}}` (`timezone` and a non-negative `stagger_ms` are optional). Pass `schedule=None` on update to remove it.
 
 ### `client.workspaces`
 
@@ -326,7 +326,7 @@ Run a saved Prompt with `client.chat(prompt_id=..., variables={...})` or the oth
 | `list(*, agent_id=..., session_id=..., cursor=...)` | `ArtifactsPage` |
 | `iter(*, agent_id=..., session_id=..., cursor=...)` | `Iterator[Artifact]` |
 | `get(*, artifact_id)` | `Artifact` |
-| `create_download_url(*, artifact_id)` | `ArtifactDownloadUrl` (short-lived link) |
+| `create_download_url(*, artifact_id)` | `ArtifactDownloadUrl` (`url`, `expires_at`; the link works for five minutes without an API key) |
 | `delete(*, artifact_id)` | `None` |
 
 ### `client.chat_connections`

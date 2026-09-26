@@ -38,7 +38,7 @@ export async function triage(agentId: string, message: string) {
 }
 ```
 
-`z.toJSONSchema` ships with Zod 4. If you already use the AI SDK helpers, `await zodSchema(Triage).jsonSchema` from `ai` produces the same JSON Schema. A hand-written JSON Schema object works too.
+`z.toJSONSchema` ships with Zod 4. If you already use the AI SDK helpers, `await zodSchema(Triage).jsonSchema` from `ai` also produces a JSON Schema you can pass. A hand-written JSON Schema object works too.
 
 In Python, pass a Pydantic model as `output_type`. The SDK sends its JSON Schema and returns a validated instance. Pass `json_schema={...}` instead to get plain JSON back.
 
@@ -234,7 +234,7 @@ def triage_with_prompt(agent_id: str, prompt_id: str, plan: str, message: str) -
 - A schema rejected with `validation_failed` before anything runs. The schema needs a root `type` or `properties`. List `required` fields, use `enum` for fixed choices, and set `additionalProperties: false` on hand-written schemas.
 - Expecting the Agent to remember the last call. There is no Session. Put all needed context in the prompt, or use chat.
 - Asking the Agent to publish a file here. Stateless calls cannot publish Artifacts. Use a chat Session or a Task run for files.
-- Not handling bad final JSON. TypeScript rejects `result.object` with a `BlazingAgentsError` whose `code` is `stream_error`. Python raises `StreamError` (subclasses `ObjectJSONDecodeError`, `ObjectTruncationError`, `ObjectValidationError`). Retry or show an error.
+- Not handling bad final JSON. TypeScript rejects `result.object` with a `BlazingAgentsError` whose `code` is `stream_error`. Python raises a `StreamError` subclass: `ObjectJSONDecodeError`, `ObjectTruncationError`, or `ObjectValidationError`. Retry or show an error.
 - Passing the wrong Prompt variables. Every variable is required and extras are rejected (`prompt_variable_missing`, `prompt_variable_unknown`).
 - Calling `client.object()` from the browser. Your Tenant key must stay on the backend. The browser calls your endpoint, as `useObject` does above.
 - Calling `toResponse()` twice. The body can be claimed once per result.

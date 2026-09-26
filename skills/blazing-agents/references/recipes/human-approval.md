@@ -19,7 +19,7 @@ Each Agent has two approval policies: `approvalInChat` for chat and stateless ge
 
 ## Build it
 
-1. Set the policies. Builtin tools use `{ type: "builtin", name }` with an individual tool name such as `bash`, `write`, or `save_memory`. MCP tools use `{ type: "mcp", connectionId, name }` with the original tool name from an attached Connection. The Agent must actually have each tool you name.
+1. Set the policies. Built-in tools use `{ type: "builtin", name }` with an individual tool name such as `bash`, `write`, or `save_memory`. MCP tools use `{ type: "mcp", connectionId, name }` with the original tool name from an attached Connection. The Agent must actually have each tool you name.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
@@ -230,12 +230,11 @@ export async function sendDecision(input: {
 - Only interactive chat can wait for a person. In Tasks and stateless generation, `manual` calls and `auto` calls that escalate are blocked and the agent continues with what it may do. Use `approvalInTasks` with `full` or `deny`, not `manual`.
 - Sending a policy replaces it whole; leaving out `overrides` clears them. Leaving a policy out of the update keeps it. Read the Agent first if you only want to add one override.
 - An override must name a tool the Agent has, once per policy. Removing a tool group or detaching a Connection makes a policy that names its tools invalid, so update the policy in the same change.
-- MCP overrides use the original tool name, not the generated name you see in saved messages. For display, prefer the approval's `tool` field, which has the MCP `connectionId` and original `name`; `toolName` is the runtime name.
+- MCP overrides use the original tool name, not the generated name you see in saved messages. For display, prefer the approval's `tool` field, which has the MCP `connectionId` and original `name`; `toolName` is the generated name.
 - Send decisions through your backend with `decideToolApproval`. Answering only in the browser with AI SDK `addToolApprovalResponse` does not resume the agent.
-- Decide every pending call before expecting a stream. A `waiting` state is normal when a Turn proposed several calls.
 - While approvals are pending or a continuation runs, new chat messages and regeneration fail with `session_busy`. Disable the composer until the continuation ends.
 - A dropped stream does not stop the continuation. Join the same `continuationId` again; it replays from the start and never reruns the tool. `toolApprovals()` also returns the Session's current `continuation` with its `id` and `state`.
-- The same decision sent twice is safe. Reversing a decision returns `409`.
+- The same decision sent twice is safe. Reversing a decision returns `tool_approval_decision_conflict` (409).
 - Authenticate and authorize the reviewer on your backend, and keep the API key there. The decision cannot change the saved call's arguments.
 - `auto` review runs on the Agent's model and counts toward the Turn's usage.
 

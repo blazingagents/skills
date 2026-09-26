@@ -218,7 +218,7 @@ Cancel asks the run to stop at its next safe point. Keep polling until a final s
 - `tasks.create({ submit: true })` starts a run with no idempotency key, so a retry creates a second Task and run. Create the Task first, then call `createRun` with a key.
 - A run keeps the `userId`, `metadata`, and Version captured when it was queued. Editing the Task changes future runs only. `agentId` and `userId` cannot change; create a new Task instead.
 - A Task pinned with `agentVersion` keeps that Version's `approvalInTasks`. After you change the policy, update the pin to the new Version.
-- Designing a Task around `manual` approval does not work: the call is denied at once. Grant the tools it needs with `full` in `approvalInTasks`, or move the step to chat.
+- Designing a Task around `manual` approval does not work: the call is denied at once, and a run that still ends up waiting for a person fails. Grant the tools it needs with `full` in `approvalInTasks`, or move the step to chat.
 - Starting a run with a new key while another run is active returns `task_active_run_exists` (HTTP 409). Scheduled times that fall during an active run are skipped, and missed times are not caught up.
 - A run executes at most once. If it ends `failed` partway, tools may already have sent email or written files. Check for those effects before starting it again.
 - Your Tenant key reaches every Task. Check in your backend that the current user may read or run a Task before passing its ID.
