@@ -1,6 +1,6 @@
 ---
 name: blazing-agents
-description: Build and integrate applications with Blazing Agents Agents, Turns, runtime Skills, Tools, automation, Slack/Telegram connections, CLI, and SDK clients. Use for BA implementation work; use ba-admin instead for direct Tenant administration. Do not use for generic AI-agent work without BA context.
+description: Build and integrate applications with Blazing Agents Agents, Turns, runtime Skills, Tools, automation, Slack/Telegram connections, and SDK clients. Use for BA implementation work; use ba-admin instead for direct Tenant administration. Do not use for generic AI-agent work without BA context.
 metadata:
   author: Blazing Agents
   version: "0.1.0"
@@ -60,14 +60,6 @@ storage.
 - [Tasks](references/automation/tasks.md): define asynchronous Agent work and optional scheduling.
 - [Task runs](references/automation/task-runs.md): start, observe, cancel, and troubleshoot one Task execution.
 - [Schedules](references/automation/schedules.md): choose one-time, interval, or cron timing for a Task.
-
-## CLI
-
-- [Setup and authentication](references/cli/setup-and-authentication.md): install the current CLI and authenticate a trusted terminal.
-- [`ba chat`](references/cli/chat.md): start or resume an interactive terminal Session.
-- [`ba run`](references/cli/run.md): execute one script-friendly prompt.
-- [`ba assist`](references/cli/assist.md): work with the Tenant's Admin Agent.
-- [Scripting and CI](references/cli/scripting-and-ci.md): automate supported CLI workflows safely.
 
 ## SDK
 
