@@ -2,6 +2,10 @@
   "name": "@blazing-agents/skills",
   "private": true,
   "scripts": {
-    "check": "count=0; for skill in skills/*/; do test -d \"$skill\" || continue; uvx --from skills-ref==0.1.1 agentskills validate \"$skill\"; count=$((count + 1)); done; test \"$count\" -gt 0"
+    "check": "npm run check:skills && npm run check:terms && npm run check:links && npm run check:snippets",
+    "check:skills": "count=0; for skill in skills/*/; do test -d \"$skill\" || continue; uvx --from skills-ref==0.1.1 agentskills validate \"$skill\"; count=$((count + 1)); done; test \"$count\" -gt 0",
+    "check:terms": "node scripts/check-terms.mjs",
+    "check:links": "node scripts/check-links.mjs",
+    "check:snippets": "npm ci --prefix snippets --silent && node scripts/check-snippets.mjs"
   }
 }
