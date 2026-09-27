@@ -4,7 +4,7 @@ Use this page to write backend TypeScript that calls Blazing Agents: install the
 client, run chat, text, and structured output, call every resource method, page
 through lists, handle errors, and connect `useChat` to your own backend.
 
-The supported floor is `@blazingagents/sdk` 0.11.0.
+The supported floor is `@blazingagents/sdk` 0.12.0.
 
 For the same surface in Python, read [Python SDK reference](sdk-python.md). For
 end-to-end builds, start from a recipe such as

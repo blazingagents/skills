@@ -1,6 +1,6 @@
 # Python SDK reference
 
-Use this page to call Blazing Agents from a Python backend: install the package, pick a client, run Turns, and find the method for every operation. The supported floor is `blazing-agents` 0.8.0.
+Use this page to call Blazing Agents from a Python backend: install the package, pick a client, run Turns, and find the method for every operation. The supported floor is `blazing-agents` 0.9.0.
 
 For the same surface in TypeScript, read [TypeScript SDK reference](sdk-typescript.md). For end-to-end builds, start from a recipe such as [Add chat to your app](recipes/chat-in-your-app.md).
 
@@ -9,9 +9,9 @@ For the same surface in TypeScript, read [TypeScript SDK reference](sdk-typescri
 The PyPI package is `blazing-agents`. The import name is `blazing_agents`. It needs Python 3.11 or newer.
 
 ```bash
-pip install "blazing-agents>=0.8.0"
+pip install "blazing-agents>=0.9.0"
 # or
-uv add "blazing-agents>=0.8.0"
+uv add "blazing-agents>=0.9.0"
 ```
 
 Keep the Tenant API key in `BLAZING_AGENTS_API_KEY` on your backend. It can reach everything in your Tenant, so it never goes to a browser or mobile app.
