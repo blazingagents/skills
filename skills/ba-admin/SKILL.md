@@ -35,7 +35,7 @@ be trusted with that authority.
 Use public SDK methods backed by `/v1`. The Admin scope is Tenant settings;
 Agent, Workspace, Skill, Prompt, and Task management; Provider reads and model
 discovery; Task-run observation and cancellation; usage queries; Session reads
-and deletion; Artifact listings; and Chat Connection configuration and health. Keep Provider credential mutation, MCP
+and deletion; Artifact listings; and Chat Connection configuration, health, and delivery outcomes. Keep Provider credential mutation, MCP
 Connection management, Memory mutation, Artifact deletion/download, generation,
 Agent enable/disable or Version restoration, and API-key lifecycle outside this
 Skill.

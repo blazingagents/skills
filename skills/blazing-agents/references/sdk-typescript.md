@@ -4,7 +4,7 @@ Use this page to write backend TypeScript that calls Blazing Agents: install the
 client, run chat, text, and structured output, call every resource method, page
 through lists, handle errors, and connect `useChat` to your own backend.
 
-The supported floor is `@blazingagents/sdk` 0.11.0.
+The supported floor is `@blazingagents/sdk` 0.12.0.
 
 For the same surface in Python, read [Python SDK reference](sdk-python.md). For
 end-to-end builds, start from a recipe such as
@@ -342,6 +342,12 @@ means the result is `{ data, nextCursor }` (see [Pagination](#pagination)).
 | `enable({ chatConnectionId })` | `POST /v1/chat-connections/{chatConnectionId}/enable` | `ChatConnection` |
 | `disable({ chatConnectionId })` | `POST /v1/chat-connections/{chatConnectionId}/disable` | `ChatConnection` |
 | `delete({ chatConnectionId })` | `DELETE /v1/chat-connections/{chatConnectionId}` | `void` |
+
+### `client.chatDeliveries`
+
+| Method | HTTP | Returns / notes |
+| --- | --- | --- |
+| `list({ status?, since?, cursor?, limit? })` | `GET /v1/chat-deliveries` | Page of `TenantChatDelivery`. Failed and ambiguous deliveries across every connection, newest first (an attention feed, not full history). `status` narrows to `failed` or `ambiguous` (default both); pending/confirmed are rejected, use the per-connection deliveries list for those. `since` is an inclusive ISO 8601 lower bound. |
 
 ### `client.agent({ agentId }).skills`
 

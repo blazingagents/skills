@@ -14,7 +14,9 @@ report only IDs, enabled state, and safe health results.
 
 The resource provides list, get, create, update, credential rotation, health checks,
 enable, disable, and delete. Update accepts only the name and callback URL;
-changing the Agent or bot requires a new connection.
+changing the Agent or bot requires a new connection. The `chatDeliveries`
+resource (Python `chat_deliveries`) is an attention feed: failed and
+ambiguous replies and approval cards across every connection.
 
 - Create: resolve the Agent, verify the intended bot/installation, create once with intake disabled,
   update the saved callback URL using the returned ID, register that URL in the
@@ -22,6 +24,9 @@ changing the Agent or bot requires a new connection.
   Platform registration is separate from BA connection creation.
 - Inspect: list/get connections, then run health if fresh evidence is needed.
   `unknown` requires manual verification; token validity does not prove delivery.
+- Inspect deliveries: read-only. List the tenant-wide feed, which returns
+  only failed and ambiguous deliveries, optionally bounded by `since`;
+  report IDs, connection, status, and diagnostic. Do not repair.
 - Rotate: replace the complete credentials for the same installation. Preserve
   Sessions; update Telegram's registered secret when changing it.
 - Disable/delete: explain that disable stops new intake while admitted work may

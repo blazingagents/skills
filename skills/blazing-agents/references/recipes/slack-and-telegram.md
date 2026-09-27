@@ -186,6 +186,10 @@ def remove(client: BlazingAgents, chat_connection_id: str) -> None:
 - If the Agent has a Tool that requires approval, trigger it and click the card. The Turn continues.
 - After `disable()`, a new message gets no reply. After `enable()`, the next message does.
 
+## Watch for failed deliveries
+
+`chatDeliveries.list()` (Python `chat_deliveries.list()`) is an attention feed: it lists failed and ambiguous deliveries across every connection, newest first, optionally bounded by `since`. Use it for an operator status view; each entry carries `connectionId`, `agentId`, and `platform` so you can tell which bot is affected. For everything else, list one connection's deliveries.
+
 ## Go deeper
 
 - [Slack and Telegram](https://docs.blazingagents.com/platform/chat-integrations)
