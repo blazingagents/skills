@@ -343,6 +343,12 @@ means the result is `{ data, nextCursor }` (see [Pagination](#pagination)).
 | `disable({ chatConnectionId })` | `POST /v1/chat-connections/{chatConnectionId}/disable` | `ChatConnection` |
 | `delete({ chatConnectionId })` | `DELETE /v1/chat-connections/{chatConnectionId}` | `void` |
 
+### `client.chatDeliveries`
+
+| Method | HTTP | Returns / notes |
+| --- | --- | --- |
+| `list({ status?, since?, cursor?, limit? })` | `GET /v1/chat-deliveries` | Page of `TenantChatDelivery` across every connection, newest first. `status` is an array sent as one comma-separated param; `since` is an inclusive ISO 8601 lower bound. |
+
 ### `client.agent({ agentId }).skills`
 
 | Method | HTTP | Returns / notes |

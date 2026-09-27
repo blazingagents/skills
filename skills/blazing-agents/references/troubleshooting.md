@@ -242,7 +242,7 @@ For every check that is `fail` or `unknown`, verify that setting by hand on the 
 - `channel_membership`: the bot is in the listed channel or chat. `channelIds` and `chatIds` choose where checks look; they do not restrict where the bot answers.
 - `bot_identity`: the bot identity read from the token matches the connection. On failure, check that the token is current and for the same bot. Rotate with the full credential set for Slack, or only the new bot token for Telegram.
 - Also confirm that both the connection and its Agent are enabled, your subscription is active, and, for Slack, that both the Event Subscriptions and Interactivity request URLs point at `webhookUrl`.
-- If the agent finished but no reply appeared, list the connection's deliveries. `confirmed` means the platform accepted the reply, `failed` means it did not, and `ambiguous` means it may have been sent. Repairing a delivery posts the saved reply without running the agent again, and it can post a duplicate.
+- If the agent finished but no reply appeared, list the connection's deliveries. `confirmed` means the platform accepted the reply, `failed` means it did not, and `ambiguous` means it may have been sent. Repairing a delivery posts the saved reply without running the agent again, and it can post a duplicate. `chatDeliveries.list()` (Python `chat_deliveries.list()`) with `status` `["failed", "ambiguous"]` and a `since` shows problems across all connections at once.
 
 See [Slack and Telegram](recipes/slack-and-telegram.md) for setup.
 

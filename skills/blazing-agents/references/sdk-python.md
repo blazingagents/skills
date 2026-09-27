@@ -344,6 +344,15 @@ Run a saved Prompt with `client.chat(prompt_id=..., variables={...})` or the oth
 
 `platform` is `"slack"` or `"telegram"`. See [Put your agent in Slack or Telegram](recipes/slack-and-telegram.md).
 
+### `client.chat_deliveries`
+
+| Method | Returns |
+| --- | --- |
+| `list(*, status=..., since=..., cursor=..., limit=...)` | `ChatDeliveriesPage` |
+| `iter(*, status=..., since=..., cursor=..., limit=...)` | `Iterator[TenantChatDelivery]` |
+
+Lists deliveries across every connection, newest first. `status` takes a list such as `["failed", "ambiguous"]`, sent as one comma-separated parameter; `since` is an inclusive ISO 8601 lower bound.
+
 ### `client.usage` and `client.tenant`
 
 | Method | Returns |
