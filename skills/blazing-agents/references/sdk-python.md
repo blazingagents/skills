@@ -351,7 +351,7 @@ Run a saved Prompt with `client.chat(prompt_id=..., variables={...})` or the oth
 | `list(*, status=..., since=..., cursor=..., limit=...)` | `ChatDeliveriesPage` |
 | `iter(*, status=..., since=..., cursor=..., limit=...)` | `Iterator[TenantChatDelivery]` |
 
-Lists deliveries across every connection, newest first. `status` takes a list such as `["failed", "ambiguous"]`, sent as one comma-separated parameter; `since` is an inclusive ISO 8601 lower bound.
+Failed and ambiguous deliveries across every connection, newest first (an attention feed, not full history). `status` narrows to `failed` or `ambiguous` (default both); pending/confirmed are rejected, use the per-connection deliveries list for those.
 
 ### `client.usage` and `client.tenant`
 

@@ -186,9 +186,9 @@ def remove(client: BlazingAgents, chat_connection_id: str) -> None:
 - If the Agent has a Tool that requires approval, trigger it and click the card. The Turn continues.
 - After `disable()`, a new message gets no reply. After `enable()`, the next message does.
 
-## Watch delivery outcomes
+## Watch for failed deliveries
 
-A delivery is one reply or approval card a connection tried to post, with `status` `pending`, `confirmed`, `failed`, or `ambiguous`. To watch every connection at once, for example in an operator status view, call `chatDeliveries.list()` (Python `chat_deliveries.list()`) with `status` `["failed", "ambiguous"]` and a `since`; each entry carries `connectionId`, `agentId`, and `platform` so you can tell which bot is affected. For one bot, list that connection's deliveries instead.
+`chatDeliveries.list()` (Python `chat_deliveries.list()`) is an attention feed: it lists failed and ambiguous deliveries across every connection, newest first, optionally bounded by `since`. Use it for an operator status view; each entry carries `connectionId`, `agentId`, and `platform` so you can tell which bot is affected. For everything else, list one connection's deliveries.
 
 ## Go deeper
 

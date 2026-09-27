@@ -347,7 +347,7 @@ means the result is `{ data, nextCursor }` (see [Pagination](#pagination)).
 
 | Method | HTTP | Returns / notes |
 | --- | --- | --- |
-| `list({ status?, since?, cursor?, limit? })` | `GET /v1/chat-deliveries` | Page of `TenantChatDelivery` across every connection, newest first. `status` is an array sent as one comma-separated param; `since` is an inclusive ISO 8601 lower bound. |
+| `list({ status?, since?, cursor?, limit? })` | `GET /v1/chat-deliveries` | Page of `TenantChatDelivery`. Failed and ambiguous deliveries across every connection, newest first (an attention feed, not full history). `status` narrows to `failed` or `ambiguous` (default both); pending/confirmed are rejected, use the per-connection deliveries list for those. `since` is an inclusive ISO 8601 lower bound. |
 
 ### `client.agent({ agentId }).skills`
 
