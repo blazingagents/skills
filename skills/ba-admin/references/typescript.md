@@ -5,6 +5,10 @@ Otherwise create an isolated temporary Node project and install the current SDK
 and its `ai@^7` peer dependency there. Do not add dependencies to the user's
 application solely for an administrative call.
 
+Agent and Prompt pagination and keyed Task creation require the updated SDK and
+server. The 0.15 TypeScript SDK candidate is not yet published; inspect the
+installed declarations before using those operations.
+
 Skill file operations (`getFile`, `putFile`, and `deleteFile`) require SDK
 version 0.9.3 or later.
 
@@ -64,31 +68,47 @@ Resource method names are invoked on the object shown in the first column's
 read example. For example:
 
 ```js
-await client.agents.update(agentId, changes);
+await client.agents.update({ agentId, ...changes });
 await client.workspaces.update({ workspaceId, ...changes });
-await client.agent(agentId).skills.putFile({ skillId, path, content });
-await client.tasks.createRun(taskId, { idempotencyKey });
+await client.agent({ agentId }).skills.putFile({ skillId, path, content });
+await client.tasks.createRun({ taskId, idempotencyKey });
 ```
 
-Follow cursors until the requested match is found or `nextCursor` is null.
-Agent names are not unique selectors. Prompt, Provider, Workspace, Skill, and
-Task name searches must also reject ambiguity even where the product enforces
-uniqueness today.
+Follow `nextCursor` through every page before deciding how many exact name
+matches exist. Agent and Prompt names can repeat. Provider, Workspace, Skill,
+and Task name searches must also reject ambiguity even where the product
+enforces uniqueness today.
+
+```js
+const matches = [];
+let cursor;
+do {
+  const page = await client.agents.list({ cursor, limit: 100 });
+  matches.push(...page.data.filter((agent) => agent.name === requestedName));
+  cursor = page.nextCursor ?? undefined;
+} while (cursor !== undefined);
+if (matches.length !== 1) {
+  throw new Error(`Expected one Agent named ${requestedName}; found ${matches.length}`);
+}
+const agentId = matches[0].id;
+```
 
 ## Mutation invariants
 
 - Agent `providerId` and `model` are set or cleared together.
-- `client.agents.delete(agentId, includeArtifacts)` requires an explicit
+- `client.agents.delete({ agentId, includeArtifacts })` requires an explicit
   Artifact choice. Preserve Artifacts when the user explicitly chooses
   preservation; never infer deletion.
-- `client.sessions.delete(agentId, sessionId, deleteArtifacts)` has the same
+- `client.sessions.delete({ agentId, sessionId, deleteArtifacts })` has the same
   explicit Artifact-choice requirement.
 - Workspace deletion may return `"pending"`; report it as accepted cleanup,
   not completed deletion.
 - Skill uploads accept zip or tar archives through the SDK's current typed
   input. Use binary values, not credentials or shell interpolation.
-- A Task-run idempotency key is caller-owned. Reuse it only for reconciliation
-  of the same logical run request.
+- For `client.tasks.create({ agentId, name, prompt, submit: true,
+  idempotencyKey })`, create a stable key for that logical Task and initial run.
+  Retry the identical create with the same key after an ambiguous response.
+  Use a separate key for a later `createRun` request.
 - The platform-managed Admin Agent cannot be updated or deleted.
 
 For create and update bodies, import the relevant exported TypeScript type or

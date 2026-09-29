@@ -36,7 +36,9 @@ npm install @blazingagents/sdk ai
 pip install blazing-agents
 ```
 
-2. Check the connection. This lists the Agents in your Tenant and changes nothing. A new Tenant already has 1 Agent, its admin Agent.
+Confirm the installed SDK supports paginated Agent lists as described in [the TypeScript reference](sdk-typescript.md) or [Python reference](sdk-python.md).
+
+2. Check the connection. This lists the first page of Agents in your Tenant and changes nothing. A new Tenant already has 1 Agent, its admin Agent.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
@@ -45,19 +47,19 @@ const apiKey = process.env.BLAZING_AGENTS_API_KEY;
 if (!apiKey) throw new Error("Set BLAZING_AGENTS_API_KEY");
 
 const client = new BlazingAgents({ apiKey });
-const { agents } = await client.agents.list();
-console.log(`Connected. Your tenant has ${agents.length} agents.`);
+const page = await client.agents.list();
+console.log(`Connected. First page has ${page.data.length} agents.`);
 ```
 
 ```python
 from blazing_agents import BlazingAgents
 
 client = BlazingAgents()  # reads BLAZING_AGENTS_API_KEY
-agents = client.agents.list().agents
-print(f"Connected. Your tenant has {len(agents)} agents.")
+page = client.agents.list()
+print(f"Connected. First page has {len(page.data)} agents.")
 ```
 
-3. Create the Provider and Agent, then stream a first reply. The program looks both up by name, so it is safe to run again.
+3. Create the Provider and Agent, then stream a first reply. The program checks every Agent page and rejects duplicate name matches. Run setup once at a time and save the resulting IDs; concurrent setup or a lost create response still requires reconciliation.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
@@ -82,9 +84,16 @@ const provider =
   }));
 
 const agentName = "Quickstart agent";
-const { agents } = await client.agents.list();
+const matches = [];
+let cursor: string | undefined;
+do {
+  const page = await client.agents.list({ cursor, limit: 100 });
+  matches.push(...page.data.filter(({ name }) => name === agentName));
+  cursor = page.nextCursor ?? undefined;
+} while (cursor);
+if (matches.length > 1) throw new Error("Multiple Agents match. Choose an ID.");
 const agent =
-  agents.find(({ name }) => name === agentName) ??
+  matches[0] ??
   (await client.agents.create({
     name: agentName,
     providerId: provider.id,
@@ -128,8 +137,14 @@ provider = next(
 )
 
 agent_name = "Quickstart agent"
-agents = client.agents.list().agents
-agent = next((a for a in agents if a.name == agent_name), None) or client.agents.create(
+page = client.agents.list(limit=100)
+matches = [a for a in page.data if a.name == agent_name]
+while page.next_cursor is not None:
+    page = client.agents.list(limit=100, cursor=page.next_cursor)
+    matches.extend(a for a in page.data if a.name == agent_name)
+if len(matches) > 1:
+    raise ValueError("Multiple Agents match. Choose an ID.")
+agent = matches[0] if matches else client.agents.create(
     name=agent_name,
     provider_id=provider.id,
     model="openai/gpt-6-luna",
@@ -147,7 +162,7 @@ with client.chat(agent_id=agent.id, message=message) as stream:
     # Raw AI SDK UI message stream: relay it, store it, or render it as you like.
 ```
 
-4. Hand off to your app. In a web backend, return `result.toResponse()` (TypeScript) or the stream in a streaming response (Python) instead of printing it, and save the Session ID so the next message continues the conversation. [Add chat to your app](recipes/chat-in-your-app.md) walks through the endpoint, sign-in, Session ownership, and the `useChat` UI.
+4. Hand off to your app. In a web backend, return `result.toResponse()` (TypeScript) or the stream in a streaming response (Python) instead of printing it, and save the Session ID so the next message continues the conversation. [Add chat to your app](recipes/chat-in-your-app.md) walks through the endpoint, sign-in, user scope, and the `useChat` UI.
 
 ## Gotchas
 

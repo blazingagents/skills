@@ -1,6 +1,6 @@
 # Python SDK reference
 
-Use this page to call Blazing Agents from a Python backend: install the package, pick a client, run Turns, and find the method for every operation. The supported floor is `blazing-agents` 0.9.0.
+Use this page to call Blazing Agents from a Python backend: install the package, pick a client, run Turns, and find the method for every operation. The paginated Agent and Prompt lists require the updated Python SDK and server; check the installed package before using them. The install command below uses the published 0.9.0 floor.
 
 For the same surface in TypeScript, read [TypeScript SDK reference](sdk-typescript.md). For end-to-end builds, start from a recipe such as [Add chat to your app](recipes/chat-in-your-app.md).
 
@@ -191,7 +191,7 @@ Signatures below drop `extra_headers` and `timeout`, which every method accepts.
 | Method | Returns |
 | --- | --- |
 | `create(*, name, provider_id=..., model=..., workspace_id=..., thinking_level=..., tools=..., instructions=..., memory_injection_enabled=..., auto_compaction=..., compaction_reserve_tokens=..., approval_in_chat=..., approval_in_tasks=..., user_id=..., metadata=..., mcp_connection_ids=...)` | `Agent` |
-| `list(*, user_id=..., workspace_id=...)` | `Agents` (`.agents`, not paginated) |
+| `list(*, cursor=..., limit=..., user_id=..., workspace_id=...)` | `AgentsPage` (`.data`, `.next_cursor`) |
 | `get(agent_id)` | `Agent` |
 | `update(agent_id, *, <create fields except user_id>)` | `Agent` (new version) |
 | `delete(agent_id, *, include_artifacts: bool)` | `None` |
@@ -312,7 +312,7 @@ Start and continue Sessions with `client.chat()`, not through this resource. `li
 | Method | Returns |
 | --- | --- |
 | `create(*, name, template, agent_id=..., user_id=..., metadata=...)` | `Prompt` |
-| `list(*, agent_id=..., user_id=...)` | `Prompts` (`.prompts`, not paginated) |
+| `list(*, cursor=..., limit=..., agent_id=..., user_id=...)` | `PromptsPage` (`.data`, `.next_cursor`) |
 | `get(*, prompt_id)` | `Prompt` |
 | `update(*, prompt_id, agent_id=..., name=..., template=..., metadata=...)` | `Prompt` |
 | `delete(*, prompt_id)` | `None` |
@@ -418,7 +418,15 @@ async def print_memories(client: AsyncBlazingAgents, user_id: str) -> None:
         print(memory.id, memory.text)
 ```
 
-`agents.list()`, `providers.list()`, `prompts.list()`, `mcp_connections.list()`, and `chat_connections.list()` return every item in one response. `sessions.messages()` and `tasks.run_messages()` also return `latest_cursor`; pass it as `after` later to fetch only newer messages. Do not pass `cursor` and `after` together.
+`agents.list()` and `prompts.list()` return one page. Follow `next_cursor` before deciding whether a name has zero, one, or multiple exact matches. `providers.list()`, `mcp_connections.list()`, and `chat_connections.list()` return every item in one response. `sessions.messages()` and `tasks.run_messages()` also return `latest_cursor`; pass it as `after` later to fetch only newer messages. Do not pass `cursor` and `after` together.
+
+`sessions.messages().data` contains Pydantic `SessionMessage` objects with
+AI SDK message fields (`id`, `role`, `parts`, `metadata`).
+
+For server-enforced end-user scope, pass `extra_headers={"X-BA-User-Id": verified_user_id}` on each supported call. A `user_id` argument alone is Attribution. The Python client
+does not expose the TypeScript SDK's `forUser()` or `usage.sessions()` methods,
+or a create-time Task `idempotency_key`. `tasks.submit()` accepts an
+`idempotency_key` for a run of an existing Task.
 
 ## Errors
 

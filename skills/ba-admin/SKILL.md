@@ -3,7 +3,7 @@ name: ba-admin
 description: Administer a Blazing Agents tenant from a coding agent using the public TypeScript SDK. Use for BA Tenant settings, Agents, Provider discovery, Workspaces, runtime Skills, Prompts, Tasks and runs, usage, Sessions, Chat Connections, or Artifact listings. Do not use for building a BA integration or managing API keys.
 metadata:
   author: Blazing Agents
-  version: "0.1.0"
+  version: "0.2.0"
 ---
 
 # BA Admin
@@ -20,15 +20,17 @@ be trusted with that authority.
    for setup and lifecycle. Read [the TypeScript execution reference](references/typescript.md). Inspect
    the installed SDK's exported types for the exact current input contract of
    the requested operation; the SDK is the source of truth.
-3. Resolve names to IDs with a read call. Continue only with one exact match;
-   report zero or multiple matches instead of guessing.
+3. Resolve names to IDs by reading every list page. Continue only with one
+   exact match across all pages; report zero or multiple matches instead of
+   guessing. Agent and Prompt names may repeat.
 4. Before an update, deletion, Skill file replacement, or Skill file deletion,
    state the exact resource and effect. Continue when the user's latest request
    already explicitly authorizes that exact mutation; otherwise ask once.
    Agent and Session deletion also require an explicit Artifact disposition.
 5. Execute the smallest SDK program that performs the requested operation.
-   Send each mutation once. After an ambiguous network result, read the resource
-   to reconcile state instead of repeating the mutation.
+   Give Task creation a stable `idempotencyKey` when it submits a run. After an
+   ambiguous network result, retry that exact Task creation with the same key;
+   reconcile other mutations by reading the resource before another write.
 6. Verify mutations with a read call when the resource still exists. Report the
    affected IDs and outcome without credential values or secret-bearing input.
 

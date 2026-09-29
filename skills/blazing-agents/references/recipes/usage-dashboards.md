@@ -317,6 +317,28 @@ export async function releaseAfterLinking(eventId: string) {
 
 `productIds` requires an active subscription to one of those products; `meterId` (a Polar meter or a Dodo credit entitlement) requires a balance above zero; set both to require both. Each event has a suggested `nextAction` such as `retry`, `bind_and_release`, or `discard`.
 
+## Exact usage for a Session list
+
+Use TypeScript `usage.sessions()` when the UI already has Session IDs. `usage.get({ groupBy: "session" })` returns a ranked, limited set, so an omitted Session is not evidence of zero usage.
+
+```ts
+import { BlazingAgents } from "@blazingagents/sdk";
+
+declare const tenant: BlazingAgents;
+declare const verifiedUserId: string;
+declare const sessionIds: string[];
+
+const client = tenant.forUser(verifiedUserId);
+if (sessionIds.length > 0) {
+  const usage = await client.usage.sessions({ sessionIds });
+  for (const { sessionId, totals } of usage.data) {
+    console.log(sessionId, totals.inputTokens + totals.outputTokens);
+  }
+}
+```
+
+Send 1 to 100 distinct IDs per request. The response preserves their order and returns zero totals for visible Sessions with no usage in the requested period. A missing or inaccessible Session makes the whole request fail with 404. Both dates are optional together; without them the range is the last 30 days. Python has no matching batch helper yet.
+
 ## Gotchas
 
 - In `usage.overview()`, `byAgent`, `byUser`, and the top models are capped at `limit` (1 to 20, default 5). Read totals from `totals` and the Agent count from `activeAgentCount`, not from a ranking. Render the model remainder bucket as "Other models" instead of dropping it, or `byModel` no longer adds up to `totals`.

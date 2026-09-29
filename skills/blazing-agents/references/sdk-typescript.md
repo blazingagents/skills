@@ -4,7 +4,9 @@ Use this page to write backend TypeScript that calls Blazing Agents: install the
 client, run chat, text, and structured output, call every resource method, page
 through lists, handle errors, and connect `useChat` to your own backend.
 
-The supported floor is `@blazingagents/sdk` 0.12.0.
+The examples for user scope, paginated Agents and Prompts, and session usage
+require the updated TypeScript SDK and server. The 0.15 SDK candidate is not yet
+published; check the installed package's types before using these APIs.
 
 For the same surface in Python, read [Python SDK reference](sdk-python.md). For
 end-to-end builds, start from a recipe such as
@@ -65,6 +67,32 @@ Per-call options:
 - `chat`, `completion`, and `object` also accept `clientRequestId` per call.
 - `client.withOptions({ clientRequestId })` returns a client view that tags every
   call with that ID. Use it to tie one inbound request to all its BA calls.
+
+### End-user scope
+
+After authenticating a user in your backend, call `client.forUser(userId)` to
+bind their ID to requests. The server checks ownership and attributes new
+resources and Turns to that user. Pass only a trusted ID; the scoped client
+sends it as `X-BA-User-Id`. It exposes user operations, including generation,
+Agents, Prompts, Sessions, Tasks, and `usage.get` / `usage.sessions`; Tenant
+administration and Tenant-wide usage methods stay on the root client. Its
+`withOptions` view keeps the user scope.
+
+```ts
+import type { BlazingAgents } from "@blazingagents/sdk";
+
+declare const client: BlazingAgents;
+declare const authenticatedUser: { id: string };
+declare const sessionId: string;
+
+const user = client.forUser(authenticatedUser.id);
+const page = await user.agents.list({ limit: 50 });
+const usage = await user.usage.sessions({ sessionIds: [sessionId] });
+```
+
+`userId` must be printable ASCII, at most 256 characters, with no leading or
+trailing spaces. Authenticate before creating the scoped view; the Tenant API
+key remains on the backend.
 
 ## Generate output
 
@@ -218,13 +246,14 @@ means the result is `{ data, nextCursor }` (see [Pagination](#pagination)).
 | `object(input)` | `POST /v1/agents/{agentId}/generation` | `ObjectResult` |
 | `agent({ agentId })` | none | `{ skills }` |
 | `withOptions({ clientRequestId })` | none | `BlazingAgents` |
+| `forUser(userId)` | none | `UserClient` for one authenticated user. |
 
 ### `client.agents`
 
 | Method | HTTP | Returns / notes |
 | --- | --- | --- |
 | `create(body)` | `POST /v1/agents` | `Agent`. Omit `workspaceId` to get a default Workspace. |
-| `list({ userId?, workspaceId? })` | `GET /v1/agents` | `{ agents }`. Not paginated. |
+| `list({ userId?, workspaceId?, cursor?, limit? })` | `GET /v1/agents` | Page of Agents (`{ data, nextCursor }`). |
 | `get({ agentId })` | `GET /v1/agents/{agentId}` | `Agent` |
 | `update({ agentId, ...body })` | `PUT /v1/agents/{agentId}` | `Agent` |
 | `delete({ agentId, includeArtifacts })` | `DELETE /v1/agents/{agentId}` | `void`. `includeArtifacts` is required. The Workspace is kept. |
@@ -255,7 +284,7 @@ means the result is `{ data, nextCursor }` (see [Pagination](#pagination)).
 | Method | HTTP | Returns / notes |
 | --- | --- | --- |
 | `create(body)` | `POST /v1/prompts` | `PromptResponse` |
-| `list({ userId?, agentId? })` | `GET /v1/prompts` | `{ prompts }`. Not paginated. |
+| `list({ userId?, agentId?, cursor?, limit? })` | `GET /v1/prompts` | Page of Prompts (`{ data, nextCursor }`). |
 | `get({ promptId })` | `GET /v1/prompts/{promptId}` | `PromptResponse` |
 | `update({ promptId, ...body })` | `PATCH /v1/prompts/{promptId}` | `PromptResponse` |
 | `delete({ promptId })` | `DELETE /v1/prompts/{promptId}` | `void` |
@@ -276,7 +305,7 @@ means the result is `{ data, nextCursor }` (see [Pagination](#pagination)).
 
 | Method | HTTP | Returns / notes |
 | --- | --- | --- |
-| `create(body)` | `POST /v1/tasks` | `{ task, runId }`. `runId` is set when the body has `submit: true`. |
+| `create(body)` | `POST /v1/tasks` | `{ task, runId }`. `runId` is set for `submit: true`; pass `idempotencyKey` on create to retry the same Task and initial run safely. |
 | `list({ agentId?, userId?, cursor?, limit? })` | `GET /v1/tasks` | Page of Tasks |
 | `get({ taskId })` | `GET /v1/tasks/{taskId}` | `TaskResponse` |
 | `update({ taskId, ...body })` | `PATCH /v1/tasks/{taskId}` | `TaskResponse` |
@@ -377,6 +406,7 @@ means the result is `{ data, nextCursor }` (see [Pagination](#pagination)).
 | `get({ from?, to?, agentId?, sessionId?, userId?, groupBy?, limit? })` | `GET /v1/usage` | `UsageResponse`. `groupBy` is `day` (default), `agent`, `model`, `session`, or `user`. Dates are `YYYY-MM-DD`. |
 | `getForAgent({ agentId, ...query })` | `GET /v1/agents/{agentId}/usage` | `UsageResponse` |
 | `overview({ from?, to?, limit? })` | `GET /v1/usage/overview` | `UsageOverviewResponse`: totals, daily usage, and top Agents, users, and models. |
+| `sessions({ sessionIds, from?, to? })` | `POST /v1/usage/sessions` | `{ data: { sessionId, totals }[] }`. Supply 1 to 100 distinct Session IDs; dates are `YYYY-MM-DD`. |
 
 ### Merchant billing
 
@@ -404,8 +434,8 @@ Paginated lists return `{ data, nextCursor }`. `nextCursor` is an opaque string,
 or `null` on the last page. Pass it back as `cursor` with the same filters. The
 SDK does not auto-paginate.
 
-Lists that return a named array (`agents`, `providers`, `prompts`,
-`mcpConnections`, `chatConnections`) are not paginated.
+Provider, MCP Connection, and Chat Connection lists return named arrays and are
+not paginated. Agent and Prompt lists use `{ data, nextCursor }` too.
 
 ```ts
 import type { BlazingAgents } from "@blazingagents/sdk";
@@ -436,6 +466,8 @@ Transcripts (`sessions.messages`, `tasks.runMessages`) return the newest page
 first, with messages in chronological order inside each page, and also carry
 `latestCursor`. To watch a transcript grow, pass
 `latestCursor` back as `after` on the next poll.
+`sessions.messages().data` already contains AI SDK `UIMessage` values; use
+these as `useChat` initial messages without an extra conversion method.
 
 ## Handle errors
 
@@ -599,8 +631,8 @@ onSessionId? })` drives `useChat` through `client.chat()` without a relay.
 - `object` results are `unknown`. Validate before use.
 - The chat transport does not resume an interrupted stream; `reconnectToStream`
   returns `null`. Resend the message instead.
-- Reading `nextCursor` from a named-array list does not work; those lists are
-  not paginated.
+- Agent and Prompt names can repeat. Read every page before resolving a name
+  to an ID; reject multiple exact matches.
 
 ## Go deeper
 

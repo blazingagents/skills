@@ -140,6 +140,8 @@ def write_report(client: BlazingAgents, agent_id: str, user_id: str) -> list[str
     return [artifact.artifact_id for artifact in page.data]
 ```
 
+This recipe uses a Tenant-owned Agent with explicit end-user Attribution. For user-owned Agents, scope Agent creation, chat, and downloads consistently as shown in [multi-user apps](multi-user-apps.md). A scoped download cannot read an Artifact produced by a Tenant-owned Agent.
+
 4. Serve downloads from your backend. Compare the Artifact's `userId` with the `userId` you send for the signed-in user on chat calls, then redirect to a fresh download URL.
 
 ```ts

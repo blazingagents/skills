@@ -235,7 +235,7 @@ export async function sendDecision(input: {
 - While approvals are pending or a continuation runs, new chat messages and regeneration fail with `session_busy`. Disable the composer until the continuation ends.
 - A dropped stream does not stop the continuation. Join the same `continuationId` again; it replays from the start and never reruns the tool. `toolApprovals()` also returns the Session's current `continuation` with its `id` and `state`.
 - The same decision sent twice is safe. Reversing a decision returns `tool_approval_decision_conflict` (409).
-- Authenticate and authorize the reviewer on your backend, and keep the API key there. The decision cannot change the saved call's arguments.
+- Authenticate the reviewer and use the verified user scope from [multi-user apps](multi-user-apps.md) for approval reads, decisions, and continuation. Keep additional reviewer roles in your backend. The decision cannot change the saved call's arguments.
 - `auto` review runs on the Agent's model and counts toward the Turn's usage.
 
 ## Check it works
