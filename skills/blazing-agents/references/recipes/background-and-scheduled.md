@@ -122,6 +122,28 @@ def start_weekly_report(client: BlazingAgents, task_id: str, week: str) -> str |
 
 Save the `tr_...` run ID with the Task ID, then return from your request.
 
+For a new Task that should run immediately, TypeScript can create both in one retry-safe request:
+
+```ts
+import { BlazingAgents } from "@blazingagents/sdk";
+
+declare const client: BlazingAgents;
+declare const verifiedUserId: string;
+declare const agentId: string;
+declare const reportDate: string;
+
+const { task, runId } = await client.forUser(verifiedUserId).tasks.create({
+  agentId,
+  name: "Daily report",
+  prompt: `Summarize activity for ${reportDate}.`,
+  submit: true,
+  idempotencyKey: `daily-report:${reportDate}`,
+});
+console.log(task.id, runId);
+```
+
+Keep the key and input stable across retries. Agent and Prompt names are display labels and can repeat; persist resource IDs.
+
 4. Check the run later. `runMessages` returns the status and the latest transcript page in one call.
 
 ```ts
@@ -199,6 +221,8 @@ declare const runId: string;
 await client.tasks.cancelRun({ taskId, runId });
 await client.tasks.update({ taskId, enabled: false });
 await client.tasks.update({ taskId, schedule: null });
+const task = await client.tasks.get({ taskId });
+console.log(task.nextFireAt);
 ```
 
 ```python
@@ -211,20 +235,23 @@ def stop(client: BlazingAgents, task_id: str, run_id: str) -> None:
     client.tasks.update(task_id, schedule=None)
 ```
 
+Leaving `schedule` out of an update preserves it. Passing `null` removes it. Display BA's `nextFireAt` rather than calculating the next time in your app.
+
 Cancel asks the run to stop at its next safe point. Keep polling until a final status; the run may still end as `succeeded`.
 
 ## Gotchas
 
-- `tasks.create({ submit: true })` starts a run with no idempotency key, so a retry creates a second Task and run. Create the Task first, then call `createRun` with a key.
+- In TypeScript, pass `idempotencyKey` to `tasks.create()`, including when `submit: true`. The same key and original input return the same Task and initial run. Changed input or a deleted Task returns `idempotency_conflict` (409). Without a key, a retry creates another Task. Python currently supports keys on `submit()` only; reconcile Task creation before retrying it.
 - A run keeps the `userId`, `metadata`, and Version captured when it was queued. Editing the Task changes future runs only. `agentId` and `userId` cannot change; create a new Task instead.
 - A Task pinned with `agentVersion` keeps that Version's `approvalInTasks`. After you change the policy, update the pin to the new Version.
 - Designing a Task around `manual` approval does not work: the call is denied at once, and a run that still ends up waiting for a person fails. Grant the tools it needs with `full` in `approvalInTasks`, or move the step to chat.
 - Starting a run with a new key while another run is active returns `task_active_run_exists` (HTTP 409). Scheduled times that fall during an active run are skipped, and missed times are not caught up.
 - A run executes at most once. If it ends `failed` partway, tools may already have sent email or written files. Check for those effects before starting it again.
-- Your Tenant key reaches every Task. Check in your backend that the current user may read or run a Task before passing its ID.
+- For an end-user request, derive a scoped client or header from verified sign-in as shown in [multi-user apps](multi-user-apps.md). An unscoped Tenant key reaches every Task.
 
 ## Check it works
 
+- Call keyed `tasks.create()` twice with the same input; both calls return the same Task and initial run IDs. Change the input under that key and expect `idempotency_conflict`.
 - Call your start function twice with the same key; both calls return the same `tr_...` ID.
 - Poll that run; it reaches `succeeded` and the last assistant message answers the Task prompt.
 - Create a Task with `{ kind: "interval", config: { everyMs: 60000 } }`; within two minutes `listRuns` shows a new run.
