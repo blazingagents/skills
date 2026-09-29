@@ -3,7 +3,7 @@ name: blazing-agents
 description: Build products on Blazing Agents (BA), the hosted platform that runs production AI agents behind your backend. Use when the user wants to add an agent, chat, background or scheduled agent work, structured output, agent files, MCP tools, tool approvals, Slack/Telegram bots, usage dashboards, or token billing to their app with the BA TypeScript or Python SDK, or asks what BA is or can do. Use ba-admin instead for one-off Tenant administration. Do not use for generic AI-agent work without BA.
 metadata:
   author: Blazing Agents
-  version: "0.2.0"
+  version: "0.3.0"
 ---
 
 # Blazing Agents
@@ -18,8 +18,8 @@ account so they can bill their customers.
 
 The developer's backend is the only thing that calls BA. It signs in its users,
 decides what each may access, and calls BA with the Tenant API key through the
-TypeScript SDK (`@blazingagents/sdk`, 0.12.0 or later) or the Python SDK
-(`blazing-agents`, 0.9.0 or later). Chat streams use the Vercel AI SDK UI message
+TypeScript SDK (`@blazingagents/sdk`) or the Python SDK (`blazing-agents`).
+Check the SDK references below for feature availability and release prerequisites. Chat streams use the Vercel AI SDK UI message
 format, so `useChat` renders them directly.
 
 BA does not fit when the app must call it from the browser with no server, when
@@ -65,15 +65,18 @@ developer wants to write the agent loop step by step.
 - Keep the BA API key on the backend, read from `BLAZING_AGENTS_API_KEY`. Never
   ship it in browser or mobile code, logs, or Workspace files.
 - The API key selects the Tenant. Never accept a Tenant from a request.
-- `userId` and `metadata` label Sessions, Tasks, and usage for filtering and
-  reporting. They grant no access. The backend decides which user may use which
-  Agent and Session.
+- Derive the user ID from verified sign-in. For user-owned resources, use
+  TypeScript `client.forUser(userId)` so BA enforces ownership. Python can send
+  `X-BA-User-Id` through `extra_headers`. A body or filter `userId` alone is
+  Attribution. Keep unscoped clients for trusted Tenant operations. Read
+  [Multi-user apps](references/recipes/multi-user-apps.md) for the boundary.
 - Relay BA's stream as it is. Return `toResponse()` in TypeScript or forward the
   raw bytes in Python, and let `useChat` render it. Never parse the stream by hand.
 - A chat Session ID arrives with the response. Save it and pass it back to
   continue the conversation. Load history from BA instead of storing your own copy.
 - A resend or retry is a new attempt, and tool side effects can happen again.
-  Start every Task run with an idempotency key so a retry returns the same run.
+  Use a stable idempotency key for Task creation with its initial run and for
+  later run submissions. Check SDK support before choosing the create path.
 - Changing an Agent's Provider requires `model` in the same update. Every Agent
   update saves a new Version. Skills, Memory, and the Workspace are not part of
   a Version. Sessions, Tasks, and generation calls can pin a Version; without a

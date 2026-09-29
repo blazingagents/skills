@@ -83,7 +83,7 @@ The `Authorization` header is missing, or the key in it is revoked, expired, or 
 
 ## 403 on a turn
 
-Blazing Agents has no separate "forbidden" code for API keys. A bad key is always `unauthorized` (401). The only 403 is `merchant_customer_unmapped`, returned when your monetization guard is on and the turn's `userId` has no linked billing customer. Task runs in the same situation end as `blocked`.
+Blazing Agents has no separate "forbidden" code for API keys. A bad key is always `unauthorized` (401). `merchant_customer_unmapped` is a 403 returned when your monetization guard is on and the Turn's `userId` has no linked billing customer. Scoped requests can also return 403 when the operation is outside end-user scope; use an unscoped client only for authorized Tenant administration. Task runs in the same situation end as `blocked`.
 
 - Link the `userId` to a customer in your billing provider, then start the turn again.
 - If you did not intend to bill per user, turn off the guard.

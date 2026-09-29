@@ -58,7 +58,7 @@ def configure(client: BlazingAgents, agent_id: str, provider_id: str) -> None:
     print(f"Now at version {agent.version}")
 ```
 
-2. Save a Prompt linked to the Agent and run it with exactly its variables. `agentId` groups Prompts for listing; any Agent can still use the Prompt.
+2. Save a Prompt linked to the Agent and run it with exactly its variables. `agentId` groups Prompts for listing. A scoped request requires the Prompt and Agent to belong to the same user.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
@@ -79,7 +79,7 @@ const result = await client.completion({
 });
 console.log(await result.text);
 
-const { prompts } = await client.prompts.list({ agentId });
+const { data: prompts } = await client.prompts.list({ agentId });
 console.log(prompts.map(({ name }) => name));
 ```
 
@@ -100,8 +100,10 @@ def run_prompt(client: BlazingAgents, agent_id: str) -> None:
             variables={"version": "2.4", "audience": "developers"},
         )
     )
-    print([p.name for p in client.prompts.list(agent_id=agent_id).prompts])
+    print([p.name for p in client.prompts.list(agent_id=agent_id).data])
 ```
+
+These list calls show the first page. Follow `nextCursor` or `next_cursor` for the remaining Prompts.
 
 3. Upload a runtime Skill: a ZIP (or tar, tar.gz) with `SKILL.md` at the archive root plus any reference files. Edit one file later with `putFile()`.
 
@@ -237,7 +239,7 @@ def roll_back(client: BlazingAgents, agent_id: str) -> None:
 - Deleting an Agent deletes its linked Prompts. Set the Prompt's `agentId` to `null` first to keep it.
 - Uploading a Skill whose `name` already exists on the Agent fails with `skill_name_conflict`. Edit it with `putFile()` / `replace_file()`, or delete it and upload again.
 - Skills and Memory are not part of Versions. Restoring a Version does not bring back old Skill content or notes.
-- Memory `userId` sorts notes; it is not access control. Your backend decides which End-user maps to which `userId`. A Turn without `userId` sees only general notes (`userId: ""`).
+- Memory `userId` labels notes. Use the verified user scope from [multi-user apps](multi-user-apps.md) for user-owned Memory and Turns. A scoped Turn sees that user's notes. An unscoped Turn retains the Tenant's general Memory behavior.
 - Memory search matches words, not meaning. Each Agent keeps up to 500 notes and evicts the least recently used one when full.
 - A Session started with `version` stays on it for every Turn. Start a new Session to pick up a restored Version.
 - A disabled Agent rejects new Turns with `agent_disabled`, and scheduled Task runs are skipped, not queued.

@@ -142,7 +142,7 @@ Not the same as: an MCP Connection, which gives an agent tools rather than a pla
 
 A label you stamp on resources and turns to say which of your end users they are for: an opaque `userId` string you choose plus optional `metadata`. Set it when you create an agent, workspace, prompt, task, or memory, or on a turn (a session takes the label of its first turn); a `userId` never changes once set, and you can filter lists and usage by it. An empty `userId` means a tenant-level resource. Use it so you can list one user's sessions and bill or report per user without your own mapping tables.
 
-Not the same as: permission. Your API key sees the whole tenant regardless of `userId`, so your backend must check that the signed-in user may reach a resource before calling BA.
+A body or filter `userId` alone does not change permissions. For user-owned resources, derive the ID from verified sign-in and use `client.forUser(userId)` in TypeScript, or send `X-BA-User-Id` in Python. BA enforces that scope on supported reads and writes. An unscoped API key retains Tenant-wide access. See [multi-user apps](recipes/multi-user-apps.md).
 
 ### Usage
 

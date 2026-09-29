@@ -8,67 +8,97 @@ Your users chat with an Agent inside your own web product, and conversations mus
 
 ## How it works
 
-Your browser talks only to your backend. Your backend signs the user in, checks that they own the Session they ask for, and calls `client.chat()` with your Tenant API key. It passes your user's ID as `userId` so usage is attributed to them. BA stores the Session history, so each request carries only the newest user message plus the Session ID. The first response returns a new Session ID in its `Location` header; your backend records who owns it before relaying the stream. On the frontend, AI SDK `useChat` with `BlazingAgentsChatTransport` renders the stream and sends the Session ID back on every later message.
+Your browser talks only to your backend. The backend authenticates the user and calls BA through `client.forUser(verifiedUserId)`. BA checks that the Agent and Session belong to that user. BA stores the history, so each request carries only the newest message and the Session ID. The first response returns a new Session ID in `Location`. AI SDK `useChat` and `BlazingAgentsChatTransport` render the stream and keep that ID for later messages.
 
 ## Build it
 
 1. Install the packages. Your backend needs `@blazingagents/sdk` (or `blazing-agents` for Python). Your React frontend needs `@blazingagents/sdk`, `ai`, and `@ai-sdk/react`.
 
 ```bash
-npm install @blazingagents/sdk ai @ai-sdk/react
+npm install @blazingagents/sdk ai @ai-sdk/react zod
 # Python backend instead:
 pip install blazing-agents fastapi uvicorn
 ```
 
-2. Add the backend. `chat` relays one Turn and `history` returns a Session's saved messages. Mount them as `POST /api/chat` and `GET /api/chat/history` in your framework. In the Next.js App Router, export them as `POST` and `GET` handlers. In Hono, call `chat(c.req.raw)`. `createChatRelay` validates the body, rejects a `sessionId` the user does not own (403), passes the user's ID and the request's abort signal to `client.chat()`, records the owner of each new Session, and turns errors into JSON responses.
+Use the updated SDK and server described in [the SDK reference](../sdk-typescript.md). The published package may not yet contain these APIs.
+
+2. Add the backend. `chat` relays one Turn and `history` returns a Session's saved messages. Mount them as `POST /api/chat` and `GET /api/chat/history` in your framework. In the Next.js App Router, export them as `POST` and `GET` handlers. In Hono, call `chat(c.req.raw)`. Authenticate the user, select their Agent in backend code, validate the request body, then call the scoped client. `sessions.messages()` returns the native UIMessage page. Return its cursors with the messages for older-history controls.
 
 ```ts
-import {
-  BlazingAgents,
-  createChatRelay,
-  type SessionOwnershipStore,
-} from "@blazingagents/sdk";
+import { BlazingAgents, BlazingAgentsError } from "@blazingagents/sdk";
+import { safeValidateUIMessages } from "ai";
+import { z } from "zod";
 
-/** Your sign-in check. Returns your user's ID, or null when signed out. */
-declare function authenticate(request: Request): Promise<string | null>;
-/** Your database table that maps each Session ID to the user who owns it. */
-declare const sessions: SessionOwnershipStore;
-
-function env(name: string): string {
-  const value = process.env[name];
-  if (!value) throw new Error(`${name} is required`);
-  return value;
-}
-
-const client = new BlazingAgents({ apiKey: env("BLAZING_AGENTS_API_KEY") });
-const agentId = env("BLAZING_AGENTS_AGENT_ID");
-
-export const chat = createChatRelay({
-  client,
-  sessions,
-  async resolveContext(request) {
-    const userId = await authenticate(request);
-    return userId === null ? null : { agentId, userId };
-  },
+declare function authenticate(request: Request): Promise<{ id: string; agentId: string } | null>;
+const tenant = new BlazingAgents({ apiKey: process.env.BLAZING_AGENTS_API_KEY ?? "" });
+const chatBody = z.object({
+  message: z.unknown(),
+  messageId: z.string().min(1).optional(),
+  sessionId: z.string().min(1).optional(),
+  trigger: z.enum(["submit-message", "regenerate-message"]).default("submit-message"),
 });
 
-export async function history(request: Request): Promise<Response> {
-  const userId = await authenticate(request);
-  if (!userId) return Response.json({ error: "Sign in first." }, { status: 401 });
-  const sessionId = new URL(request.url).searchParams.get("sessionId");
-  if (!sessionId || (await sessions.ownerOf(sessionId)) !== userId) {
-    return Response.json({ error: "Session not found." }, { status: 403 });
+export async function chat(request: Request): Promise<Response> {
+  const user = await authenticate(request);
+  if (!user) return new Response("Sign in first.", { status: 401 });
+  try {
+    const body = chatBody.parse(await request.json());
+    const messages = await safeValidateUIMessages({ messages: [body.message] });
+    if (!messages.success || messages.data[0].role !== "user") {
+      return new Response("Invalid message.", { status: 400 });
+    }
+    const client = tenant.forUser(user.id);
+    const input = {
+      agentId: user.agentId,
+      message: messages.data[0],
+      messageId: body.messageId,
+      abortSignal: request.signal,
+    };
+    const result = await client.chat(body.sessionId
+      ? { ...input, sessionId: body.sessionId, trigger: body.trigger }
+      : { ...input, trigger: "submit-message" });
+    return result.toResponse();
+  } catch (error) {
+    if (error instanceof z.ZodError || error instanceof SyntaxError) {
+      return new Response("Invalid request.", { status: 400 });
+    }
+    if (BlazingAgentsError.isInstance(error)) {
+      return Response.json({ error: { code: error.code } }, { status: error.status ?? 502 });
+    }
+    throw error;
   }
-  const page = await client.sessions.messages({ agentId, sessionId, limit: 200 });
-  return Response.json({ messages: page.data });
+}
+
+export async function history(request: Request): Promise<Response> {
+  const user = await authenticate(request);
+  if (!user) return new Response("Sign in first.", { status: 401 });
+  const params = new URL(request.url).searchParams;
+  const sessionId = params.get("sessionId");
+  if (!sessionId) return new Response("Missing Session ID.", { status: 400 });
+  try {
+    const page = await tenant.forUser(user.id).sessions.messages({
+      agentId: user.agentId,
+      sessionId,
+      cursor: params.get("cursor") ?? undefined,
+      limit: 200,
+      abortSignal: request.signal,
+    });
+    return Response.json({ messages: page.data, nextCursor: page.nextCursor });
+  } catch (error) {
+    if (BlazingAgentsError.isInstance(error)) {
+      return Response.json({ error: { code: error.code } }, { status: error.status ?? 502 });
+    }
+    throw error;
+  }
 }
 ```
 
-The same backend in Python with FastAPI does these steps by hand. The SDK returns the raw stream bytes; relay them unchanged and copy the `Location` header on the first Turn so the frontend learns the Session ID.
+The authentication hook returns the verified user's ID and their Agent ID from trusted backend state. Provision that Agent with the same user scope. `createChatRelay` remains an alternative for integrations that maintain their own `SessionOwnershipStore`; it does not select a scoped client automatically.
+
+The Python SDK accepts the verified scope in `extra_headers` on every call. The SDK returns the raw stream bytes; relay them unchanged and copy the `Location` header on the first Turn so the frontend learns the Session ID.
 
 ```python
-import os
-from typing import Any, Literal
+from typing import Any, Literal, TypedDict
 
 from blazing_agents import APIStatusError, AsyncBlazingAgents, BlazingAgentsError
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
@@ -76,7 +106,6 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 client = AsyncBlazingAgents()  # reads BLAZING_AGENTS_API_KEY
-AGENT_ID = os.environ["BLAZING_AGENTS_AGENT_ID"]
 app = FastAPI()
 
 
@@ -85,14 +114,13 @@ def current_user(request: Request) -> str:
     raise NotImplementedError
 
 
-def owner_of(session_id: str) -> str | None:
-    """Read the owner of a Session from your database."""
+def agent_for_user(user_id: str) -> str:
+    """Read this user's Agent ID from trusted backend state."""
     raise NotImplementedError
 
 
-def record_owner(session_id: str, user_id: str) -> None:
-    """Save the owner of a new Session in your database."""
-    raise NotImplementedError
+class HistoryPagination(TypedDict, total=False):
+    cursor: str
 
 
 class ChatBody(BaseModel):
@@ -106,20 +134,19 @@ class ChatBody(BaseModel):
 async def chat(body: ChatBody, user_id: str = Depends(current_user)):
     if body.message.get("role") != "user":
         raise HTTPException(400, "Invalid message.")
-    if body.sessionId is not None and owner_of(body.sessionId) != user_id:
-        raise HTTPException(403, "Session not found.")
     headers = {"cache-control": "no-cache", "x-vercel-ai-ui-message-stream": "v1"}
-    extra: dict[str, Any] = {"message_id": body.messageId} if body.messageId else {}
+    extra: dict[str, Any] = {"extra_headers": {"X-BA-User-Id": user_id}}
+    if body.messageId:
+        extra["message_id"] = body.messageId
     try:
         if body.sessionId is None:
             stream = await client.chat(
-                agent_id=AGENT_ID, message=body.message, user_id=user_id, **extra
+                agent_id=agent_for_user(user_id), message=body.message, user_id=user_id, **extra
             )
-            record_owner(stream.session_id, user_id)
             headers["location"] = stream.headers["location"]
         else:
             stream = await client.chat(
-                agent_id=AGENT_ID,
+                agent_id=agent_for_user(user_id),
                 session_id=body.sessionId,
                 message=body.message,
                 trigger=body.trigger,
@@ -143,18 +170,24 @@ async def chat(body: ChatBody, user_id: str = Depends(current_user)):
 @app.get("/api/chat/history")
 async def history(
     session_id: str = Query(alias="sessionId"),
+    cursor: str | None = Query(default=None),
     user_id: str = Depends(current_user),
 ):
-    if owner_of(session_id) != user_id:
-        raise HTTPException(403, "Session not found.")
-    page = await client.sessions.messages(
-        agent_id=AGENT_ID, session_id=session_id, limit=200
-    )
+    pagination: HistoryPagination = {"cursor": cursor} if cursor is not None else {}
+    try:
+        page = await client.sessions.messages(
+            agent_id=agent_for_user(user_id), session_id=session_id, limit=200,
+            extra_headers={"X-BA-User-Id": user_id},
+            **pagination,
+        )
+    except APIStatusError as exc:
+        raise HTTPException(exc.status_code, detail={"code": exc.code}) from exc
     return {
         "messages": [
             m.model_dump(mode="json", by_alias=True, exclude_unset=True)
             for m in page.data
-        ]
+        ],
+        "nextCursor": page.next_cursor
     }
 ```
 
@@ -166,40 +199,50 @@ import { BlazingAgentsChatTransport } from "@blazingagents/sdk";
 import { generateId, type UIMessage } from "ai";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
-const STORAGE_KEY = "chat-session";
-
 interface Conversation {
   key: string;
   sessionId?: string;
   messages: UIMessage[];
 }
 
-export function ChatPage({ token }: { token: string }) {
+export function ChatPage({ userId, token }: { userId: string; token: string }) {
+  return <UserChatPage key={`${userId}:${token}`} userId={userId} token={token} />;
+}
+
+function UserChatPage({ userId, token }: { userId: string; token: string }) {
+  const storageKey = `chat-session:${userId}`;
   const [conversation, setConversation] = useState<Conversation>();
 
   useEffect(() => {
-    const sessionId = localStorage.getItem(STORAGE_KEY);
+    const sessionId = localStorage.getItem(storageKey);
     if (!sessionId) return setConversation({ key: generateId(), messages: [] });
+    const controller = new AbortController();
     void fetch(`/api/chat/history?sessionId=${encodeURIComponent(sessionId)}`, {
       headers: { authorization: `Bearer ${token}` },
+      signal: controller.signal,
     }).then(async (response) => {
       if (!response.ok) {
-        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(storageKey);
         return setConversation({ key: generateId(), messages: [] });
       }
       const body: { messages: UIMessage[] } = await response.json();
+      if (controller.signal.aborted) return;
       setConversation({ key: generateId(), sessionId, messages: body.messages });
+    }).catch(() => {
+      if (!controller.signal.aborted) setConversation({ key: generateId(), messages: [] });
     });
-  }, [token]);
+    return () => controller.abort();
+  }, [token, storageKey]);
 
   if (!conversation) return <p>Loading...</p>;
   return (
     <Chat
       key={conversation.key}
       token={token}
+      storageKey={storageKey}
       conversation={conversation}
       onNewConversation={() => {
-        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(storageKey);
         setConversation({ key: generateId(), messages: [] });
       }}
     />
@@ -208,10 +251,12 @@ export function ChatPage({ token }: { token: string }) {
 
 function Chat({
   token,
+  storageKey,
   conversation,
   onNewConversation,
 }: {
   token: string;
+  storageKey: string;
   conversation: Conversation;
   onNewConversation: () => void;
 }) {
@@ -225,7 +270,7 @@ function Chat({
         api: "/api/chat",
         headers: { authorization: `Bearer ${token}` },
         sessionId: conversation.sessionId,
-        onSessionId: (id) => localStorage.setItem(STORAGE_KEY, id),
+        onSessionId: (id) => localStorage.setItem(storageKey, id),
       }),
   );
   const chat = useChat({
@@ -245,6 +290,9 @@ function Chat({
       if (!regenerating.current) setInput("");
     },
   });
+  const stopOnUnmount = useRef(chat.stop);
+  stopOnUnmount.current = chat.stop;
+  useEffect(() => () => { void stopOnUnmount.current(); }, []);
   const busy = chat.status === "submitted" || chat.status === "streaming";
   const hasAnswer = chat.messages.some((message) => message.role === "assistant");
 
@@ -295,22 +343,23 @@ function Chat({
 ## Gotchas
 
 - **History lives in BA.** Send only the newest user message. The transport already does this; a custom client that posts the whole `messages` array gets a 400 from your `chat` handler.
-- **Take `agentId` and `userId` from your server state, never the request body.** `userId` is Attribution for usage and reporting. It grants no access; your Session ownership check is what keeps users out of each other's Sessions.
-- **Save the owner before returning the stream.** The Session ID arrives before the answer streams. Keep it even when the first Turn fails or is stopped; the Session exists and is simply empty.
-- **Keep one transport per conversation.** `useChat` ignores a new transport after mount. To switch Session or user, remount `Chat` with a new `key`, as `ChatPage` does.
+- **Derive scope from verified sign-in.** BA enforces ownership when you use `forUser()`. A body `userId` alone grants no access.
+- **Save the Session ID.** The transport receives it before the answer streams. Keep it even when the first Turn fails or is stopped; the Session exists and is simply empty.
+- **Keep one transport per conversation.** `useChat` ignores a new transport after mount. To switch Session or user, remount `Chat` with a new `key`, as `ChatPage` does. Clear persisted user data on sign-out and abort requests from the old account.
 - **Resend is a new attempt.** Give every send a fresh message ID; message IDs are not idempotency keys. A failed or stopped Turn adds nothing to history, so the edited or unchanged text is simply sent again.
 - **Tool effects can repeat.** Stop cancels the Turn but cannot undo a Tool call that already ran, and a resend can run it again (for example, a second email). Make side-effecting Tools safe to repeat or gate them with [human approval](human-approval.md).
 - **A lost response may already be saved.** A dropped connection is not proof of failure. Reload history before telling the user their message was lost.
 - **Regenerate only after a successful answer.** A prompt that failed was never saved, so there is nothing to regenerate. If regeneration fails or is stopped, the old answer stays.
 - **`session_busy` (HTTP 409)** means a Tool approval is pending, an approved call is still running, or another Turn holds the Session. Show the error and let the user send again later.
-- **Older history.** `sessions.messages` returns the newest page, oldest first. Pass `nextCursor` back as `cursor` to load earlier pages for long conversations.
+- **Older history.** `sessions.messages` returns the newest page, oldest first. Pass `nextCursor` back as `cursor` to load earlier pages for long conversations. Prepend each older page without reversing its messages.
 - **Proxies must not buffer the stream.** `toResponse()` sets `cache-control: no-cache`; make sure every proxy in front of your backend passes chunks through as they arrive.
 
 ## Check it works
 
 - Send "Remember the word cobalt.", then "Which word did I ask you to remember?". The second answer says cobalt.
-- Reload the page. The earlier messages appear, and the next message continues the same conversation.
-- Call `POST /api/chat` without your sign-in, and you get 401. Call it as a second user with the first user's Session ID, and you get 403.
+- Reload the page. The earlier messages appear in chronological order, and the next message continues the same conversation. Load an older page and verify that order again.
+- Switch accounts while history loads or a reply streams. The new account shows only its own conversation.
+- Call `POST /api/chat` without your sign-in, and you get 401. Call it as a second user with the first user's Session ID, and BA returns 404.
 - Press Stop mid-answer. The partial answer disappears, your text stays in the box, and Send works again.
 - Press Regenerate. The last answer is replaced, and after a reload the new answer is the saved one.
 - Usage filtered by your user's ID includes these Turns. See [usage dashboards](usage-dashboards.md).

@@ -7,7 +7,7 @@ Work through this checklist before real users reach your agent. Each item links 
 - [ ] [The Blazing Agents API key lives only on your backend.](#keep-the-key-on-your-backend)
 - [ ] [You know how to rotate the key without downtime.](#rotate-keys)
 - [ ] [Your backend creates one client per API key and reuses it.](#one-client-per-credential)
-- [ ] [Your backend authorizes every user request; `userId` is only a label.](#attribution-is-not-authorization)
+- [ ] [Your backend derives user scope from verified sign-in.](#attribution-is-not-authorization)
 - [ ] [Retries are bounded and only repeat calls that are safe to repeat.](#retry-only-what-is-safe)
 - [ ] [Every Task run submission carries an idempotency key.](#submit-task-runs-with-an-idempotency-key)
 - [ ] [You log request IDs, error codes, and resource IDs, and nothing secret.](#log-request-ids-for-support)
@@ -83,9 +83,10 @@ To tag one request with your own correlation ID, derive a copy with `client.with
 
 Your API key identifies your Tenant, not your end user. A `userId` and `metadata` you pass on a turn, Session, or Task are Attribution: labels for filtering Sessions and breaking down usage. They grant nothing.
 
-- Sign in the user and check what they may access in your backend before every Blazing Agents call.
-- Record which of your users started each `ss_...` Session in your own database, and check it before you resume a Session or read its messages.
-- Never accept a Session ID, Agent ID, or `userId` from the browser without checking it against the signed-in user.
+- Authenticate each request and use `client.forUser(verifiedUserId)` for user-owned operations. BA checks ownership on reads and writes. In Python, send `extra_headers={"X-BA-User-Id": verified_user_id}` on each supported call.
+- Keep Tenant administration on an unscoped client in trusted backend code. A scoped request rejects unsupported operations.
+- Derive the scope from your verified session. A browser-supplied header or `userId` is not proof of identity.
+- If an integration uses an unscoped client, keep its own resource access checks. A list filter does not restrict later reads by ID.
 - The `userId` on a Session is fixed after its first turn. A Task run snapshots the Task's `userId` and `metadata` when it is queued.
 
 For per-user Sessions and dashboards, read [multi-user apps](recipes/multi-user-apps.md).
@@ -97,12 +98,13 @@ The SDKs never retry for you. An error entry saying "retrying can succeed" tells
 | Operation | Safe to repeat? |
 | --- | --- |
 | Reads (`get`, `list`, `messages`, `usage`) | Yes. |
+| Creating a Task with the same idempotency key and unchanged input | Yes, including the original initial run when `submit: true`. This create option is available in TypeScript. |
 | Starting a Task run with the same idempotency key | Yes. You get the same run back. |
 | Cancelling a Task run | Yes. Cancelling a finished run does nothing and returns no error. |
 | Sending the same tool approval decision | Yes. Sending the opposite decision returns `tool_approval_decision_conflict`. |
 | Joining a tool approval continuation | Yes. Joining again never runs the tool a second time. |
 | Sending a chat message again | It starts a new turn. Tools with side effects, such as sending an email, can run again. |
-| Creating an Agent, Provider, Prompt, or other resource | No. On a lost response, list the resources first; a `*_name_conflict` error often means the first attempt worked. |
+| Creating another resource, or a Task without a key | No. Reconcile a lost response before retrying. Agent and Prompt names can repeat, so a name match alone cannot identify the created resource. |
 
 Retry these codes with backoff, jitter, and an overall deadline, and honor the `Retry-After` header when present (`error.headers` in TypeScript, `error.retry_after` in Python): `rate_limited`, `session_busy`, `session_version_mismatch`, `task_active_run_exists`, `workspace_busy`, `internal`, `service_unavailable`, `model_validation_unavailable`, `mcp_connection_unreachable`, `mcp_connection_discovery_failed`. Fix the request for every other code. See [troubleshooting](troubleshooting.md) for each one.
 
