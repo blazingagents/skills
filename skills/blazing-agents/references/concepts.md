@@ -92,15 +92,21 @@ Not the same as: any file in the Workspace. Only published files are Artifacts, 
 
 ### Built-in tools
 
-Ready-made abilities you switch on per agent in groups. `workspace` gives files and a shell (`read`, `write`, `edit`, `grep`, `glob`, `bash`, `publish_artifacts`), `write_todos` gives a planning list, and `memory` gives the memory tools. A new agent has none, so it can only talk until you turn groups on. The `tools` list you send replaces the whole selection.
+Ready-made abilities you switch on per agent in groups. `workspace` gives files and a shell (`read`, `write`, `edit`, `grep`, `glob`, `bash`, `publish_artifacts`), `write_todos` gives a planning list, and `memory` gives the memory tools. A new agent has no built-in tools; without groups, attached MCP Connections, or backend functions on the chat request, it can only talk. The `tools` list you send replaces the whole selection.
 
-Not the same as: MCP tools, which come from MCP Connections, not tool groups.
+Not the same as: MCP tools, which come from MCP Connections, or backend functions, which your backend attaches to a chat request.
 
 ### MCP Connection
 
 A saved link from your tenant to a remote MCP server (Streamable HTTP), including its credential. Save it once, then attach it to any agent through `mcpConnectionIds` to give that agent the server's tools. Use it to let agents call your own services or third-party APIs. BA stores the credential and the agent's shell never sees it.
 
 Not the same as: a Chat Connection (a Slack or Telegram bot). Attaching a connection makes tools available; it does not grant permissions or skip tool approval.
+
+### Backend function
+
+A function in your own backend that a chat agent can call. You attach a map of them to one `chat()` call (TypeScript `defineFunction`, Python `define_function`); BA shows the model only each name, description, and input schema, and your SDK validates the input, runs the handler, and submits its JSON result. Functions are attached per request, never saved on the Agent, and exist only in interactive chat, including a chat resumed with `resumeChat`/`resume_chat` after an approval pause.
+
+Not the same as: an MCP Connection, whose tools live on a remote server and also work in Tasks, stateless generation, and Slack or Telegram.
 
 ### Tool approval
 

@@ -8,7 +8,7 @@ Your agent can run shell commands, send email, change records, or call any tool 
 
 ## How it works
 
-Each Agent has two approval policies: `approvalInChat` for chat and stateless generation, and `approvalInTasks` for Tasks. Each policy has a `default` mode plus exact per-tool `overrides`; a matching override wins. When a chat Turn proposes a call that needs a person, the Turn pauses and Blazing Agents saves a pending approval on the Session. Your backend lists pending approvals, shows them to a reviewer, and sends each decision by approval ID. Once every pending call is decided, Blazing Agents resumes the agent in a new Turn called a continuation, and your backend streams it back by joining it. You never run the tool yourself.
+Each Agent has two approval policies: `approvalInChat` for chat and stateless generation, and `approvalInTasks` for Tasks. Each policy has a `default` mode plus exact per-tool `overrides`; a matching override wins. When a chat Turn proposes a call that needs a person, the Turn pauses and Blazing Agents saves a pending approval on the Session. Your backend lists pending approvals, shows them to a reviewer, and sends each decision by approval ID. Once every pending call is decided, Blazing Agents resumes the agent in a new Turn called a continuation, and your backend streams it back by joining it. You never run a built-in or MCP tool yourself; backend functions are the exception: their handlers run in your backend (see [backend functions](backend-functions.md)).
 
 | Mode | What happens to a call |
 | --- | --- |
@@ -19,7 +19,7 @@ Each Agent has two approval policies: `approvalInChat` for chat and stateless ge
 
 ## Build it
 
-1. Set the policies. Built-in tools use `{ type: "builtin", name }` with an individual tool name such as `bash`, `write`, or `save_memory`. MCP tools use `{ type: "mcp", connectionId, name }` with the original tool name from an attached Connection. The Agent must actually have each tool you name.
+1. Set the policies. Built-in tools use `{ type: "builtin", name }` with an individual tool name such as `bash`, `write`, or `save_memory`. MCP tools use `{ type: "mcp", connectionId, name }` with the original tool name from an attached Connection. The Agent must actually have each tool you name. Overrides cannot name backend functions; those follow only `approvalInChat.default`.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
@@ -118,7 +118,7 @@ async def list_pending(agent_id: str, session_id: str) -> dict[str, object]:
     return {"pending": pending}
 ```
 
-3. Send each decision by approval ID. When the answer is `waiting`, other calls in the same Turn still need a decision. Otherwise join the continuation and relay its stream to the browser.
+3. Send each decision by approval ID. When the answer is `waiting`, other calls in the same Turn still need a decision. Otherwise join the continuation and relay its stream to the browser. When the chat attached backend functions, any approval pause, even one for a built-in or MCP tool, requires `resumeChat` (`resume_chat` in Python) with the handlers attached instead of joining; see [backend functions](backend-functions.md) for the call.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
@@ -234,6 +234,7 @@ export async function sendDecision(input: {
 - Send decisions through your backend with `decideToolApproval`. Answering only in the browser with AI SDK `addToolApprovalResponse` does not resume the agent.
 - While approvals are pending or a continuation runs, new chat messages and regeneration fail with `session_busy`. Disable the composer until the continuation ends.
 - A dropped stream does not stop the continuation. Join the same `continuationId` again; it replays from the start and never reruns the tool. `toolApprovals()` also returns the Session's current `continuation` with its `id` and `state`.
+- Joining only observes a continuation whose chat attached backend functions: function events are stripped, handlers never run, and a queued continuation waits for an executor. Call `resumeChat`/`resume_chat` with the functions instead, as in [backend functions](backend-functions.md).
 - The same decision sent twice is safe. Reversing a decision returns `tool_approval_decision_conflict` (409).
 - Authenticate the reviewer and use the verified user scope from [multi-user apps](multi-user-apps.md) for approval reads, decisions, and continuation. Keep additional reviewer roles in your backend. The decision cannot change the saved call's arguments.
 - `auto` review runs on the Agent's model and counts toward the Turn's usage.

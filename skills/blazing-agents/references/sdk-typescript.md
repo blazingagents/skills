@@ -4,9 +4,9 @@ Use this page to write backend TypeScript that calls Blazing Agents: install the
 client, run chat, text, and structured output, call every resource method, page
 through lists, handle errors, and connect `useChat` to your own backend.
 
-The examples for user scope, paginated Agents and Prompts, and session usage
-require the updated TypeScript SDK and server. The 0.15 SDK candidate is not yet
-published; check the installed package's types before using these APIs.
+The examples for user scope, paginated Agents and Prompts, session usage, and
+backend functions require TypeScript SDK 0.16.0 or newer; check the installed
+package's types before using these APIs.
 
 For the same surface in Python, read [Python SDK reference](sdk-python.md). For
 end-to-end builds, start from a recipe such as
@@ -76,7 +76,8 @@ resources and Turns to that user. Pass only a trusted ID; the scoped client
 sends it as `X-BA-User-Id`. It exposes user operations, including generation,
 Agents, Prompts, Sessions, Tasks, and `usage.get` / `usage.sessions`; Tenant
 administration and Tenant-wide usage methods stay on the root client. Its
-`withOptions` view keeps the user scope.
+`withOptions` view keeps the user scope. Its `chat` and `resumeChat` accept
+backend `functions` like the root client's.
 
 ```ts
 import type { BlazingAgents } from "@blazingagents/sdk";
@@ -119,6 +120,7 @@ the Turn as `userId`; omitting it records the Turn at Tenant level with no user.
 | `messageId` | Optional client message ID. |
 | `version` | Pin a new Session to an Agent Version. Only allowed without `sessionId`. |
 | `userId`, `metadata` | Attribution. |
+| `functions` | Backend functions for this call, built with `defineFunction`. See [Backend functions](#backend-functions). |
 | `abortSignal`, `clientRequestId` | Request options. |
 
 `chat` resolves to a `ChatResult`:
@@ -154,6 +156,24 @@ export async function relayChat(
   return result.toResponse();
 }
 ```
+
+### Backend functions
+
+`defineFunction({ description, inputSchema, execute })` declares a function whose
+handler runs in your backend. `inputSchema` is a Zod schema for an object;
+`execute` receives the parsed input and `{ idempotencyKey, signal }` and returns
+a plain JSON value or a promise of one. Attach the map as `functions` on `chat`;
+the SDK sends the model only names, descriptions, and schemas, runs approved
+calls in your process, and strips the private events from the stream. Function
+names start with a letter and allow up to 64 letters, digits, `_`, or `-`;
+built-in names and the `mcp__` prefix are reserved.
+
+After every pending approval has a decision,
+`resumeChat({ agentId, sessionId, functions, continuationId?, abortSignal?, clientRequestId? })`
+reattaches the handlers and returns a `ChatResult`; omitting `continuationId`
+resumes the Session's queued or running continuation and raises `not_found`
+when there is none. For end-to-end setup, including scoping and approval flow,
+read [backend functions](recipes/backend-functions.md).
 
 ### Completion
 
@@ -242,6 +262,7 @@ means the result is `{ data, nextCursor }` (see [Pagination](#pagination)).
 | Method | HTTP | Returns |
 | --- | --- | --- |
 | `chat(input)` | `POST /v1/agents/{agentId}/sessions[/{sessionId}]` | `ChatResult` |
+| `resumeChat(input)` | `POST /v1/agents/{agentId}/sessions/{sessionId}/tool-approval-continuations/{continuationId}/resume` | `ChatResult`. Reads the Session's tool approvals first when `continuationId` is omitted. |
 | `completion(input)` | `POST /v1/agents/{agentId}/generation` | `CompletionResult` |
 | `object(input)` | `POST /v1/agents/{agentId}/generation` | `ObjectResult` |
 | `agent({ agentId })` | none | `{ skills }` |
