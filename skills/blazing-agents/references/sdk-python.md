@@ -1,6 +1,6 @@
 # Python SDK reference
 
-Use this page to call Blazing Agents from a Python backend: install the package, pick a client, run Turns, and find the method for every operation. The paginated Agent and Prompt lists require the updated Python SDK and server; check the installed package before using them. The install command below uses the published 0.9.0 floor.
+Use this page to call Blazing Agents from a Python backend: install the package, pick a client, run Turns, and find the method for every operation. The paginated Agent and Prompt lists and backend functions require the updated Python SDK and server; check the installed package before using them. The install command below uses the published 0.10.0 floor.
 
 For the same surface in TypeScript, read [TypeScript SDK reference](sdk-typescript.md). For end-to-end builds, start from a recipe such as [Add chat to your app](recipes/chat-in-your-app.md).
 
@@ -9,9 +9,9 @@ For the same surface in TypeScript, read [TypeScript SDK reference](sdk-typescri
 The PyPI package is `blazing-agents`. The import name is `blazing_agents`. It needs Python 3.11 or newer.
 
 ```bash
-pip install "blazing-agents>=0.9.0"
+pip install "blazing-agents>=0.10.0"
 # or
-uv add "blazing-agents>=0.9.0"
+uv add "blazing-agents>=0.10.0"
 ```
 
 Keep the Tenant API key in `BLAZING_AGENTS_API_KEY` on your backend. It can reach everything in your Tenant, so it never goes to a browser or mobile app.
@@ -65,7 +65,7 @@ Constructor options (all keyword-only):
 | `http_client` | SDK-owned | Your own `httpx.Client` (sync) or `httpx.AsyncClient` (async). You keep ownership |
 | `on_response` | none | Callback that receives a `ResponseObservation` (`method`, `path`, `status`, `duration_ms`, `request_id`, `client_request_id`) for every response |
 
-`client.with_options(client_request_id="checkout-42")` returns a client that tags every request with your correlation ID. Every method also accepts `extra_headers` and `timeout` per call. The SDK never retries on its own.
+`client.with_options(client_request_id="checkout-42")` returns a client that tags every request with your correlation ID. Every method also accepts `extra_headers` and `timeout` per call. The SDK retries transient claim and result submissions for backend functions; other requests do not retry on their own.
 
 ## Run Turns: root generation methods
 
@@ -78,6 +78,8 @@ The client itself has five generation methods. Each call runs one metered Turn. 
 | `completion_stream(...)` | `CompletionStream` of `str` deltas | Stateless text, streamed. `get_final_text()` returns the whole `Completion` |
 | `object(...)` | Your `output_type` instance, or `JsonValue` | Structured output, validated |
 | `object_stream(...)` | `ObjectStream` of raw JSON text deltas | Structured output, streamed. `get_final_object()` validates at the end |
+
+`resume_chat(...)` is not a generation method: it restarts a Session's approval continuation with backend functions attached and returns a `ChatStream`. See [Backend functions](#backend-functions).
 
 ### Chat returns raw SSE bytes and a Session ID
 
@@ -138,6 +140,24 @@ Chat rules the SDK enforces before sending:
 - `version` is allowed only when you start a Session, not when you pass `session_id`.
 - `trigger="regenerate-message"` needs `session_id`. It can target a `message_id`.
 - `variables` needs `prompt_id`.
+
+### Backend functions
+
+`define_function(*, description, input_schema, execute) -> ChatFunction` declares a
+function whose handler runs in your backend. `input_schema` is a Pydantic-compatible
+type describing an object; the handler receives the validated input and a
+`FunctionContext` (`idempotency_key`, `deadline_at`, `cancelled`) and returns plain
+JSON (convert results with `model_dump(mode="json")`). Attach the map as
+`functions=` on `chat`. `BlazingAgents` accepts synchronous handlers;
+`AsyncBlazingAgents` accepts async handlers and runs synchronous ones in a worker
+thread. Keep consuming the stream: function calls dispatch as you read their
+events. Failed function calls log warnings on the `blazing_agents` logger.
+
+`resume_chat(*, agent_id, session_id, functions, extra_headers=None, timeout=...)`
+reattaches handlers to the Session's queued or running approval continuation (await
+it on the async client for an `AsyncChatStream`) and raises when none is ready. For
+end-to-end setup, including scoping and approval flow, read
+[backend functions](recipes/backend-functions.md).
 
 ### Structured output
 

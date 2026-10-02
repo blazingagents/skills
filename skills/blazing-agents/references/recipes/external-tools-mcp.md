@@ -4,7 +4,7 @@ At the end, your Agent can call tools from your own or a third-party remote MCP 
 
 ## When to use this
 
-Your agent needs to act on systems outside Blazing Agents: your internal API, a CRM, a ticket tracker, or any service that exposes a remote MCP server. If you instead want files, a shell, a to-do list, or memory, switch on built-in tool groups with `tools: ["workspace"]` and read [Built-in tools](https://docs.blazingagents.com/agents/tools/built-in-tools).
+Your agent needs to act on systems outside Blazing Agents: your internal API, a CRM, a ticket tracker, or any service that exposes a remote MCP server. If the tool is only needed in interactive chat and can run inside your own backend, [backend functions](backend-functions.md) are simpler; MCP also serves Tasks, stateless generation, and Slack/Telegram, which functions cannot. If you instead want files, a shell, a to-do list, or memory, switch on built-in tool groups with `tools: ["workspace"]` and read [Built-in tools](https://docs.blazingagents.com/agents/tools/built-in-tools).
 
 ## How it works
 
