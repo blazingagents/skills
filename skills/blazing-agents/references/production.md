@@ -11,7 +11,7 @@ Work through this checklist before real users reach your agent. Each item links 
 - [ ] [Retries are bounded and only repeat calls that are safe to repeat.](#retry-only-what-is-safe)
 - [ ] [Every Task run submission carries an idempotency key.](#submit-task-runs-with-an-idempotency-key)
 - [ ] [You log request IDs, error codes, and resource IDs, and nothing secret.](#log-request-ids-for-support)
-- [ ] [Sessions and Tasks that must behave the same over time pin an Agent Version.](#pin-agent-versions)
+- [ ] [Read the saved configuration of each Session and Task run.](#inspect-agent-configuration)
 - [ ] [A tenant quota is set with headroom, and your code handles quota outcomes.](#set-quotas-and-handle-quota-outcomes)
 - [ ] [Your code handles Stop and Task run cancellation, including side effects that already happened.](#handle-cancellation)
 - [ ] [Your code reads limits from the docs instead of hard-coding them.](#respect-limits)
@@ -36,7 +36,7 @@ Keys are created and revoked only in the dashboard at `https://www.blazingagents
 
 Name each key for one workload or environment, such as `Production API`, so you know what breaks when you revoke it. A key with an expiration stops working the same way a revoked key does, so track expiry dates.
 
-Provider keys cannot be changed in place. To rotate one, create a new Provider, move your Agents to it by sending `providerId` and `model` together, then delete the old Provider. Pinned Versions, Sessions, and Tasks that still name the old Provider block deletion with `provider_historical_use`; see [troubleshooting](troubleshooting.md#provider-credential-rejected).
+Provider keys cannot be changed in place. To rotate one, create a new Provider, move your Agents to it by sending `providerId` and `model` together, then delete the old Provider. Saved Sessions and queued or running Task runs that still name the old Provider block deletion with `provider_historical_use`; see [troubleshooting](troubleshooting.md#provider-credential-rejected).
 
 ## One client per credential
 
@@ -154,18 +154,13 @@ Every response carries an `X-Request-Id` header. It is not in the JSON body. Rea
 - A request ID identifies one attempt. Each retry gets a new one. It is never an idempotency key.
 - Use `clientRequestId` to tie Blazing Agents requests to your own trace or order ID.
 
-## Pin Agent Versions
+## Inspect Agent configuration
 
-Every Agent update saves a new numbered Agent Version. Calls without a version use the latest one at the moment the turn starts, so an edit changes behavior for every caller immediately.
+The first Turn saves the Agent configuration for its Session. Later Turns in that Session use those settings after Agent edits. Read them with `(await client.sessions.get({ agentId, sessionId })).agentConfig` (`client.sessions.get(agent_id=..., session_id=...).agent_config` in Python). Session lists and message pages stay compact.
 
-- **Sessions:** pass `version` on the first `client.chat()` call. Every turn in that Session uses it, and the pin cannot change later.
-- **Stateless generation:** pass `version` on each `completion()` or `object()` call.
-- **Tasks:** set `agentVersion` on the Task. Each run records the version it actually used.
-- **Usage:** each turn's usage record shows the version that ran, so you can compare versions.
+Each Task run saves the Agent configuration when queued. Read `(await client.tasks.getRun({ taskId, runId })).agentConfig` (`client.tasks.get_run(task_id, run_id).agent_config` in Python), even before the run starts a Session. The run's Session uses that same configuration. Stateless calls use the current Agent configuration at each invocation.
 
-A Version stores references, not copies. The Provider key, MCP credentials, Workspace, Skills, and Memories always use their current state, even for a pinned Version. Deleting a Provider that a pinned Version names needs `confirmVersionInvalidation: true`, and afterwards that Version fails with `provider_not_found`.
-
-To roll back a bad edit, call `client.agents.restoreVersion({ agentId, version })` (`restore_version` in Python). It copies the old configuration into a new latest Version.
+Snapshots include model, instructions, tools, approval policies, and compaction settings. They hold Provider and MCP connection IDs, while keys and connection details remain current. Workspace attachment, Skills, and Memories also remain current. Local SDK callback functions are supplied per request; only paused approval definitions remain available for continuation.
 
 ## Set quotas and handle quota outcomes
 
@@ -203,7 +198,7 @@ Resource counts, text and upload sizes, schedule intervals, usage windows, page 
 - [Security and credentials](https://docs.blazingagents.com/platform/security-and-credentials)
 - [Tenancy and end-user attribution](https://docs.blazingagents.com/platform/tenancy-and-attribution)
 - [Usage and quotas](https://docs.blazingagents.com/platform/usage-and-quotas)
-- [Versions and lifecycle](https://docs.blazingagents.com/agents/versions-and-lifecycle)
+- [Configuration snapshots and lifecycle](https://docs.blazingagents.com/agents/configuration-snapshots)
 - [Task runs](https://docs.blazingagents.com/automation/task-runs)
 - [Errors](https://docs.blazingagents.com/api-reference/protocols/errors)
 - [Service limits](https://docs.blazingagents.com/api-reference/protocols/service-limits)

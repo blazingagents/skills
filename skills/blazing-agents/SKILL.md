@@ -78,7 +78,8 @@ developer wants to write the agent loop step by step.
 - A resend or retry is a new attempt, and tool side effects can happen again.
   Use a stable idempotency key for Task creation with its initial run and for
   later run submissions. Check SDK support before choosing the create path.
-- Changing an Agent's Provider requires `model` in the same update. Every Agent
-  update saves a new Version. Skills, Memory, and the Workspace are not part of
-  a Version. Sessions, Tasks, and generation calls can pin a Version; without a
-  pin, each Turn uses the latest one.
+- Changing an Agent's Provider requires `model` in the same update. A Session
+  saves Agent configuration at its first Turn; a Task run saves it when queued.
+  Read `agentConfig` with `sessions.get()` or `tasks.getRun()`. Skills, Memory,
+  and Workspace attachment use their current state. Stateless generation calls
+  use current Agent settings for each request.

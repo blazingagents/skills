@@ -56,7 +56,7 @@ Use `BlazingAgentsError.isInstance(error)` instead of `instanceof`, which fails 
 | `unauthorized` (401) | Missing, mistyped, revoked, or expired API key, or a dashboard-only call made with an API key. | [Replace the key](#401-unauthorized). |
 | 403 on chat or generation | `merchant_customer_unmapped`: your monetization guard found no customer for the turn's `userId`. | [Link the user](#403-on-a-turn). |
 | `not_found` (404) for an ID you just created | The key is for a different Tenant, or the ID is wrong. | [Check the key's Tenant](#404-for-a-resource-you-can-see-in-the-dashboard). |
-| `provider_required` (400) | The Agent, or the Agent Version the turn pins, has no Provider and model. | [Set a Provider and model](#agent-without-a-provider-or-model). |
+| `provider_required` (400) | The saved Agent configuration has no Provider and model. | [Set a Provider and model](#agent-without-a-provider-or-model). |
 | `model_not_found` (400) or `model_validation_unavailable` (503) | The model ID is not in the Provider's list, or the Provider could not be reached or rejected the stored key. | [Fix the model or the Provider](#provider-credential-rejected). |
 | Turn fails right after it starts, no code | The Provider rejected the stored key or the request during the turn. | [Replace the Provider](#provider-credential-rejected). |
 | `quota_exceeded` (429), or a Task run ends `blocked` | Usage in the current window is at or above your tenant quota. | [Wait for reset or raise the quota](#quota-blocked). |
@@ -99,11 +99,10 @@ Blazing Agents has no separate "forbidden" code for API keys. A bad key is alway
 
 ## Agent without a Provider or model
 
-`provider_required` (400) means the Agent Version that would run has no Provider and model. Nothing ran and nothing was billed.
+`provider_required` (400) means the Agent configuration that would run has no Provider and model. Nothing ran and nothing was billed.
 
 - Update the Agent with a `providerId` and a `model` the Provider offers. Changing `providerId` without `model` in the same update is rejected; changing only `model` keeps the current Provider.
-- If the Session or Task pins an older Version, that Version may have no model. Pin a Version that has one. A Session's pin cannot change, so start a new Session.
-- `agent_version_not_found` (404) means the pin names a Version number that never existed.
+- An existing Session keeps its saved configuration. Update the Agent and start a new Session. A queued Task run keeps the configuration saved when queued.
 - `agent_disabled` (409) means the Agent is disabled. Enable it.
 
 ## Provider credential rejected
@@ -118,7 +117,7 @@ To fix it:
 
 1. Create a new Provider with a working key.
 2. Update each Agent with the new `providerId` and `model` together.
-3. Delete the old Provider. `provider_in_use` (409) lists Agents still on it in `details.agentIds`. `provider_historical_use` (409) lists pinned Versions, Sessions, and Tasks in `details.agentVersions`, `details.sessionIds`, and `details.taskIds`. Move those first, or delete with `confirmVersionInvalidation: true` (`confirm_version_invalidation=True` in Python) and accept that those Versions then fail with `provider_not_found`.
+3. Delete the old Provider. `provider_in_use` (409) lists Agents still on it in `details.agentIds`. `provider_historical_use` (409) lists saved Sessions and queued or running Task runs in `details.sessionIds` and `details.taskRunIds`. Move those first, or delete with `confirmSnapshotInvalidation: true` (`confirm_snapshot_invalidation=True` in Python) and accept that work needing the deleted Provider then fails with `provider_not_found`.
 
 ## Quota blocked
 
@@ -157,7 +156,7 @@ To fix it:
 
 - Read the Agent and check which policy applies to the surface you call. A tool can be allowed in chat and blocked in Tasks.
 - Change the rule to `full` for that tool, or move work that needs a human into an interactive chat Session.
-- Policies are part of the Agent Version. A pinned Session or Task keeps the old policy.
+- A Session or Task run saves its approval policy. An Agent edit changes the policy for new work.
 
 ## MCP authorization missing
 

@@ -69,7 +69,7 @@ Constructor options (all keyword-only):
 
 ## Run Turns: root generation methods
 
-The client itself has five generation methods. Each call runs one metered Turn. Give each call exactly one input: a literal `message` (chat) or `prompt` (completion and object), or a saved Prompt through `prompt_id` with optional `variables`. Every method also accepts `version` to pin an Agent version, and `user_id` plus `metadata` for Attribution to your end user.
+The client itself has five generation methods. Each call runs one metered Turn. Give each call exactly one input: a literal `message` (chat) or `prompt` (completion and object), or a saved Prompt through `prompt_id` with optional `variables`. Every method also accepts `user_id` plus `metadata` for Attribution to your end user.
 
 | Method | Returns | Use it for |
 | --- | --- | --- |
@@ -137,7 +137,6 @@ with BlazingAgents() as client:
 
 Chat rules the SDK enforces before sending:
 
-- `version` is allowed only when you start a Session, not when you pass `session_id`.
 - `trigger="regenerate-message"` needs `session_id`. It can target a `message_id`.
 - `variables` needs `prompt_id`.
 
@@ -213,15 +212,11 @@ Signatures below drop `extra_headers` and `timeout`, which every method accepts.
 | `create(*, name, provider_id=..., model=..., workspace_id=..., thinking_level=..., tools=..., instructions=..., memory_injection_enabled=..., auto_compaction=..., compaction_reserve_tokens=..., approval_in_chat=..., approval_in_tasks=..., user_id=..., metadata=..., mcp_connection_ids=...)` | `Agent` |
 | `list(*, cursor=..., limit=..., user_id=..., workspace_id=...)` | `AgentsPage` (`.data`, `.next_cursor`) |
 | `get(agent_id)` | `Agent` |
-| `update(agent_id, *, <create fields except user_id>)` | `Agent` (new version) |
+| `update(agent_id, *, <create fields except user_id>)` | `Agent` |
 | `delete(agent_id, *, include_artifacts: bool)` | `None` |
 | `disable(agent_id)` / `enable(agent_id)` | `Agent` |
 | `upload_avatar(agent_id, file, *, filename=None, content_type=None)` | `Agent` |
 | `remove_avatar(agent_id)` | `Agent` |
-| `list_versions(agent_id, *, cursor=..., limit=...)` | `AgentVersionsPage` |
-| `iter_versions(agent_id, *, cursor=..., limit=...)` | `Iterator[AgentVersion]` |
-| `get_version(agent_id, version)` | `AgentVersion` |
-| `restore_version(agent_id, version)` | `Agent` |
 | `list_mcp_attachments(agent_id)` | `McpAttachments` (`.mcp_attachments`) |
 | `update_mcp_attachment(agent_id, mcp_connection_id, *, forward_user_id=..., forwarded_metadata_keys=...)` | `McpAttachment` |
 
@@ -249,28 +244,29 @@ Signatures below drop `extra_headers` and `timeout`, which every method accepts.
 | `list(*, agent_id, user_id=..., cursor=..., limit=...)` | `SessionsPage` |
 | `iter(*, agent_id, user_id=..., cursor=..., limit=...)` | `Iterator[Session]` |
 | `list_latest(*, user_id=..., cursor=..., limit=..., by_agent=None)` | `LatestSessionsPage` |
+| `get(agent_id, session_id)` | `SessionResponse` with `agent_config` |
 | `messages(*, agent_id, session_id, cursor=..., after=..., limit=...)` | `SessionMessagesPage` |
 | `tool_approvals(*, agent_id, session_id)` | `ToolApprovals` (`.data`, `.continuation`) |
 | `decide_tool_approval(*, agent_id, session_id, approval_id, approved, reason=...)` | `ToolApprovalDecision` |
 | `join_tool_approval_continuation(*, agent_id, session_id, continuation_id)` | `ByteStream` (same SSE format as `chat()`) |
 | `delete(*, agent_id, session_id, delete_artifacts: bool)` | `None` |
 
-Start and continue Sessions with `client.chat()`, not through this resource. `list_latest(by_agent=True)` returns at most one Session per Agent, which suits an inbox view.
+The first Turn saves `agent_config`; get it with `client.sessions.get()`. Message pages contain only transcript messages. Start and continue Sessions with `client.chat()`, not through this resource. `list_latest(by_agent=True)` returns at most one Session per Agent, which suits an inbox view.
 
 ### `client.tasks`
 
 | Method | Returns |
 | --- | --- |
-| `create(*, agent_id, name, prompt, agent_version=..., schedule=..., enabled=..., submit=..., user_id=..., metadata=...)` | `TaskCreateResponse` |
+| `create(*, agent_id, name, prompt, schedule=..., enabled=..., submit=..., user_id=..., metadata=...)` | `TaskCreateResponse` |
 | `list(*, agent_id=..., user_id=..., cursor=..., limit=...)` | `TasksPage` |
 | `iter(*, agent_id=..., user_id=..., cursor=..., limit=...)` | `Iterator[TaskListItem]` |
 | `get(task_id)` | `Task` |
-| `update(task_id, *, agent_version=..., name=..., prompt=..., schedule=..., enabled=..., metadata=...)` | `Task` |
+| `update(task_id, *, name=..., prompt=..., schedule=..., enabled=..., metadata=...)` | `Task` |
 | `delete(task_id)` | `None` |
 | `submit(task_id, *, idempotency_key=...)` | `TaskRunSubmission` |
 | `list_runs(task_id, *, cursor=..., limit=...)` | `TaskRunsPage` |
 | `iter_runs(task_id, *, cursor=..., limit=...)` | `Iterator[TaskRun]` |
-| `get_run(task_id, run_id)` | `TaskRun` |
+| `get_run(task_id, run_id)` | `TaskRun` with `agent_config` saved when queued |
 | `run_messages(task_id, run_id, *, cursor=..., after=..., limit=...)` | `TaskRunMessagesPage` |
 | `cancel_run(task_id, run_id)` | `None` |
 
@@ -297,7 +293,7 @@ Start and continue Sessions with `client.chat()`, not through this resource. `li
 | `list_models(provider_id)` | `ProviderModels` (`.models`) |
 | `get_thinking_levels(provider_id, *, model)` | `ThinkingLevels` |
 | `update(provider_id, *, name)` | `Provider` |
-| `delete(provider_id, *, confirm_version_invalidation=False)` | `None` |
+| `delete(provider_id, *, confirm_snapshot_invalidation=False)` | `None` |
 
 `provider_type` is `"openai"`, `"anthropic"`, `"openrouter"`, `"google"`, `"vercel_ai_gateway"`, or `"custom"` (needs `base_url`).
 
