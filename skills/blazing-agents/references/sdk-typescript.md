@@ -118,7 +118,6 @@ the Turn as `userId`; omitting it records the Turn at Tenant level with no user.
 | `sessionId` | Omit to create a Session. Pass an `ss_` ID to resume it. |
 | `trigger` | `"submit-message"` (default) or `"regenerate-message"`. Regenerate needs `sessionId`. |
 | `messageId` | Optional client message ID. |
-| `version` | Pin a new Session to an Agent Version. Only allowed without `sessionId`. |
 | `userId`, `metadata` | Attribution. |
 | `functions` | Backend functions for this call, built with `defineFunction`. See [Backend functions](#backend-functions). |
 | `abortSignal`, `clientRequestId` | Request options. |
@@ -178,7 +177,7 @@ read [backend functions](recipes/backend-functions.md).
 ### Completion
 
 `completion` takes `agentId` and either `prompt` (a string) or `promptId` plus
-optional `variables`. Add `version` to pin an Agent Version. The result has:
+optional `variables`. The result has:
 
 - `textStream`: `AsyncIterable<string>` of text deltas.
 - `text`: `Promise<string>` with the full text.
@@ -280,9 +279,6 @@ means the result is `{ data, nextCursor }` (see [Pagination](#pagination)).
 | `delete({ agentId, includeArtifacts })` | `DELETE /v1/agents/{agentId}` | `void`. `includeArtifacts` is required. The Workspace is kept. |
 | `enable({ agentId })` | `POST /v1/agents/{agentId}/enable` | `Agent` |
 | `disable({ agentId })` | `POST /v1/agents/{agentId}/disable` | `Agent` |
-| `listVersions({ agentId, cursor?, limit? })` | `GET /v1/agents/{agentId}/versions` | Page of `AgentVersion` |
-| `getVersion({ agentId, version })` | `GET /v1/agents/{agentId}/versions/{version}` | `AgentVersion` |
-| `restoreVersion({ agentId, version })` | `getVersion` then `PUT /v1/agents/{agentId}` | `Agent`. Copies the Version into a new latest Version. |
 | `uploadAvatar({ agentId, file })` | `POST /v1/agents/{agentId}/avatar` | `Agent`. `file` is a `File`. |
 | `removeAvatar({ agentId })` | `DELETE /v1/agents/{agentId}/avatar` | `Agent` |
 | `listMcpAttachments({ agentId })` | `GET /v1/agents/{agentId}/mcp-attachments` | `McpAttachmentsResponse` |
@@ -296,7 +292,7 @@ means the result is `{ data, nextCursor }` (see [Pagination](#pagination)).
 | `list()` | `GET /v1/providers` | `{ providers }`. Not paginated. |
 | `get({ providerId })` | `GET /v1/providers/{providerId}` | `ProviderResponse` |
 | `update({ providerId, ...body })` | `PATCH /v1/providers/{providerId}` | `ProviderResponse` |
-| `delete({ providerId, confirmVersionInvalidation? })` | `DELETE /v1/providers/{providerId}` | `void` |
+| `delete({ providerId, confirmSnapshotInvalidation? })` | `DELETE /v1/providers/{providerId}` | `void` |
 | `listModels({ providerId })` | `GET /v1/providers/{providerId}/models` | `ProviderModelsResponse` |
 | `getThinkingLevels({ providerId, model })` | `GET /v1/providers/{providerId}/thinking-levels` | `{ known, levels }` |
 
@@ -312,10 +308,13 @@ means the result is `{ data, nextCursor }` (see [Pagination](#pagination)).
 
 ### `client.sessions`
 
+The first Turn saves the Agent configuration. Read it with `get({ agentId, sessionId }).agentConfig`; message pages contain only transcript messages.
+
 | Method | HTTP | Returns / notes |
 | --- | --- | --- |
 | `list({ agentId, cursor?, limit?, userId? })` | `GET /v1/agents/{agentId}/sessions` | Page of Sessions (`id`, `userId`, `messageCount`, `lastMessagePreview`, `metadata`, timestamps). |
 | `listLatest({ byAgent?, userId?, cursor?, limit? })` | `GET /v1/sessions/latest` | Page of the Tenant's most recently updated Sessions, newest first. `byAgent: true` returns at most one per Agent. Items add `agentId`, `model`, `thinkingLevel`, `status`. |
+| `get({ agentId, sessionId })` | `GET /v1/agents/{agentId}/sessions/{sessionId}` | `SessionResponse` with `agentConfig` |
 | `messages({ agentId, sessionId, cursor?, after?, limit? })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/messages` | `{ data: UIMessage[], nextCursor, latestCursor }`. `cursor` walks older pages; `after` walks forward. Not both. |
 | `delete({ agentId, sessionId, deleteArtifacts })` | `DELETE /v1/agents/{agentId}/sessions/{sessionId}` | `void`. `deleteArtifacts` is required. |
 | `toolApprovals({ agentId, sessionId })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/tool-approvals` | `{ data, continuation }`. Each item has `approvalId`, `toolName`, `input`, `decision` (`pending`, `approved`, `denied`). |
@@ -629,7 +628,7 @@ export const POST = createChatRelay({ client, resolveContext, sessions });
 ```
 
 `resolveContext` returns `null` for unauthenticated requests, which become 401.
-`RelayContext` also accepts `metadata` and `version`. `SessionOwnershipStore`
+`RelayContext` also accepts `metadata` and request-local `functions`. `SessionOwnershipStore`
 needs `ownerOf(sessionId)` and `recordOwner(sessionId, userId)` backed by your
 database.
 
@@ -643,8 +642,8 @@ onSessionId? })` drives `useChat` through `client.chat()` without a relay.
   `client.agent({ agentId })`.
 - Calling `toResponse()` after `toStream()` (or twice) throws `stream_error`.
   Pick one accessor per result.
-- Sending `version` together with `sessionId` fails to type-check. A Session
-  keeps the Version it started on; pin only when creating.
+- A Session saves its Agent configuration at the first Turn. Read it with
+  `client.sessions.get({ agentId, sessionId })`.
 - `agents.delete` requires `includeArtifacts` and `sessions.delete` requires
   `deleteArtifacts`. Decide explicitly whether published files go too.
 - Forgetting `userId` records every Turn at Tenant level, so per-user usage is

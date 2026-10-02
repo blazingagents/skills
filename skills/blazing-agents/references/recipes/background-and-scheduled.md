@@ -12,7 +12,7 @@ A Task saves an Agent, a fixed `prompt`, and an optional schedule. Each executio
 
 ## Build it
 
-1. Decide what tools may do without a person. In a Task, a tool call that would need approval (`manual`, or `auto` that asks a person) is denied immediately and the Agent continues with the work it is allowed to do. This example allows only `read`, so the Agent needs the `workspace` tool group. Each update saves a new Agent Version.
+1. Decide what tools may do without a person. In a Task, a tool call that would need approval (`manual`, or `auto` that asks a person) is denied immediately and the Agent continues with the work it is allowed to do. This example allows only `read`, so the Agent needs the `workspace` tool group.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
@@ -42,7 +42,6 @@ const { task } = await client.tasks.create({
   agentId: "ag_0123456789abcdef",
   name: "Morning summary",
   prompt: "Summarize yesterday's support tickets.",
-  agentVersion: 3,
   userId: "app:user-42",
   metadata: { team: "support" },
   schedule: {
@@ -62,7 +61,6 @@ task = client.tasks.create(
     agent_id="ag_0123456789abcdef",
     name="Morning summary",
     prompt="Summarize yesterday's support tickets.",
-    agent_version=3,
     user_id="app:user-42",
     metadata={"team": "support"},
     schedule={
@@ -81,7 +79,7 @@ Pick the schedule kind that matches the need:
 | `interval` | `{ everyMs: 900000 }` (Python `every_ms`, minimum 60000) | Every N ms from creation |
 | `cron` | `{ expression, timezone?, staggerMs? }` (five numeric fields, IANA zone, default `UTC`) | On the calendar |
 
-Omit `agentVersion` to use the Agent's latest configuration at the moment each run is queued. Pin it to keep runs on a known-good Version.
+Each run saves the Agent's current configuration when queued. Read it with `getRun()` before the Session exists.
 
 3. Start a run on demand. Build the idempotency key from a stable business fact so a retried request returns the same run.
 
@@ -242,8 +240,8 @@ Cancel asks the run to stop at its next safe point. Keep polling until a final s
 ## Gotchas
 
 - In TypeScript, pass `idempotencyKey` to `tasks.create()`, including when `submit: true`. The same key and original input return the same Task and initial run. Changed input or a deleted Task returns `idempotency_conflict` (409). Without a key, a retry creates another Task. Python currently supports keys on `submit()` only; reconcile Task creation before retrying it.
-- A run keeps the `userId`, `metadata`, and Version captured when it was queued. Editing the Task changes future runs only. `agentId` and `userId` cannot change; create a new Task instead.
-- A Task pinned with `agentVersion` keeps that Version's `approvalInTasks`. After you change the policy, update the pin to the new Version.
+- A run keeps the `userId`, `metadata`, and Agent configuration captured when it was queued. Editing the Task changes future runs only. `agentId` and `userId` cannot change; create a new Task instead.
+- A queued run keeps its saved `approvalInTasks` policy. A policy edit applies to future runs.
 - Designing a Task around `manual` approval does not work: the call is denied at once, and a run that still ends up waiting for a person fails. Grant the tools it needs with `full` in `approvalInTasks`, or move the step to chat.
 - Starting a run with a new key while another run is active returns `task_active_run_exists` (HTTP 409). Scheduled times that fall during an active run are skipped, and missed times are not caught up.
 - A run executes at most once. If it ends `failed` partway, tools may already have sent email or written files. Check for those effects before starting it again.
@@ -255,7 +253,7 @@ Cancel asks the run to stop at its next safe point. Keep polling until a final s
 - Call your start function twice with the same key; both calls return the same `tr_...` ID.
 - Poll that run; it reaches `succeeded` and the last assistant message answers the Task prompt.
 - Create a Task with `{ kind: "interval", config: { everyMs: 60000 } }`; within two minutes `listRuns` shows a new run.
-- Read the run with `getRun`; its `userId` and `metadata` match the Task, and `agentVersion` matches your pin.
+- Read the run with `getRun`; its `userId` and `metadata` match the Task, and `agentConfig` shows the saved model, instructions, and approval policies.
 - Cancel a long run; polling ends at `canceled` or `succeeded`.
 
 ## Go deeper

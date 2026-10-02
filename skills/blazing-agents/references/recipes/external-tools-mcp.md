@@ -177,7 +177,7 @@ def check_tool_call(agent_id: str) -> None:
 - A Connection in `needs_auth` or an unreachable server fails the whole Turn with `mcp_connection_discovery_failed` (502), and a failing tool can fail it too. Blazing Agents never quietly runs with fewer tools. Handle the failed Turn and prompt an administrator to reconnect, or detach the Connection.
 - Forwarded `userId` and metadata are information for the server, not authorization. Your MCP server must still check what that user may do. Forward only what the server needs.
 - Tools are discovered live every Turn. Rerun `test()` after you change credentials or deploy the server.
-- `reconnect()` swaps URL and credentials under the same ID, which also changes what pinned older Agent versions use. Detach a Connection from every Agent before you delete it.
+- `reconnect()` swaps URL and credentials under the same ID, which also changes what existing Sessions and Task runs use. Detach a Connection from every Agent before you delete it.
 - MCP tools follow the Agent's approval policies. Target one with `{ type: "mcp", connectionId, name }` using the original tool name; see [human-approval.md](human-approval.md).
 
 ## Check it works
