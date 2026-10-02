@@ -63,6 +63,7 @@ Use `BlazingAgentsError.isInstance(error)` instead of `instanceof`, which fails 
 | `subscription_required` or `usage_credit_required` (402) | No active plan, or no usage credit left. | [Fix billing](#quota-blocked). |
 | `rate_limited` (429) | Too many interactive turns at once, or resources created too fast. | [Back off](#quota-blocked). |
 | `session_busy` (409) | A tool approval is pending, an approved call is running, or another turn holds the Session. | [Decide approvals, then resend](#session-busy). |
+| Chat paused for approval never continues after the decisions | The chat attached backend functions, and joining only observes the continuation. | Call `resumeChat`/`resume_chat` with the functions; see [backend functions](recipes/backend-functions.md). |
 | `session_version_mismatch` (409) | Two turns ran on the same Session at once; this one was not saved. | [Send one turn at a time](#session-busy). |
 | `invalid_cursor` (400) | The cursor was altered, came from another list, or was reused with different filters. | [Restart pagination](#invalid-cursor). |
 | Tool call never runs; the agent reports it was denied | The approval policy for this surface is `deny`, or `manual`/`auto` in a Task or stateless generation, where no person can approve. | [Change the policy or use chat](#tool-blocked-by-approval-policy). |

@@ -22,7 +22,7 @@
 
 | Skill | Use it to |
 | --- | --- |
-| `blazing-agents` | Build products on Blazing Agents with the TypeScript or Python SDK: chat, background and scheduled work, structured output, MCP tools, tool approvals, Slack and Telegram bots, usage dashboards, and token billing. |
+| `blazing-agents` | Build products on Blazing Agents with the TypeScript or Python SDK: chat, background and scheduled work, structured output, backend functions, MCP tools, tool approvals, Slack and Telegram bots, usage dashboards, and token billing. |
 | `ba-admin` | Administer a Tenant from a coding agent: Agents, Workspaces, Skills, Prompts, Tasks, Sessions, Chat Connections, and usage. |
 
 ## Install
