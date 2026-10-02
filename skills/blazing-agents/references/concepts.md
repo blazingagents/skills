@@ -30,11 +30,11 @@ The reusable setup behind every answer: Provider and model, instructions (system
 
 Not the same as: a Session. The agent is configuration; a session is one conversation with it.
 
-### Version
+### Agent configuration snapshot
 
-A numbered, read-only snapshot of an agent's configuration. Version 1 is created with the agent, and every update saves the next one; there is no draft or publish step. You use versions to roll back a bad change or to pin a session, task, or call to a known-good configuration. Skills, Memories, the Workspace attachment, the Provider key, MCP credentials, `userId`, the avatar, and the enabled/disabled state are not part of a version, so they always use their current state.
+The Agent settings saved with a Session at its first Turn or with a Task run when queued. It includes the model, instructions, tools, approval policies, and compaction settings. Later Agent edits affect new work; existing Sessions and queued runs keep their saved settings. Read `agentConfig` with `sessions.get()` or `tasks.getRun()`, including before a Task run has a Session.
 
-Not the same as: a deployment or release. Without a pin, every new turn uses the latest version immediately.
+Not the same as a copy of every dependency. Provider keys, MCP credentials and connection details, Workspace attachment, Skills, and Memories use their current state. Local callback functions come from each SDK request; paused approval definitions remain available for that continuation.
 
 ### Admin Agent
 
@@ -52,7 +52,7 @@ Not the same as: a Session. A session holds many turns; one-off generation runs 
 
 ### Session
 
-One stored conversation with one agent, identified by `ss_...`. BA returns the ID on the first chat call; pass it on the next call and the agent sees the whole history, so your backend never stores or replays messages. You need sessions for chat. When you delete a session you choose whether its Artifacts go too (`deleteArtifacts`, `delete_artifacts` in Python).
+One stored conversation with one agent, identified by `ss_...`. BA returns the ID on the first chat call; pass it on the next call and the agent sees the whole history, so your backend never stores or replays messages. You need sessions for chat. The first Turn saves the Agent configuration that later Turns use. When you delete a session you choose whether its Artifacts go too (`deleteArtifacts`, `delete_artifacts` in Python).
 
 Not the same as: Memory. A session is one conversation; memories carry facts across conversations.
 
@@ -124,7 +124,7 @@ Not the same as: a Turn or a Session. A task is a definition you run many times.
 
 ### Task run
 
-One background execution of a task (`tr_...`), started on demand or by its schedule. It moves through `queued`, `running`, then `succeeded`, `failed`, `canceled`, or `blocked`, and gets a fresh session holding its transcript. `blocked` means a quota, subscription, or credit check stopped it before running; it is not a failure. A task has at most one active run, and you pass an idempotency key so retries do not start duplicates.
+One background execution of a task (`tr_...`), started on demand or by its schedule. It moves through `queued`, `running`, then `succeeded`, `failed`, `canceled`, or `blocked`, and gets a fresh session holding its transcript. Its saved `agentConfig` is readable before the session exists. `blocked` means a quota, subscription, or credit check stopped it before running; it is not a failure. A task has at most one active run, and you pass an idempotency key so retries do not start duplicates.
 
 Not the same as: a chat session. You poll or read a run later instead of streaming it to a user.
 
@@ -171,10 +171,10 @@ Tenant ── API key (your backend only)
   ├─ MCP Connection (remote tools) ◄─────────┤ referenced by
   ├─ Workspace (/workspace files) ◄──────────┤
   │                                          │
-  ├─ Agent ─── Versions (config history) ────┘
+  ├─ Agent (current configuration) ───────────┘
   │    ├─ Skills, Memory, built-in tool groups, tool approval rules
-  │    ├─ Session (chat) ── Turns ── Artifacts, tool approvals
-  │    ├─ Task (+ Schedule) ── Task runs ── fresh Session ── Turn
+  │    ├─ Session (saved agentConfig) ── Turns ── Artifacts, tool approvals
+  │    ├─ Task (+ Schedule) ── Task runs (saved agentConfig) ── fresh Session ── Turn
   │    └─ Chat Connection (Slack/Telegram) ── Sessions ── Turns
   │
   ├─ Prompt (template used on any generation call)

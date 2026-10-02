@@ -1,15 +1,15 @@
 # Tune what your Agent does
 
-By the end, your Agent runs the model you chose with your instructions, reuses saved Prompts, loads runtime Skills when a task needs them, remembers facts per user, and you can pin or roll back any configuration change.
+By the end, your Agent runs the model you chose with your instructions, reuses saved Prompts, loads runtime Skills when a task needs them, remembers facts per user, and existing Sessions keep the configuration saved at their first Turn.
 
 ## When to use this
 
-Your Agent answers, but you want to change how it behaves: tone and rules, model, reusable request templates, longer workflows, facts about each End-user, or long-conversation handling. You also want a safe way to undo a bad change.
+Your Agent answers, but you want to change how it behaves: tone and rules, model, reusable request templates, longer workflows, facts about each End-user, or long-conversation handling. You also want to inspect what configuration an earlier Session used.
 If you instead want the Agent to take actions against outside systems, read [Connect external tools with MCP](external-tools-mcp.md).
 
 ## How it works
 
-An Agent holds versioned configuration: Provider and model, thinking level, instructions, Tool groups, approval policies, Memory injection, and compaction settings. Every `update()` saves a new immutable Version, and each Turn uses the latest Version unless you pin one. Three things live beside the Agent and always use their current state: Prompts (saved input templates with `{{variables}}`), runtime Skills (instruction packages the Agent loads on demand), and Memory (short notes scoped to the Agent and optionally to one `userId`). Instructions shape every Turn; a Prompt is the input for one Turn.
+An Agent holds configuration: Provider and model, thinking level, instructions, Tool groups, approval policies, Memory injection, and compaction settings. A Session saves the configuration at its first Turn; a Task run saves it when queued. Stateless calls use the current Agent configuration. Three things live beside the Agent and always use their current state: Prompts (saved input templates with `{{variables}}`), runtime Skills (instruction packages the Agent loads on demand), and Memory (short notes scoped to the Agent and optionally to one `userId`). Instructions shape every Turn; a Prompt is the input for one Turn.
 
 ## Build it
 
@@ -35,7 +35,7 @@ const agent = await client.agents.update({
   tools: ["workspace", "memory"],
   compactionReserveTokens: 32_768,
 });
-console.log(`Now at version ${agent.version}`);
+console.log(agent.model, agent.instructions);
 ```
 
 ```python
@@ -55,7 +55,7 @@ def configure(client: BlazingAgents, agent_id: str, provider_id: str) -> None:
         tools=["workspace", "memory"],
         compaction_reserve_tokens=32_768,
     )
-    print(f"Now at version {agent.version}")
+    print(agent.model, agent.instructions)
 ```
 
 2. Save a Prompt linked to the Agent and run it with exactly its variables. `agentId` groups Prompts for listing. A scoped request requires the Prompt and Agent to belong to the same user.
@@ -190,23 +190,17 @@ def curate_memory(client: BlazingAgents, agent_id: str, user_id: str) -> None:
     client.memories.delete(agent_id=agent_id, memory_id=memory.id)
 ```
 
-5. Pin, roll back, and pause with Versions. Pass `version` to run a known-good configuration. `restoreVersion()` copies an old Version into a new latest one. `disable()` stops new Turns without deleting anything.
+5. Read saved configuration and pause new work. Edit the Agent for future Sessions and Task runs. The existing Session keeps its saved settings.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
 
 declare const client: BlazingAgents;
-const agentId = "ag_0123456789abcdef";
+declare const agentId: string;
+declare const sessionId: string;
 
-const { data } = await client.agents.listVersions({ agentId, limit: 2 });
-const previous = data[1];
-if (!previous) throw new Error("Only one Version exists");
-
-const pinned = await client.completion({ agentId, version: previous.version, prompt: "Reply with OK." });
-console.log(await pinned.text);
-
-const restored = await client.agents.restoreVersion({ agentId, version: previous.version });
-console.log(`Restored ${previous.version} as ${restored.version}`);
+const session = await client.sessions.get({ agentId, sessionId });
+console.log(session.agentConfig.model, session.agentConfig.instructions);
 
 await client.agents.disable({ agentId });
 await client.agents.enable({ agentId });
@@ -215,20 +209,15 @@ await client.agents.enable({ agentId });
 ```python
 from blazing_agents import BlazingAgents
 
+client = BlazingAgents()
+agent_id = "ag_0123456789abcdef"
+session_id = "ss_0123456789abcdef"
 
-def roll_back(client: BlazingAgents, agent_id: str) -> None:
-    versions = client.agents.list_versions(agent_id, limit=2).data
-    if len(versions) < 2:
-        raise RuntimeError("Only one Version exists")
-    previous = versions[1]
+session = client.sessions.get(agent_id=agent_id, session_id=session_id)
+print(session.agent_config.model, session.agent_config.instructions)
 
-    print(client.completion(agent_id=agent_id, version=previous.version, prompt="Reply with OK."))
-
-    restored = client.agents.restore_version(agent_id, previous.version)
-    print(f"Restored {previous.version} as {restored.version}")
-
-    client.agents.disable(agent_id)
-    client.agents.enable(agent_id)
+client.agents.disable(agent_id)
+client.agents.enable(agent_id)
 ```
 
 ## Gotchas
@@ -238,24 +227,23 @@ def roll_back(client: BlazingAgents, agent_id: str) -> None:
 - A Prompt call must supply every variable and no extras (`prompt_variable_missing`, `prompt_variable_unknown`). A call uses `promptId` or a literal `prompt`, never both.
 - Deleting an Agent deletes its linked Prompts. Set the Prompt's `agentId` to `null` first to keep it.
 - Uploading a Skill whose `name` already exists on the Agent fails with `skill_name_conflict`. Edit it with `putFile()` / `replace_file()`, or delete it and upload again.
-- Skills and Memory are not part of Versions. Restoring a Version does not bring back old Skill content or notes.
+- Skills and Memory use their current content; the saved Agent configuration holds neither file contents nor notes.
 - Memory `userId` labels notes. Use the verified user scope from [multi-user apps](multi-user-apps.md) for user-owned Memory and Turns. A scoped Turn sees that user's notes. An unscoped Turn retains the Tenant's general Memory behavior.
 - Memory search matches words, not meaning. Each Agent keeps up to 500 notes and evicts the least recently used one when full.
-- A Session started with `version` stays on it for every Turn. Start a new Session to pick up a restored Version.
+- An existing Session keeps its saved configuration. Start a new Session to use Agent edits.
 - A disabled Agent rejects new Turns with `agent_disabled`, and scheduled Task runs are skipped, not queued.
 
 ## Check it works
 
-- `client.agents.get()` shows the new `model`, `instructions`, and a higher `version`; `getVersion()` for the previous number still shows the old values.
+- `client.agents.get()` shows the new `model` and `instructions`; `sessions.get()` shows the settings saved for an existing Session.
 - Run the Prompt twice with different `variables`; each answer reflects its inputs.
 - Ask a question that matches your Skill's description; the answer follows the Skill's instructions.
 - After saving a note for `app-user-42`, a fresh Session with `userId: "app-user-42"` answers using it, and one without `userId` does not.
-- Restore the previous Version, then compare a completion with and without `version`; both use the restored configuration.
 
 ## Go deeper
 
 - [Agents](https://docs.blazingagents.com/agents/agents), including [automatic context compaction](https://docs.blazingagents.com/agents/agents#automatic-context-compaction)
 - [Providers and models](https://docs.blazingagents.com/agents/providers-and-models)
 - [Prompts](https://docs.blazingagents.com/agents/prompts), [Skills](https://docs.blazingagents.com/agents/skills), [Memory](https://docs.blazingagents.com/agents/memory)
-- [Versions and lifecycle](https://docs.blazingagents.com/agents/versions-and-lifecycle)
+- [Configuration snapshots and lifecycle](https://docs.blazingagents.com/agents/configuration-snapshots)
 - SDK references: TypeScript [Agents](https://docs.blazingagents.com/sdk/typescript/agents), [Prompts](https://docs.blazingagents.com/sdk/typescript/prompts), [Skills](https://docs.blazingagents.com/sdk/typescript/skills), [Memories](https://docs.blazingagents.com/sdk/typescript/memories); Python [Agents](https://docs.blazingagents.com/sdk/python/agents), [Prompts](https://docs.blazingagents.com/sdk/python/prompts), [Skills](https://docs.blazingagents.com/sdk/python/skills), [Memories](https://docs.blazingagents.com/sdk/python/memories)
