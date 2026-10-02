@@ -308,7 +308,7 @@ means the result is `{ data, nextCursor }` (see [Pagination](#pagination)).
 
 ### `client.sessions`
 
-The first Turn saves the Agent configuration. Read it with `get({ agentId, sessionId }).agentConfig`; message pages contain only transcript messages.
+The first Turn saves the Agent configuration. Read it with `(await client.sessions.get({ agentId, sessionId })).agentConfig`; message pages contain only transcript messages.
 
 | Method | HTTP | Returns / notes |
 | --- | --- | --- |

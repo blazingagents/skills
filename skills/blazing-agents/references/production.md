@@ -156,9 +156,9 @@ Every response carries an `X-Request-Id` header. It is not in the JSON body. Rea
 
 ## Inspect Agent configuration
 
-The first Turn saves the Agent configuration for its Session. Later Turns in that Session use those settings after Agent edits. Read them with `client.sessions.get({ agentId, sessionId }).agentConfig` (`client.sessions.get(agent_id=..., session_id=...).agent_config` in Python). Session lists and message pages stay compact.
+The first Turn saves the Agent configuration for its Session. Later Turns in that Session use those settings after Agent edits. Read them with `(await client.sessions.get({ agentId, sessionId })).agentConfig` (`client.sessions.get(agent_id=..., session_id=...).agent_config` in Python). Session lists and message pages stay compact.
 
-Each Task run saves the Agent configuration when queued. Read `client.tasks.getRun({ taskId, runId }).agentConfig` (`client.tasks.get_run(task_id, run_id).agent_config` in Python), even before the run starts a Session. The run's Session uses that same configuration. Stateless calls use the current Agent configuration at each invocation.
+Each Task run saves the Agent configuration when queued. Read `(await client.tasks.getRun({ taskId, runId })).agentConfig` (`client.tasks.get_run(task_id, run_id).agent_config` in Python), even before the run starts a Session. The run's Session uses that same configuration. Stateless calls use the current Agent configuration at each invocation.
 
 Snapshots include model, instructions, tools, approval policies, and compaction settings. They hold Provider and MCP connection IDs, while keys and connection details remain current. Workspace attachment, Skills, and Memories also remain current. Local SDK callback functions are supplied per request; only paused approval definitions remain available for continuation.
 
