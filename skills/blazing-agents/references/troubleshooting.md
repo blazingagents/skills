@@ -147,7 +147,7 @@ Session inputs carry your `requestId`. BA compares the original message and `whe
 - `input_idempotency_conflict` (409): the `requestId` was reused with a changed message or `whenBusy`, or the message ID was already used under another `requestId`. When an acknowledgement was lost, retry with the original `requestId` and payload, or list the Session's inputs. Never mint a new `requestId` for a message whose outcome you do not know; that can deliver it twice.
 - `input_not_pending` (409) on promote or delete: the input was already reserved for delivery, so it can no longer be withdrawn or moved. Show it as sent and let the transcript catch up. The agent may already have acted on it.
 - Activity `paused` with reason `failed` or `owner_lost`: an unexpected error stopped the queue and kept the waiting inputs. Show the error, then resume the queue when the user is ready. Inputs in state `uncertain` may have reached the agent before the failure and are never replayed; ask the user before sending them again.
-- Activity `paused` with reason `function_executor_required`: the next turn needs backend functions that only your process can run. Resume it from a backend that attaches those functions.
+- Activity `paused` with reason `function_executor_required`: the chat attached backend functions, which only your process can run, so BA does not start queued turns on its own. `resumeInputs` leaves this pause in place. Call `sessions.runInputs({ agentId, sessionId, functions })` (`client.run_inputs` in Python) from your backend to run the waiting queue as one turn and stream it. It returns `session_busy` when the queue is empty, a turn is running, or an approval waits.
 
 ## Invalid cursor
 

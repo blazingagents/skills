@@ -193,10 +193,11 @@ async def resume_after_decision(
 
 ## Gotchas
 
-- Functions travel only on Turns your backend starts with `chat()` or `resumeChat()`: never on Tasks (including scheduled), stateless `completion`/`object`, or Slack/Telegram Turns. Use [MCP](external-tools-mcp.md) for those.
+- Functions travel only on Turns your backend starts with `chat()`, `resumeChat()`, or `runInputs()`, or joins with `joinInputTurn()` and `functions`: never on Tasks (including scheduled), stateless `completion`/`object`, or Slack/Telegram Turns. Use [MCP](external-tools-mcp.md) for those.
 - Nothing is saved on the Agent. Send `functions` on every chat call and rebuild the map per request so handlers capture that request's verified user.
 - Never trust a user ID the model supplies as an argument; build handlers after authenticating and query with the verified ID.
 - Backend functions follow `approvalInChat.default`; per-tool `overrides` name built-in and MCP tools only.
+- Queued messages wait for you too. When the chat attached functions, a Session with queued inputs pauses with `function_executor_required` instead of starting the next Turn. Run the queue with `sessions.runInputs({ agentId, sessionId, functions })` (`client.run_inputs` in Python) and relay its stream. To run handlers for a queued Turn that is already running, pass `functions` to `sessions.joinInputTurn` (`client.join_input_turn` in Python); without them, joining only watches. See [chat in your app](chat-in-your-app.md).
 - A paused chat needs `resumeChat`/`resume_chat`. `joinToolApprovalContinuation`/`join_tool_approval_continuation` only observe: they strip function events and never run your handlers. Resuming with no ready continuation raises an error.
 - The saved schema wins on resume. A missing handler or invalid input reaches the agent as a tool error, so keep the resumed handlers compatible with what chat advertised.
 - Each call has a 60-second deadline, including claim time. Cancellation is cooperative (pass `signal`, or check `cancelled` in a synchronous Python handler) and cannot undo a side effect that already happened.
