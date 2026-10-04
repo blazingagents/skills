@@ -497,8 +497,11 @@ Transcripts (`sessions.messages`, `tasks.runMessages`) return the newest page
 first, with messages in chronological order inside each page, and also carry
 `latestCursor`. To watch a transcript grow, pass
 `latestCursor` back as `after` on the next poll. `after` returns only messages
-added later. A tool approval continuation updates its assistant message in
-place, so after an approval reload the newest page and replace messages by ID.
+added later. A tool approval decision and its continuation update the assistant
+message in place, at the same position, possibly over several rounds. While any
+loaded message has a tool part in state `approval-requested` or
+`approval-responded`, poll the newest page without `after` and replace messages
+by ID; go back to `after` once none remain.
 `sessions.messages().data` already contains AI SDK `UIMessage` values; use
 these as `useChat` initial messages without an extra conversion method.
 
