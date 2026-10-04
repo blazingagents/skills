@@ -737,7 +737,17 @@ function Chat({
         </section>
       )}
       <form onSubmit={send}>
-        <input aria-label="Message" value={input} onChange={(event) => setInput(event.target.value)} />
+        <textarea
+          aria-label="Message"
+          rows={2}
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" || event.shiftKey) return;
+            event.preventDefault();
+            event.currentTarget.form?.requestSubmit();
+          }}
+        />
         {busy && !input.trim() ? (
           <button type="button" onClick={() => void stop()} disabled={state === "stopping" || state === "approval"}>
             Stop
@@ -772,7 +782,7 @@ function Chat({
 - **Steering stops at tool approvals.** Steering does not cross a tool approval. A steering message the agent has not read when an approval pause starts, or one sent while the approved call's continuation runs, waits for the next batch instead, with the same `requestId` and position. BA turns it back into a `queue` input, so its row shows Send again. Render each row from the receipt's `mode`, not from the last button the user pressed. Stop still ends the continuation.
 - **One batch per Turn.** When a Turn finishes or is stopped, BA starts one new Turn with every queued input, each as its own user message. Messages queued after that Turn starts wait for the next batch. With an empty queue the Session goes idle.
 - **Attach to queued Turns yourself.** Poll `GET /api/chat/queue` from its first page while the Session is busy; the cursor only pages through inputs. When `activity.turnId` names a Turn bound to queued inputs, attach once with `joinInputTurn`. It replays from the start of that Turn, so after a reload the whole answer streams again under the same message ID; replace, never append. Attaching only watches. It never starts, restarts, or stops work, so use Stop to end the Turn. A Turn started by `chat` cannot be attached (404), and a dropped `chat` stream is not replayed; reload history after it ends.
-- **Stopped queued messages come back to the composer.** Stopping a Turn cancels the inputs it had taken, and saved history keeps none of them. `Chat` remembers that Turn's batch, and after the history reload it puts back the text of every batch message that history lacks, the way a stopped `chat` send restores its text. A message that history has was answered before Stop took effect, so it stays answered.
+- **Stopped queued messages come back to the composer.** Stopping a Turn cancels the inputs it had taken, and saved history keeps none of them. `Chat` remembers that Turn's batch, and after the history reload it puts back the text of every batch message that history lacks, one per line, the way a stopped `chat` send restores its text. The composer is a `textarea` so those lines stay separate; Enter sends and Shift+Enter adds a line. A message that history has was answered before Stop took effect, so it stays answered.
 - **Stop without a Turn ID only aborts.** `Chat` stops by `turnId`, reading activity once if it has none yet. When there is still no Turn ID, for example while the first message is creating the Session, it can only abort the chat request. That is not the fenced Stop: BA may cancel the Turn and pause the queue with reason `failed`. Show the paused state and let the user press Resume.
 - **Errors pause the queue.** Activity `paused` keeps the waiting inputs until the user presses Resume or sends another message. Inputs marked `uncertain` may have reached the agent before the failure and are never resent automatically; let the user decide.
 - **Reload the newest page, not `after`.** A tool approval continuation rewrites its assistant message in place, at the same position, so `messages({ after: latestCursor })` never returns the revised tool result or answer. `Chat` reloads the newest page after each Turn and drops that reload if a new Turn or stream starts first, so an old snapshot cannot overwrite live messages.
