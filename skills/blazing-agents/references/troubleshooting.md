@@ -137,9 +137,9 @@ To fix it:
 - List the Session's pending tool approvals and decide them. See [human approval](recipes/human-approval.md).
 - Show the error to your user, keep their draft, and let them send again once the work settles.
 - `session_version_mismatch` (409) means two turns ran on the same Session at once and this one was not saved. Read the Session's messages to see what was saved, then resend if needed.
-- Prevent both in your frontend: while a turn runs, submit new messages as Session inputs instead of new chat calls, and send one chat turn at a time per Session.
+- To prevent both, submit new messages as Session inputs while a turn runs instead of making new chat calls, and send one chat turn at a time per Session.
 - Stopping during an approval wait also returns `session_busy`. Decide the approvals; Stop never decides them for you.
-- Deleting a Session returns `session_busy` while any turn runs, including one started from its queue. Deleting an idle Session is allowed even with queued inputs: they never run, and its inputs and queued-turn streams disappear with it (`not_found`).
+- Deleting a Session returns `session_busy` while any turn runs, including one started from its queue. Deleting an idle Session is allowed even with queued inputs. They never run, and its inputs and queued-turn streams disappear with it (`not_found`).
 
 ## Queued input errors
 
