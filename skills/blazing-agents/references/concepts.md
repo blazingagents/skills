@@ -56,6 +56,12 @@ One stored conversation with one agent, identified by `ss_...`. BA returns the I
 
 Not the same as: Memory. A session is one conversation; memories carry facts across conversations.
 
+### Session input (queue and steer)
+
+A user message submitted to an existing session through its inputs resource, identified by your own `requestId`. BA saves it before acknowledging, so it survives reloads and is listed with the session's current activity (`idle`, `running`, `stopping`, `approval`, or `paused`). While a turn runs, a `queue` input waits; when that turn finishes or the user stops it, BA starts one new turn with every waiting input, each as its own user message, in submission order. A `steer` input joins the running turn as soon as the agent can take it; if that turn is already finishing, it waits for the next batch instead. A failed turn pauses the session with its waiting inputs kept until you resume it. You can promote a waiting input to `steer` or delete it until BA reserves it for delivery. Its `state` moves from `accepted` to `delivered`, `consumed` (the agent has read it), and `committed` (saved in history), or ends `cancelled` or `uncertain`.
+
+Not the same as: a chat message sent with `chat()`. That starts a turn now and fails with `session_busy` while the session is busy; an input waits its turn instead.
+
 ### Prompt
 
 A saved message template with `{{variables}}`, used in place of a literal message on any generation call. Use one when your app sends the same kind of request repeatedly and you want to edit the wording without redeploying. Only the filled-in text enters the transcript.
@@ -174,6 +180,7 @@ Tenant ── API key (your backend only)
   ├─ Agent (current configuration) ───────────┘
   │    ├─ Skills, Memory, built-in tool groups, tool approval rules
   │    ├─ Session (saved agentConfig) ── Turns ── Artifacts, tool approvals
+  │    │    └─ Session inputs (queued and steering messages) ── next Turn
   │    ├─ Task (+ Schedule) ── Task runs (saved agentConfig) ── fresh Session ── Turn
   │    └─ Chat Connection (Slack/Telegram) ── Sessions ── Turns
   │

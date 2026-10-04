@@ -5,8 +5,9 @@ client, run chat, text, and structured output, call every resource method, page
 through lists, handle errors, and connect `useChat` to your own backend.
 
 The examples for user scope, paginated Agents and Prompts, session usage, and
-backend functions require TypeScript SDK 0.16.0 or newer; check the installed
-package's types before using these APIs.
+backend functions require TypeScript SDK 0.16.0 or newer. Session inputs (queue,
+steering, and Stop) require 0.18.0 or newer. Check the installed package's types
+before using these APIs.
 
 For the same surface in Python, read [Python SDK reference](sdk-python.md). For
 end-to-end builds, start from a recipe such as
@@ -320,6 +321,14 @@ The first Turn saves the Agent configuration. Read it with `(await client.sessio
 | `toolApprovals({ agentId, sessionId })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/tool-approvals` | `{ data, continuation }`. Each item has `approvalId`, `toolName`, `input`, `decision` (`pending`, `approved`, `denied`). |
 | `decideToolApproval({ agentId, sessionId, approvalId, approved, reason? })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/tool-approvals/{approvalId}` | `{ continuationId, state }` |
 | `joinToolApprovalContinuation({ agentId, sessionId, continuationId })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/tool-approval-continuations/{continuationId}` | `TerminalStreamResult` with `toResponse()`, `toStream()`, `requestId`. Streams the resumed Turn. |
+| `submitInput({ agentId, sessionId, requestId, message, whenBusy? })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/inputs` | `{ data: SessionInput, activity }`. Saved before it returns. `whenBusy` is `"queue"` (default) or `"steer"`. Same `requestId` and payload returns the same receipt; a changed payload returns `input_idempotency_conflict`. |
+| `inputs({ agentId, sessionId, includeCompleted?, limit?, cursor? })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/inputs` | `{ data, nextCursor, activity }` in submission order. Poll without `cursor` to see changes; `cursor` only pages. |
+| `promoteInput({ agentId, sessionId, requestId })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/inputs/{requestId}/promote` | `{ data, activity }`. Queue to steer; keeps identity and order. `input_not_pending` once delivered. |
+| `deleteInput({ agentId, sessionId, requestId })` | `DELETE /v1/agents/{agentId}/sessions/{sessionId}/inputs/{requestId}` | `{ data, activity }` with `state: "cancelled"`, `reason: "deleted"`. `input_not_pending` once delivered. |
+| `stop({ agentId, sessionId, turnId })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/stop` | `{ stoppedTurnId, activity }` after that Turn has ended. `activity` may already show the next queued Turn. `session_busy` during an approval wait. |
+| `resumeInputs({ agentId, sessionId })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/inputs/resume` | `{ activity }`. Restarts a `paused` queue in order; never resends `uncertain` inputs. |
+
+A `SessionInput` has `requestId`, `sequence`, `message`, `mode` (`queue` or `steer`), `state` (`accepted`, `delivered`, `consumed`, `committed`, `cancelled`, `uncertain`), `turnId`, `reason`, and timestamps. `activity` is `{ state, turnId, reason }` with `state` one of `idle`, `running`, `stopping`, `approval`, `paused`. While busy, queued inputs wait and run together in one new Turn when the current one finishes or is stopped. Turns started from the queue do not stream; read their answers with `messages()`. See [Add chat to your app](recipes/chat-in-your-app.md) for the full flow.
 
 ### `client.tasks` (Tasks and Task runs)
 
@@ -650,7 +659,9 @@ onSessionId? })` drives `useChat` through `client.chat()` without a relay.
   lost. Pass your end user's ID on every generation call.
 - `object` results are `unknown`. Validate before use.
 - The chat transport does not resume an interrupted stream; `reconnectToStream`
-  returns `null`. Resend the message instead.
+  returns `null`. Reload history and the Session's `inputs()` before resending.
+- `chat` on a busy Session fails with `session_busy`. Send the message with
+  `sessions.submitInput()` instead so it waits in the queue.
 - Agent and Prompt names can repeat. Read every page before resolving a name
   to an ID; reject multiple exact matches.
 

@@ -1,6 +1,6 @@
 # Python SDK reference
 
-Use this page to call Blazing Agents from a Python backend: install the package, pick a client, run Turns, and find the method for every operation. The paginated Agent and Prompt lists and backend functions require the updated Python SDK and server; check the installed package before using them. The install command below uses the published 0.10.0 floor.
+Use this page to call Blazing Agents from a Python backend: install the package, pick a client, run Turns, and find the method for every operation. The paginated Agent and Prompt lists and backend functions require the updated Python SDK and server, and Session inputs (queue, steering, and Stop) require 0.12.0 or newer; check the installed package before using them. The install command below uses the published 0.10.0 floor.
 
 For the same surface in TypeScript, read [TypeScript SDK reference](sdk-typescript.md). For end-to-end builds, start from a recipe such as [Add chat to your app](recipes/chat-in-your-app.md).
 
@@ -249,9 +249,17 @@ Signatures below drop `extra_headers` and `timeout`, which every method accepts.
 | `tool_approvals(*, agent_id, session_id)` | `ToolApprovals` (`.data`, `.continuation`) |
 | `decide_tool_approval(*, agent_id, session_id, approval_id, approved, reason=...)` | `ToolApprovalDecision` |
 | `join_tool_approval_continuation(*, agent_id, session_id, continuation_id)` | `ByteStream` (same SSE format as `chat()`) |
+| `submit_input(*, agent_id, session_id, request_id, message, when_busy=...)` | `SessionInputResponse` (`.data`, `.activity`). `when_busy` is `"queue"` (default) or `"steer"`. |
+| `inputs(*, agent_id, session_id, include_completed=..., cursor=..., limit=...)` | `SessionInputsPage` (`.data`, `.next_cursor`, `.activity`) |
+| `promote_input(*, agent_id, session_id, request_id)` | `SessionInputResponse` |
+| `delete_input(*, agent_id, session_id, request_id)` | `SessionInputResponse` with `state="cancelled"` |
+| `stop(*, agent_id, session_id, turn_id)` | `SessionStopResponse` (`.stopped_turn_id`, `.activity`) after that Turn has ended |
+| `resume_inputs(*, agent_id, session_id)` | `SessionActivityResponse` (`.activity`) |
 | `delete(*, agent_id, session_id, delete_artifacts: bool)` | `None` |
 
-The first Turn saves `agent_config`; get it with `client.sessions.get()`. Message pages contain only transcript messages. Start and continue Sessions with `client.chat()`, not through this resource. `list_latest(by_agent=True)` returns at most one Session per Agent, which suits an inbox view.
+The first Turn saves `agent_config`; get it with `client.sessions.get()`. Message pages contain only transcript messages. Start Sessions with `client.chat()`, not through this resource. `list_latest(by_agent=True)` returns at most one Session per Agent, which suits an inbox view.
+
+While a Turn runs, `chat()` raises `session_busy`; send the message with `submit_input()` instead. BA saves it under your `request_id` before returning. Retry with the same `request_id` and message after an unknown outcome; a changed payload raises `input_idempotency_conflict`. Queued inputs run together, in order, in one new Turn when the current Turn finishes or is stopped. `promote_input()` moves a waiting input into the running Turn as steering, and `delete_input()` withdraws it; both raise `input_not_pending` once BA has reserved it for delivery. Poll `inputs()` without `cursor` for changes, and read answers of queued Turns with `messages()`. `stop()` takes the `turn_id` from `activity` and raises `session_busy` during an approval wait. `resume_inputs()` restarts a `paused` queue and never resends `uncertain` inputs. All methods accept `extra_headers` for user scope. See [Add chat to your app](recipes/chat-in-your-app.md).
 
 ### `client.tasks`
 

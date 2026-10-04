@@ -61,7 +61,7 @@ These are the supported administrative methods:
 | Prompts | `client.prompts.list/get` | `create`, `update`, `delete` |
 | Tasks | `client.tasks.list/get/listRuns/getRun/runMessages` | `create`, `update`, `delete`, `createRun`, `cancelRun` |
 | Usage | `client.usage.overview()`, `get()`, `getForAgent(agentId)` | — |
-| Sessions | `client.sessions.list/listLatest/messages` | `delete` |
+| Sessions | `client.sessions.list/listLatest/messages/inputs` | `delete` |
 | Artifacts | `client.artifacts.list()` | — |
 
 Resource method names are invoked on the object shown in the first column's

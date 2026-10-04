@@ -65,6 +65,9 @@ Use `BlazingAgentsError.isInstance(error)` instead of `instanceof`, which fails 
 | `session_busy` (409) | A tool approval is pending, an approved call is running, or another turn holds the Session. | [Decide approvals, then resend](#session-busy). |
 | Chat paused for approval never continues after the decisions | The chat attached backend functions, and joining only observes the continuation. | Call `resumeChat`/`resume_chat` with the functions; see [backend functions](recipes/backend-functions.md). |
 | `session_version_mismatch` (409) | Two turns ran on the same Session at once; this one was not saved. | [Send one turn at a time](#session-busy). |
+| `input_idempotency_conflict` (409) | A Session input reused a `requestId` with a different message or `whenBusy`, or reused a message ID under a new `requestId`. | [Retry with the original request](#queued-input-errors). |
+| `input_not_pending` (409) on promote or delete | BA already reserved the queued input for delivery. | [Treat it as sent](#queued-input-errors). |
+| Queued messages never start; activity is `paused` | The previous turn failed or its worker was lost, so BA paused the queue. | [Resume the queue](#queued-input-errors). |
 | `invalid_cursor` (400) | The cursor was altered, came from another list, or was reused with different filters. | [Restart pagination](#invalid-cursor). |
 | Tool call never runs; the agent reports it was denied | The approval policy for this surface is `deny`, or `manual`/`auto` in a Task or stateless generation, where no person can approve. | [Change the policy or use chat](#tool-blocked-by-approval-policy). |
 | Turn fails with `mcp_connection_discovery_failed` (502), or the connection shows `needs_auth` | An attached MCP connection needs OAuth sign-in, or its server is down. | [Finish sign-in or detach](#mcp-authorization-missing). |
@@ -134,7 +137,17 @@ To fix it:
 - List the Session's pending tool approvals and decide them. See [human approval](recipes/human-approval.md).
 - Show the error to your user, keep their draft, and let them send again once the work settles.
 - `session_version_mismatch` (409) means two turns ran on the same Session at once and this one was not saved. Read the Session's messages to see what was saved, then resend if needed.
-- Prevent both in your frontend: disable Send while a turn is streaming, and send one turn at a time per Session.
+- Prevent both in your frontend: while a turn runs, submit new messages as Session inputs instead of new chat calls, and send one chat turn at a time per Session.
+- Stopping during an approval wait also returns `session_busy`. Decide the approvals; Stop never decides them for you.
+
+## Queued input errors
+
+Session inputs carry your `requestId`. BA compares the original message and `whenBusy` for that ID, so a retry is safe only when it repeats the same request.
+
+- `input_idempotency_conflict` (409): the `requestId` was reused with a changed message or `whenBusy`, or the message ID was already used under another `requestId`. When an acknowledgement was lost, retry with the original `requestId` and payload, or list the Session's inputs. Never mint a new `requestId` for a message whose outcome you do not know; that can deliver it twice.
+- `input_not_pending` (409) on promote or delete: the input was already reserved for delivery, so it can no longer be withdrawn or moved. Show it as sent and let the transcript catch up. The agent may already have acted on it.
+- Activity `paused` with reason `failed` or `owner_lost`: an unexpected error stopped the queue and kept the waiting inputs. Show the error, then resume the queue when the user is ready. Inputs in state `uncertain` may have reached the agent before the failure and are never replayed; ask the user before sending them again.
+- Activity `paused` with reason `function_executor_required`: the next turn needs backend functions that only your process can run. Resume it from a backend that attaches those functions.
 
 ## Invalid cursor
 

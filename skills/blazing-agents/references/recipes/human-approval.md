@@ -232,7 +232,7 @@ export async function sendDecision(input: {
 - An override must name a tool the Agent has, once per policy. Removing a tool group or detaching a Connection makes a policy that names its tools invalid, so update the policy in the same change.
 - MCP overrides use the original tool name, not the generated name you see in saved messages. For display, prefer the approval's `tool` field, which has the MCP `connectionId` and original `name`; `toolName` is the generated name.
 - Send decisions through your backend with `decideToolApproval`. Answering only in the browser with AI SDK `addToolApprovalResponse` does not resume the agent.
-- While approvals are pending or a continuation runs, new chat messages and regeneration fail with `session_busy`. Disable the composer until the continuation ends.
+- While approvals are pending or a continuation runs, new chat messages and regeneration fail with `session_busy`. Submit Session inputs instead, as in [chat in your app](chat-in-your-app.md): they wait, queued or steering, and never bypass the approval. Stop also returns `session_busy` during an approval wait.
 - A dropped stream does not stop the continuation. Join the same `continuationId` again; it replays from the start and never reruns the tool. `toolApprovals()` also returns the Session's current `continuation` with its `id` and `state`.
 - Joining only observes a continuation whose chat attached backend functions: function events are stripped, handlers never run, and a queued continuation waits for an executor. Call `resumeChat`/`resume_chat` with the functions instead, as in [backend functions](backend-functions.md).
 - The same decision sent twice is safe. Reversing a decision returns `tool_approval_decision_conflict` (409).
@@ -244,7 +244,7 @@ export async function sendDecision(input: {
 - Ask the agent to run a shell command. The chat stream ends and `toolApprovals()` lists one `pending` item for `bash` with the command in `input`.
 - Approve it. The resumed stream shows the command's result and the agent's answer.
 - Repeat and deny it. The agent receives a denied result and says it could not run the command.
-- Send a new message while an approval is pending; it fails with `session_busy`.
+- Send a new chat message while an approval is pending; it fails with `session_busy`. Submit it as a Session input instead; it stays pending while the approval waits for a decision.
 - Start a Task that needs a `manual` tool; the call is blocked and nothing waits.
 
 ## Go deeper
