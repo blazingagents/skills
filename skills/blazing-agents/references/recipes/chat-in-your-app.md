@@ -559,6 +559,7 @@ function Chat({
     if (!response.ok) return;
     const body: { data: QueuedInput[]; activity: SessionActivity } = await response.json();
     setQueue({ inputs: body.data, activity: body.activity });
+    return body.activity;
   }, [sessionId, token]);
 
   const watching = Boolean(sessionId) && (busy || (pending.length > 0 && state !== "paused"));
@@ -647,7 +648,8 @@ function Chat({
   }
 
   async function stop() {
-    if (turnId) await act({ action: "stop", turnId });
+    const current = turnId ?? (await refresh().catch(() => undefined))?.turnId;
+    if (current) await act({ action: "stop", turnId: current });
     if (streaming) {
       await chat.stop();
       chat.setMessages(saved.current);
@@ -740,9 +742,10 @@ function Chat({
 - **Queue only after the Session exists.** The first message creates the Session through `chat`. Inputs need a Session ID, which the transport receives before the answer streams.
 - **Keep the `requestId` until the outcome is known.** `submitInput` saves the message before it returns, so a lost response may still have queued it. Retry with the same `requestId` and message, as `Chat` does while the text is unchanged. A changed payload under the same `requestId`, or the same message ID under a new one, returns `input_idempotency_conflict`.
 - **Delete and Send race with delivery.** Promote and Delete work only while an input is `accepted`. Once BA reserves it for a Turn, both return `input_not_pending`; show it as sent. A steering message the agent has read can affect the Turn even if that Turn is later stopped and not saved.
-- **Steering stops at tool approvals.** Steering does not cross a tool approval. A steering message the agent has not read when an approval pause starts, or one sent while the approved call's continuation runs, waits for the next batch instead, with the same `requestId` and position. The row stays in the `queue` block marked as steering until that batch starts. Stop still ends the continuation.
+- **Steering stops at tool approvals.** Steering does not cross a tool approval. A steering message the agent has not read when an approval pause starts, or one sent while the approved call's continuation runs, waits for the next batch instead, with the same `requestId` and position. BA turns it back into a `queue` input, so its row shows Send again. Render each row from the receipt's `mode`, not from the last button the user pressed. Stop still ends the continuation.
 - **One batch per Turn.** When a Turn finishes or is stopped, BA starts one new Turn with every queued input, each as its own user message. Messages queued after that Turn starts wait for the next batch. With an empty queue the Session goes idle.
 - **Attach to queued Turns yourself.** Poll `GET /api/chat/queue` from its first page while the Session is busy; the cursor only pages through inputs. When `activity.turnId` names a Turn bound to queued inputs, attach once with `joinInputTurn`. It replays from the start of that Turn, so after a reload the whole answer streams again under the same message ID; replace, never append. Attaching only watches. It never starts, restarts, or stops work, so use Stop to end the Turn. A Turn started by `chat` cannot be attached (404), and a dropped `chat` stream is not replayed; reload history after it ends.
+- **Stop without a Turn ID only aborts.** `Chat` stops by `turnId`, reading activity once if it has none yet. When there is still no Turn ID, for example while the first message is creating the Session, it can only abort the chat request. That is not the fenced Stop: BA may cancel the Turn and pause the queue with reason `failed`. Show the paused state and let the user press Resume.
 - **Errors pause the queue.** Activity `paused` keeps the waiting inputs until the user presses Resume or sends another message. Inputs marked `uncertain` may have reached the agent before the failure and are never resent automatically; let the user decide.
 - **Older history.** `sessions.messages` returns the newest page, oldest first. Pass `nextCursor` back as `cursor` to load earlier pages for long conversations. Prepend each older page without reversing its messages.
 - **Proxies must not buffer the stream.** `toResponse()` sets `cache-control: no-cache`; make sure every proxy in front of your backend passes chunks through as they arrive.
