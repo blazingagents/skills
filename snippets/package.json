@@ -4,7 +4,7 @@
   "description": "Pinned dependencies for type-checking code blocks in skills/**/*.md.",
   "dependencies": {
     "@ai-sdk/react": "^4.0.119",
-    "@blazingagents/sdk": "file:../vendor/blazingagents-sdk-0.17.0.tgz",
+    "@blazingagents/sdk": "file:../vendor/blazingagents-sdk-0.18.0.tgz",
     "@types/node": "^26.6.3",
     "@types/react": "^19.3.0",
     "ai": "^7.0.116",
