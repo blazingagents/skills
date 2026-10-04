@@ -145,6 +145,7 @@ To fix it:
 
 Session inputs carry your `requestId`. BA compares the original message and `whenBusy` for that ID, so a retry is safe only when it repeats the same request.
 
+- A `requestId` must be 1 to 128 characters and not exactly `.` or `..`, because a URL would collapse those path segments. BA rejects one on submit, and both SDKs refuse it before sending a promote or delete. Generate IDs instead of deriving them from user text.
 - `input_idempotency_conflict` (409): the `requestId` was reused with a changed message or `whenBusy`, or the message ID was already used under another `requestId`. When an acknowledgement was lost, retry with the original `requestId` and payload, or list the Session's inputs. Never mint a new `requestId` for a message whose outcome you do not know; that can deliver it twice.
 - `input_not_pending` (409) on promote or delete: the input was already reserved for delivery, so it can no longer be withdrawn or moved. Show it as sent and let the transcript catch up. The agent may already have acted on it.
 - Activity `paused` with reason `failed` or `owner_lost`: an unexpected error stopped the queue and kept the waiting inputs. Show the error, then resume the queue when the user is ready. Inputs in state `uncertain` may have reached the agent before the failure and are never replayed; ask the user before sending them again.
