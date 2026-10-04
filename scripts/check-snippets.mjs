@@ -62,7 +62,7 @@ if (pyFiles.length) {
     "uv",
     [
       ...["run", "--no-project", "--python", "3.12"],
-      ...["--with", "blazing-agents @ git+https://github.com/blazingagents/python-sdk.git@034fa1bc61efae8bcef01277bdfa4d766cc09cbf", "--with", "pyright==1.1.414", "--with", "fastapi==0.141.1"],
+      ...["--with", "blazing-agents @ git+https://github.com/blazingagents/python-sdk.git@4b10c0d2a76d75d00f1e890c98e0aa6499491f25", "--with", "pyright==1.1.414", "--with", "fastapi==0.141.1"],
       ...["pyright", "--outputjson", ...pyFiles],
     ],
     { cwd: out, encoding: "utf8" },
