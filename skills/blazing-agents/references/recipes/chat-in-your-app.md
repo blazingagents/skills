@@ -28,6 +28,7 @@ Use the updated SDK and server described in [the SDK reference](../sdk-typescrip
 
 ```ts
 import { BlazingAgents, BlazingAgentsError } from "@blazingagents/sdk";
+import { sessionIdSchema } from "@blazingagents/sdk/contracts";
 import { safeValidateUIMessages } from "ai";
 import { z } from "zod";
 
@@ -36,7 +37,7 @@ const tenant = new BlazingAgents({ apiKey: process.env.BLAZING_AGENTS_API_KEY ??
 const chatBody = z.object({
   message: z.unknown(),
   messageId: z.string().min(1).optional(),
-  sessionId: z.string().min(1).optional(),
+  sessionId: sessionIdSchema.optional(),
   trigger: z.enum(["submit-message", "regenerate-message"]).default("submit-message"),
 });
 
@@ -75,8 +76,9 @@ export async function history(request: Request): Promise<Response> {
   const user = await authenticate(request);
   if (!user) return new Response("Sign in first.", { status: 401 });
   const params = new URL(request.url).searchParams;
-  const sessionId = params.get("sessionId");
-  if (!sessionId) return new Response("Missing Session ID.", { status: 400 });
+  const parsed = sessionIdSchema.safeParse(params.get("sessionId"));
+  if (!parsed.success) return new Response("Invalid Session ID.", { status: 400 });
+  const sessionId = parsed.data;
   try {
     const page = await tenant.forUser(user.id).sessions.messages({
       agentId: user.agentId,
@@ -105,9 +107,10 @@ from typing import Any, Literal, TypedDict
 from blazing_agents import APIStatusError, AsyncBlazingAgents, BlazingAgentsError
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 client = AsyncBlazingAgents()  # reads BLAZING_AGENTS_API_KEY
+SESSION_ID = r"^ss_[0-9A-Za-z]{16}$"
 app = FastAPI()
 
 
@@ -128,7 +131,7 @@ class HistoryPagination(TypedDict, total=False):
 class ChatBody(BaseModel):
     message: dict[str, object]
     messageId: str | None = None
-    sessionId: str | None = None
+    sessionId: str | None = Field(default=None, pattern=SESSION_ID)
     trigger: Literal["submit-message", "regenerate-message"] = "submit-message"
 
 
@@ -171,7 +174,7 @@ async def chat(body: ChatBody, user_id: str = Depends(current_user)):
 
 @app.get("/api/chat/history")
 async def history(
-    session_id: str = Query(alias="sessionId"),
+    session_id: str = Query(alias="sessionId", pattern=SESSION_ID),
     cursor: str | None = Query(default=None),
     user_id: str = Depends(current_user),
 ):
@@ -197,13 +200,13 @@ async def history(
 
 ```ts
 import { BlazingAgents, BlazingAgentsError } from "@blazingagents/sdk";
+import { sessionIdSchema as sessionId, sessionInputRequestIdSchema as requestId, stopSessionBodySchema } from "@blazingagents/sdk/contracts";
 import { safeValidateUIMessages } from "ai";
 import { z } from "zod";
 
 declare function authenticate(request: Request): Promise<{ id: string; agentId: string } | null>;
 const tenant = new BlazingAgents({ apiKey: process.env.BLAZING_AGENTS_API_KEY ?? "" });
-const sessionId = z.string().min(1);
-const requestId = z.string().min(1).max(128);
+const turnId = stopSessionBodySchema.shape.turnId;
 const queueAction = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("submit"),
@@ -213,7 +216,7 @@ const queueAction = z.discriminatedUnion("action", [
     whenBusy: z.enum(["queue", "steer"]).default("queue"),
   }),
   z.object({ action: z.enum(["promote", "delete"]), sessionId, requestId }),
-  z.object({ action: z.literal("stop"), sessionId, turnId: z.string().min(1) }),
+  z.object({ action: z.literal("stop"), sessionId, turnId }),
   z.object({ action: z.literal("resume"), sessionId }),
 ]);
 
@@ -271,7 +274,7 @@ export async function turn(request: Request): Promise<Response> {
     const result = await tenant.forUser(user.id).sessions.joinInputTurn({
       agentId: user.agentId,
       sessionId: sessionId.parse(params.get("sessionId")),
-      turnId: z.string().min(1).parse(params.get("turnId")),
+      turnId: turnId.parse(params.get("turnId")),
       abortSignal: request.signal,
     });
     return result.toResponse();
@@ -291,10 +294,21 @@ from typing import Annotated, Any, Literal
 from blazing_agents import APIStatusError, AsyncBlazingAgents, BlazingAgentsError
 from fastapi import Depends, FastAPI, HTTPException, Query, Response
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import AfterValidator, BaseModel, Field
 
 client = AsyncBlazingAgents()
 app = FastAPI()
+SESSION_ID = r"^ss_[0-9A-Za-z]{16}$"
+TURN_ID = r"^turn_[0-9A-Za-z]{16}$"
+
+
+def not_dot_segment(value: str) -> str:
+    if value in (".", ".."):
+        raise ValueError("requestId must not be '.' or '..'")
+    return value
+
+
+RequestId = Annotated[str, Field(min_length=1, max_length=128), AfterValidator(not_dot_segment)]
 
 
 def current_user() -> str:
@@ -309,27 +323,27 @@ def agent_for_user(user_id: str) -> str:
 
 class Submit(BaseModel):
     action: Literal["submit"]
-    sessionId: str
-    requestId: str = Field(min_length=1, max_length=128)
+    sessionId: str = Field(pattern=SESSION_ID)
+    requestId: RequestId
     message: dict[str, object]
     whenBusy: Literal["queue", "steer"] = "queue"
 
 
 class Change(BaseModel):
     action: Literal["promote", "delete"]
-    sessionId: str
-    requestId: str = Field(min_length=1, max_length=128)
+    sessionId: str = Field(pattern=SESSION_ID)
+    requestId: RequestId
 
 
 class Stop(BaseModel):
     action: Literal["stop"]
-    sessionId: str
-    turnId: str
+    sessionId: str = Field(pattern=SESSION_ID)
+    turnId: str = Field(pattern=TURN_ID)
 
 
 class Resume(BaseModel):
     action: Literal["resume"]
-    sessionId: str
+    sessionId: str = Field(pattern=SESSION_ID)
 
 
 QueueAction = Annotated[Submit | Change | Stop | Resume, Field(discriminator="action")]
@@ -345,13 +359,15 @@ def scope(user_id: str, session_id: str) -> dict[str, Any]:
 
 @app.get("/api/chat/queue")
 async def queue(
-    session_id: str = Query(alias="sessionId"),
+    session_id: str = Query(alias="sessionId", pattern=SESSION_ID),
     user_id: str = Depends(current_user),
 ):
     try:
         page = await client.sessions.inputs(**scope(user_id, session_id))
     except APIStatusError as exc:
         raise HTTPException(exc.status_code, detail={"code": exc.code}) from exc
+    except BlazingAgentsError as exc:
+        raise HTTPException(502, detail={"code": "upstream_error"}) from exc
     return page.model_dump(mode="json", by_alias=True)
 
 
@@ -383,8 +399,8 @@ async def queue_action(body: QueueAction, user_id: str = Depends(current_user)):
 
 @app.get("/api/chat/turn")
 async def turn(
-    session_id: str = Query(alias="sessionId"),
-    turn_id: str = Query(alias="turnId"),
+    session_id: str = Query(alias="sessionId", pattern=SESSION_ID),
+    turn_id: str = Query(alias="turnId", pattern=TURN_ID),
     user_id: str = Depends(current_user),
 ):
     try:
@@ -393,6 +409,8 @@ async def turn(
         if exc.status_code == 404:  # Not a queued Turn: nothing to attach.
             return Response(status_code=204)
         return JSONResponse({"error": {"code": exc.code}}, status_code=exc.status_code)
+    except BlazingAgentsError:
+        return JSONResponse({"error": {"code": "upstream_error"}}, status_code=502)
     headers = {"cache-control": "no-cache", "x-vercel-ai-ui-message-stream": "v1"}
     return StreamingResponse(stream, media_type="text/event-stream", headers=headers)
 ```
@@ -497,6 +515,7 @@ function Chat({
   const lastTurn = useRef<string | null>(null);
   const reloadAfterTurn = useRef(false);
   const attachTo = useRef({ sessionId: "", turnId: "" });
+  const stoppedBatch = useRef<UIMessage[]>([]);
   const [transport] = useState((): ChatTransport<UIMessage> => {
     const headers = { authorization: `Bearer ${token}` };
     const relay = new BlazingAgentsChatTransport({
@@ -572,8 +591,7 @@ function Chat({
 
   const { setMessages, resumeStream } = chat;
   useEffect(() => {
-    if (!sessionId || !turnId || attachTo.current.turnId === turnId) return;
-    if (streaming) return void (attachTo.current = { sessionId, turnId });
+    if (!sessionId || !turnId || streaming || attachTo.current.turnId === turnId) return;
     const batch = queue.inputs.filter((item) => item.turnId === turnId).map((item) => item.message);
     if (batch.length === 0) return;
     attachTo.current = { sessionId, turnId };
@@ -598,6 +616,10 @@ function Chat({
         reloadAfterTurn.current = false;
         saved.current = body.messages;
         setMessages(body.messages);
+        const savedIds = new Set(body.messages.map((message) => message.id));
+        const unsaved = stoppedBatch.current.filter((message) => !savedIds.has(message.id)).map(textOf);
+        stoppedBatch.current = [];
+        if (unsaved.length) setInput((current) => [current, ...unsaved].filter(Boolean).join("\n"));
       })
       .catch(() => undefined);
     return () => controller.abort();
@@ -652,6 +674,7 @@ function Chat({
 
   async function stop() {
     const current = turnId ?? (await refresh().catch(() => undefined))?.turnId;
+    stoppedBatch.current = queue.inputs.filter((item) => item.turnId === current).map((item) => item.message);
     if (current) await act({ action: "stop", turnId: current });
     if (streaming) {
       await chat.stop();
@@ -734,6 +757,7 @@ function Chat({
 ## Gotchas
 
 - **History lives in BA.** Send only the newest user message. The transport already does this; a custom client that posts the whole `messages` array gets a 400 from your `chat` handler.
+- **Validate every ID before it reaches a URL.** The browser sends `sessionId`, `turnId`, and `requestId`, and the SDK places them in request paths. A value such as `../../ag_other/sessions/ss_x` or `..` would make the request reach another route. Check them at your relay as the handlers do: `sessionIdSchema` and `sessionInputRequestIdSchema` from `@blazingagents/sdk/contracts` in TypeScript, and the same patterns in Python. A `requestId` of `.` or `..` is invalid.
 - **Derive scope from verified sign-in.** BA enforces ownership when you use `forUser()`. A body `userId` alone grants no access.
 - **Save the Session ID.** The transport receives it before the answer streams. Keep it even when the first Turn fails or is stopped; the Session exists and is simply empty.
 - **Keep one transport per conversation.** `useChat` ignores a new transport after mount. To switch Session or user, remount `Chat` with a new `key`, as `ChatPage` does. Clear persisted user data on sign-out and abort requests from the old account.
@@ -748,6 +772,7 @@ function Chat({
 - **Steering stops at tool approvals.** Steering does not cross a tool approval. A steering message the agent has not read when an approval pause starts, or one sent while the approved call's continuation runs, waits for the next batch instead, with the same `requestId` and position. BA turns it back into a `queue` input, so its row shows Send again. Render each row from the receipt's `mode`, not from the last button the user pressed. Stop still ends the continuation.
 - **One batch per Turn.** When a Turn finishes or is stopped, BA starts one new Turn with every queued input, each as its own user message. Messages queued after that Turn starts wait for the next batch. With an empty queue the Session goes idle.
 - **Attach to queued Turns yourself.** Poll `GET /api/chat/queue` from its first page while the Session is busy; the cursor only pages through inputs. When `activity.turnId` names a Turn bound to queued inputs, attach once with `joinInputTurn`. It replays from the start of that Turn, so after a reload the whole answer streams again under the same message ID; replace, never append. Attaching only watches. It never starts, restarts, or stops work, so use Stop to end the Turn. A Turn started by `chat` cannot be attached (404), and a dropped `chat` stream is not replayed; reload history after it ends.
+- **Stopped queued messages come back to the composer.** Stopping a Turn cancels the inputs it had taken, and saved history keeps none of them. `Chat` remembers that Turn's batch, and after the history reload it puts back the text of every batch message that history lacks, the way a stopped `chat` send restores its text. A message that history has was answered before Stop took effect, so it stays answered.
 - **Stop without a Turn ID only aborts.** `Chat` stops by `turnId`, reading activity once if it has none yet. When there is still no Turn ID, for example while the first message is creating the Session, it can only abort the chat request. That is not the fenced Stop: BA may cancel the Turn and pause the queue with reason `failed`. Show the paused state and let the user press Resume.
 - **Errors pause the queue.** Activity `paused` keeps the waiting inputs until the user presses Resume or sends another message. Inputs marked `uncertain` may have reached the agent before the failure and are never resent automatically; let the user decide.
 - **Reload the newest page, not `after`.** A tool approval continuation rewrites its assistant message in place, at the same position, so `messages({ after: latestCursor })` never returns the revised tool result or answer. `Chat` reloads the newest page after each Turn and drops that reload if a new Turn or stream starts first, so an old snapshot cannot overwrite live messages.
