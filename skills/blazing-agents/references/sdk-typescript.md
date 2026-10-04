@@ -321,7 +321,7 @@ The first Turn saves the Agent configuration. Read it with `(await client.sessio
 | `toolApprovals({ agentId, sessionId })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/tool-approvals` | `{ data, continuation }`. Each item has `approvalId`, `toolName`, `input`, `decision` (`pending`, `approved`, `denied`). |
 | `decideToolApproval({ agentId, sessionId, approvalId, approved, reason? })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/tool-approvals/{approvalId}` | `{ continuationId, state }` |
 | `joinToolApprovalContinuation({ agentId, sessionId, continuationId })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/tool-approval-continuations/{continuationId}` | `TerminalStreamResult` with `toResponse()`, `toStream()`, `requestId`. Streams the resumed Turn. |
-| `submitInput({ agentId, sessionId, requestId, message, whenBusy? })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/inputs` | `{ data: SessionInput, activity }`. Saved before it returns. `whenBusy` is `"queue"` (default) or `"steer"`. Same `requestId` and payload returns the same receipt; a changed payload returns `input_idempotency_conflict`. |
+| `submitInput({ agentId, sessionId, requestId, message, whenBusy? })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/inputs` | `{ data: SessionInput, activity }`. Saved before it returns. `requestId` is 1 to 128 characters and not `.` or `..`. `whenBusy` is `"queue"` (default) or `"steer"`. Same `requestId` and payload returns the same receipt; a changed payload returns `input_idempotency_conflict`. |
 | `inputs({ agentId, sessionId, includeCompleted?, limit?, cursor? })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/inputs` | `{ data, nextCursor, activity }` in submission order. Poll without `cursor` to see changes; `cursor` only pages. |
 | `promoteInput({ agentId, sessionId, requestId })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/inputs/{requestId}/promote` | `{ data, activity }`. Queue to steer; keeps identity and order. `input_not_pending` once delivered. |
 | `deleteInput({ agentId, sessionId, requestId })` | `DELETE /v1/agents/{agentId}/sessions/{sessionId}/inputs/{requestId}` | `{ data, activity }` with `state: "cancelled"`, `reason: "deleted"`. `input_not_pending` once delivered. |
@@ -644,8 +644,13 @@ needs `ownerOf(sessionId)` and `recordOwner(sessionId, userId)` backed by your
 database.
 
 For a native app that holds its own server-issued credentials and calls the SDK
-directly, `BlazingAgentsDirectChatTransport({ client, agentId, sessionId?,
-onSessionId? })` drives `useChat` through `client.chat()` without a relay.
+directly, `BlazingAgentsDirectChatTransport({ getClient, agentId, sessionId?,
+onSessionId?, functions? })` drives `useChat` through `client.chat()` without a
+relay. It also has `joinInputTurn({ turnId, abortSignal? })` and
+`runInputs({ abortSignal? })`, which return `ReadableStream<UIMessageChunk>`
+for a Turn started from the queue, using the transport's Session, `getClient`,
+and `functions`. `sendMessages` is unchanged; attach yourself once `inputs()` reports
+the queued Turn's `turnId`.
 
 ## Gotchas
 
