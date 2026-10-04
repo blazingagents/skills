@@ -3,7 +3,7 @@ name: blazing-agents
 description: Build products on Blazing Agents (BA), the hosted platform that runs production AI agents behind your backend. Use when the user wants to add an agent, chat, background or scheduled agent work, structured output, agent files, backend functions, MCP tools, tool approvals, Slack/Telegram bots, usage dashboards, or token billing to their app with the BA TypeScript or Python SDK, or asks what BA is or can do. Use ba-admin instead for one-off Tenant administration. Do not use for generic AI-agent work without BA.
 metadata:
   author: Blazing Agents
-  version: "0.4.0"
+  version: "0.5.0"
 ---
 
 # Blazing Agents
@@ -31,7 +31,7 @@ developer wants to write the agent loop step by step.
 | The product needs | Read |
 | --- | --- |
 | A first working agent, from API key to streamed answer | [Getting started](references/getting-started.md) |
-| Chat inside a web or mobile app, with saved history | [Chat in your app](references/recipes/chat-in-your-app.md) |
+| Chat inside a web or mobile app, with saved history, queued messages, and steering | [Chat in your app](references/recipes/chat-in-your-app.md) |
 | Many end users behind one Tenant key, an inbox of conversations | [Multi-user apps](references/recipes/multi-user-apps.md) |
 | Agent work with no user present, on demand or on a schedule | [Background and scheduled work](references/recipes/background-and-scheduled.md) |
 | JSON in a fixed shape, such as extraction or classification | [Structured output](references/recipes/structured-output.md) |
@@ -78,6 +78,12 @@ developer wants to write the agent loop step by step.
 - A resend or retry is a new attempt, and tool side effects can happen again.
   Use a stable idempotency key for Task creation with its initial run and for
   later run submissions. Check SDK support before choosing the create path.
+- While a Turn runs, send new chat messages as Session inputs
+  (`sessions.submitInput()` / `submit_input()`), not as a new chat call, which
+  fails with `session_busy`. Keep each input's `requestId` until its receipt
+  arrives and retry with the same `requestId` and message. Poll inputs for
+  activity, and stream each Turn BA starts from the queue with
+  `joinInputTurn()` / `join_input_turn()`, merging by message ID.
 - Changing an Agent's Provider requires `model` in the same update. A Session
   saves Agent configuration at its first Turn; a Task run saves it when queued.
   Read `agentConfig` with `sessions.get()` or `tasks.getRun()`. Skills, Memory,

@@ -5,8 +5,9 @@ client, run chat, text, and structured output, call every resource method, page
 through lists, handle errors, and connect `useChat` to your own backend.
 
 The examples for user scope, paginated Agents and Prompts, session usage, and
-backend functions require TypeScript SDK 0.16.0 or newer; check the installed
-package's types before using these APIs.
+backend functions require TypeScript SDK 0.16.0 or newer. Session inputs (queue,
+steering, and Stop) require 0.18.0 or newer. Check the installed package's types
+before using these APIs.
 
 For the same surface in Python, read [Python SDK reference](sdk-python.md). For
 end-to-end builds, start from a recipe such as
@@ -316,10 +317,20 @@ The first Turn saves the Agent configuration. Read it with `(await client.sessio
 | `listLatest({ byAgent?, userId?, cursor?, limit? })` | `GET /v1/sessions/latest` | Page of the Tenant's most recently updated Sessions, newest first. `byAgent: true` returns at most one per Agent. Items add `agentId`, `model`, `thinkingLevel`, `status`. |
 | `get({ agentId, sessionId })` | `GET /v1/agents/{agentId}/sessions/{sessionId}` | `SessionResponse` with `agentConfig` |
 | `messages({ agentId, sessionId, cursor?, after?, limit? })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/messages` | `{ data: UIMessage[], nextCursor, latestCursor }`. `cursor` walks older pages; `after` walks forward. Not both. |
-| `delete({ agentId, sessionId, deleteArtifacts })` | `DELETE /v1/agents/{agentId}/sessions/{sessionId}` | `void`. `deleteArtifacts` is required. |
+| `delete({ agentId, sessionId, deleteArtifacts })` | `DELETE /v1/agents/{agentId}/sessions/{sessionId}` | `void`. `deleteArtifacts` is required. `session_busy` while any Turn runs, including one started from the queue; queued inputs of an idle Session are discarded. |
 | `toolApprovals({ agentId, sessionId })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/tool-approvals` | `{ data, continuation }`. Each item has `approvalId`, `toolName`, `input`, `decision` (`pending`, `approved`, `denied`). |
 | `decideToolApproval({ agentId, sessionId, approvalId, approved, reason? })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/tool-approvals/{approvalId}` | `{ continuationId, state }` |
 | `joinToolApprovalContinuation({ agentId, sessionId, continuationId })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/tool-approval-continuations/{continuationId}` | `TerminalStreamResult` with `toResponse()`, `toStream()`, `requestId`. Streams the resumed Turn. |
+| `submitInput({ agentId, sessionId, requestId, message, whenBusy? })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/inputs` | `{ data: SessionInput, activity }`. Saved before it returns. `requestId` is 1 to 128 characters and not `.` or `..`. `whenBusy` is `"queue"` (default) or `"steer"`. Same `requestId` and payload returns the same receipt; a changed payload returns `input_idempotency_conflict`. |
+| `inputs({ agentId, sessionId, includeCompleted?, limit?, cursor? })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/inputs` | `{ data, nextCursor, activity }` in submission order. Poll without `cursor` to see changes; `cursor` only pages. |
+| `promoteInput({ agentId, sessionId, requestId })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/inputs/{requestId}/promote` | `{ data, activity }`. Queue to steer; keeps identity and order. `input_not_pending` once delivered. Steering does not enter an approval continuation. BA sets it back to `queue` for the next batch, so read `mode` from the receipt. |
+| `deleteInput({ agentId, sessionId, requestId })` | `DELETE /v1/agents/{agentId}/sessions/{sessionId}/inputs/{requestId}` | `{ data, activity }` with `state: "cancelled"`, `reason: "deleted"`. `input_not_pending` once delivered. |
+| `stop({ agentId, sessionId, turnId })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/stop` | `{ stoppedTurnId, activity }` after that Turn has ended. `activity` may already show the next queued Turn. `session_busy` during an approval wait. |
+| `resumeInputs({ agentId, sessionId })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/inputs/resume` | `{ activity }`. Restarts a `paused` queue in order; never resends `uncertain` inputs. Leaves a `function_executor_required` pause in place. |
+| `joinInputTurn({ agentId, sessionId, turnId, functions? })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/input-turns/{turnId}` | `TerminalStreamResult`. Streams a Turn BA started from the queue, from its start, in the chat format. Only watches; `not_found` for Turns not started from the queue. Pass `functions` to run backend functions for it. |
+| `runInputs({ agentId, sessionId, functions? })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/inputs/run` | `TerminalStreamResult`. Runs the waiting queue as one Turn with your backend functions and clears a `function_executor_required` pause. `session_busy` when the queue is empty, a Turn is running, or an approval waits. |
+
+A `SessionInput` has `requestId`, `sequence`, `message`, `mode` (`queue` or `steer`), `state` (`accepted`, `delivered`, `consumed`, `committed`, `cancelled`, `uncertain`), `turnId`, `reason`, and timestamps. `activity` is `{ state, turnId, reason }` with `state` one of `idle`, `running`, `stopping`, `approval`, `paused`. While busy, queued inputs wait and run together in one new Turn when the current one finishes or is stopped. A Turn started from the queue has no chat request. Stream it with `joinInputTurn()` once `activity.turnId` names it. It replays from the start, so merge by message ID. Saved answers are also in `messages()`. See [Add chat to your app](recipes/chat-in-your-app.md) for the full flow.
 
 ### `client.tasks` (Tasks and Task runs)
 
@@ -485,7 +496,12 @@ export async function allSessionIds(
 Transcripts (`sessions.messages`, `tasks.runMessages`) return the newest page
 first, with messages in chronological order inside each page, and also carry
 `latestCursor`. To watch a transcript grow, pass
-`latestCursor` back as `after` on the next poll.
+`latestCursor` back as `after` on the next poll. `after` returns only messages
+added later. A tool approval decision and its continuation update the assistant
+message in place, at the same position, possibly over several rounds. While any
+loaded message has a tool part in state `approval-requested` or
+`approval-responded`, poll the newest page without `after` and replace messages
+by ID; go back to `after` once none remain.
 `sessions.messages().data` already contains AI SDK `UIMessage` values; use
 these as `useChat` initial messages without an extra conversion method.
 
@@ -633,8 +649,13 @@ needs `ownerOf(sessionId)` and `recordOwner(sessionId, userId)` backed by your
 database.
 
 For a native app that holds its own server-issued credentials and calls the SDK
-directly, `BlazingAgentsDirectChatTransport({ client, agentId, sessionId?,
-onSessionId? })` drives `useChat` through `client.chat()` without a relay.
+directly, `BlazingAgentsDirectChatTransport({ getClient, agentId, sessionId?,
+onSessionId?, functions? })` drives `useChat` through `client.chat()` without a
+relay. It also has `joinInputTurn({ turnId, abortSignal? })` and
+`runInputs({ abortSignal? })`, which return `ReadableStream<UIMessageChunk>`
+for a Turn started from the queue, using the transport's Session, `getClient`,
+and `functions`. `sendMessages` is unchanged; attach yourself once `inputs()` reports
+the queued Turn's `turnId`.
 
 ## Gotchas
 
@@ -650,7 +671,9 @@ onSessionId? })` drives `useChat` through `client.chat()` without a relay.
   lost. Pass your end user's ID on every generation call.
 - `object` results are `unknown`. Validate before use.
 - The chat transport does not resume an interrupted stream; `reconnectToStream`
-  returns `null`. Resend the message instead.
+  returns `null`. Reload history and the Session's `inputs()` before resending.
+- `chat` on a busy Session fails with `session_busy`. Send the message with
+  `sessions.submitInput()` instead so it waits in the queue.
 - Agent and Prompt names can repeat. Read every page before resolving a name
   to an ID; reject multiple exact matches.
 
