@@ -753,7 +753,7 @@ function Chat({
 - Switch accounts while history loads or a reply streams. The new account shows only its own conversation.
 - Call `POST /api/chat` without your sign-in, and you get 401. Call it as a second user with the first user's Session ID, and BA returns 404.
 - Press Stop mid-answer. The partial answer disappears, your text returns to the box, and Send works again.
-- While an answer streams, the empty composer shows Stop. Type a message, and the button turns to Send, and sending adds a one-line row to the `queue` block. Queue two more. When the answer finishes, the three appear as separate user messages and one new Turn streams its answer to them; after it ends, history shows the same messages in the same order.
+- While an answer streams, the empty composer shows Stop. Type a message, and the button turns to Send. Sending adds a one-line row to the `queue` block. Queue two more. When the answer finishes, the three appear as separate user messages and one new Turn streams its answer to them; after it ends, history shows the same messages in the same order.
 - Queue a message, then press its Send. It joins the running Turn, leaves the queue once the agent reads it, and the current answer takes it into account.
 - Queue a message, then press Delete. It never reaches the agent. Queue another and press Stop. The current Turn ends, and the queued message starts the next one.
 - Reload while messages are queued. The `queue` block comes back. Reload again while a queued Turn answers. Its batch and the answer so far reappear and keep streaming, with no duplicate messages, and after it ends history matches the screen.
