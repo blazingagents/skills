@@ -242,7 +242,7 @@ export async function sendDecision(input: {
 ## Check it works
 
 - Ask the agent to run a shell command. The chat stream ends and `toolApprovals()` lists one `pending` item for `bash` with the command in `input`.
-- Approve it. The resumed stream shows the command's result and the agent's answer.
+- Approve it. The resumed stream shows the command's result and the agent's answer. Reload the newest history page: the same assistant message, at the same position, now holds the result. A poll with `after: latestCursor` returns nothing new.
 - Repeat and deny it. The agent receives a denied result and says it could not run the command.
 - Send a new chat message while an approval is pending; it fails with `session_busy`. Submit it as a Session input instead; it stays pending while the approval waits for a decision. Promote it to steering, then approve. The continuation's answer ignores it, its receipt shows `mode: "queue"` again, and it runs in the next batch.
 - Start a Task that needs a `manual` tool; the call is blocked and nothing waits.

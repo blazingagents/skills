@@ -496,7 +496,9 @@ export async function allSessionIds(
 Transcripts (`sessions.messages`, `tasks.runMessages`) return the newest page
 first, with messages in chronological order inside each page, and also carry
 `latestCursor`. To watch a transcript grow, pass
-`latestCursor` back as `after` on the next poll.
+`latestCursor` back as `after` on the next poll. `after` returns only messages
+added later. A tool approval continuation updates its assistant message in
+place, so after an approval reload the newest page and replace messages by ID.
 `sessions.messages().data` already contains AI SDK `UIMessage` values; use
 these as `useChat` initial messages without an extra conversion method.
 

@@ -587,17 +587,20 @@ function Chat({
     if (lastTurn.current !== null && lastTurn.current !== turnId) reloadAfterTurn.current = true;
     lastTurn.current = turnId;
     if (!reloadAfterTurn.current || streaming || !sessionId) return;
-    reloadAfterTurn.current = false;
+    const controller = new AbortController();
     void fetch(`/api/chat/history?sessionId=${encodeURIComponent(sessionId)}`, {
       headers: { authorization: `Bearer ${token}` },
+      signal: controller.signal,
     })
       .then(async (response) => {
         if (!response.ok) return;
         const body: { messages: UIMessage[] } = await response.json();
+        reloadAfterTurn.current = false;
         saved.current = body.messages;
         setMessages(body.messages);
       })
       .catch(() => undefined);
+    return () => controller.abort();
   }, [turnId, streaming, sessionId, token, setMessages]);
 
   async function act(body: QueueAction): Promise<boolean> {
@@ -747,6 +750,7 @@ function Chat({
 - **Attach to queued Turns yourself.** Poll `GET /api/chat/queue` from its first page while the Session is busy; the cursor only pages through inputs. When `activity.turnId` names a Turn bound to queued inputs, attach once with `joinInputTurn`. It replays from the start of that Turn, so after a reload the whole answer streams again under the same message ID; replace, never append. Attaching only watches. It never starts, restarts, or stops work, so use Stop to end the Turn. A Turn started by `chat` cannot be attached (404), and a dropped `chat` stream is not replayed; reload history after it ends.
 - **Stop without a Turn ID only aborts.** `Chat` stops by `turnId`, reading activity once if it has none yet. When there is still no Turn ID, for example while the first message is creating the Session, it can only abort the chat request. That is not the fenced Stop: BA may cancel the Turn and pause the queue with reason `failed`. Show the paused state and let the user press Resume.
 - **Errors pause the queue.** Activity `paused` keeps the waiting inputs until the user presses Resume or sends another message. Inputs marked `uncertain` may have reached the agent before the failure and are never resent automatically; let the user decide.
+- **Reload the newest page, not `after`.** A tool approval continuation rewrites its assistant message in place, at the same position, so `messages({ after: latestCursor })` never returns the revised tool result or answer. `Chat` reloads the newest page after each Turn and drops that reload if a new Turn or stream starts first, so an old snapshot cannot overwrite live messages.
 - **Older history.** `sessions.messages` returns the newest page, oldest first. Pass `nextCursor` back as `cursor` to load earlier pages for long conversations. Prepend each older page without reversing its messages.
 - **Proxies must not buffer the stream.** `toResponse()` sets `cache-control: no-cache`; make sure every proxy in front of your backend passes chunks through as they arrive.
 

@@ -157,7 +157,7 @@ Session inputs carry your `requestId`. BA compares the original message and `whe
 
 - Start again from the first page without a cursor.
 - Pass `nextCursor` back exactly as received, to the same method with the same filters. Treat it as opaque.
-- For Session messages, `nextCursor` goes back as `cursor` for older pages, and `latestCursor` goes back as `after` for newer messages. Mixing them up is a common cause.
+- For Session messages, `nextCursor` goes back as `cursor` for older pages, and `latestCursor` goes back as `after` for newer messages. Mixing them up is a common cause. `after` never returns an assistant message that a tool approval continuation updated in place; reload the newest page for that.
 
 ## Tool blocked by approval policy
 
