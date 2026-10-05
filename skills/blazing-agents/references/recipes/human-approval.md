@@ -8,7 +8,7 @@ Your agent can run shell commands, send email, change records, or call any tool 
 
 ## How it works
 
-Each Agent has two approval policies: `approvalInChat` for chat and stateless generation, and `approvalInTasks` for Tasks. Each policy has a `default` mode plus exact per-tool `overrides`; a matching override wins. When a chat Turn proposes a call that needs a person, the Turn pauses and Blazing Agents saves a pending approval on the Session. Your backend lists pending approvals, shows them to a reviewer, and sends each decision by approval ID. Once every pending call is decided, Blazing Agents resumes the agent in a new Turn called a continuation, and your backend streams it back by joining it. You never run a built-in or MCP tool yourself; backend functions are the exception: their handlers run in your backend (see [backend functions](backend-functions.md)).
+Each Agent has two approval policies: `approvalInChat` for chat and stateless generation, and `approvalInTasks` for Tasks. Each policy has a `default` mode plus exact per-tool `overrides`; a matching override wins. When a chat Turn proposes a call that needs a person, the Turn pauses and Blazing Agents saves a pending approval on the Session. Your backend lists pending approvals, shows them to a reviewer, then sends the complete round of decisions in one call that records them and streams the continuing Turn — nothing runs until a client makes that call. You never run a built-in or MCP tool yourself; backend functions are the exception: their handlers run in your backend (see [backend functions](backend-functions.md)).
 
 | Mode | What happens to a call |
 | --- | --- |
@@ -118,7 +118,7 @@ async def list_pending(agent_id: str, session_id: str) -> dict[str, object]:
     return {"pending": pending}
 ```
 
-3. Send each decision by approval ID. When the answer is `waiting`, other calls in the same Turn still need a decision. Otherwise join the continuation and relay its stream to the browser. When the chat attached backend functions, any approval pause, even one for a built-in or MCP tool, requires `resumeChat` (`resume_chat` in Python) with the handlers attached instead of joining; see [backend functions](backend-functions.md) for the call.
+3. Send the complete round of decisions in one call — every pending approval from the same round needs an entry, and an incomplete, duplicate, or mixed set fails `validation_failed`. `continueChat` records the round and streams the rest of the Turn, so relay the response to the browser like a chat Turn. When the chat attached backend functions, pass the same `functions` map or the approved calls cannot run; see [backend functions](backend-functions.md). Identical retries are safe: the same decisions return the running or settled outcome without recording twice.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
@@ -130,30 +130,26 @@ const client = new BlazingAgents({ apiKey: process.env.BLAZING_AGENTS_API_KEY ??
 const bodySchema = z.object({
   agentId: z.string(),
   sessionId: z.string(),
-  approvalId: z.string(),
-  approved: z.boolean(),
+  decisions: z.array(z.object({
+    approvalId: z.string(),
+    approved: z.boolean(),
+    reason: z.string().optional(),
+  })).min(1),
 });
 
 export async function POST(request: Request): Promise<Response> {
-  const { agentId, sessionId, approvalId, approved } = bodySchema.parse(await request.json());
+  const { agentId, sessionId, decisions } = bodySchema.parse(await request.json());
   if (!(await reviewerMayAccess(request, sessionId))) return new Response(null, { status: 403 });
 
-  const decision = await client.sessions.decideToolApproval({ agentId, sessionId, approvalId, approved });
-  if (decision.state === "waiting") return Response.json({ state: "waiting" }, { status: 202 });
-
-  const resumed = await client.sessions.joinToolApprovalContinuation({
-    agentId,
-    sessionId,
-    continuationId: decision.continuationId,
-  });
-  return resumed.toResponse();
+  const continued = await client.continueChat({ agentId, sessionId, decisions });
+  return continued.toResponse();
 }
 ```
 
 ```python
-from blazing_agents import AsyncBlazingAgents
+from blazing_agents import AsyncBlazingAgents, ToolApprovalDecisionInput
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 app = FastAPI()
@@ -161,55 +157,56 @@ client = AsyncBlazingAgents()
 
 
 class Decision(BaseModel):
-    agent_id: str
-    session_id: str
     approval_id: str
     approved: bool
+    reason: str | None = None
 
 
-@app.post("/api/tool-approval")
-async def decide(body: Decision) -> JSONResponse | StreamingResponse:
+class ContinueBody(BaseModel):
+    agent_id: str
+    session_id: str
+    decisions: list[Decision]
+
+
+@app.post("/api/tool-approvals/continue")
+async def continue_round(body: ContinueBody) -> StreamingResponse:
     # Authenticate the reviewer and check they may access this Session first.
-    decision = await client.sessions.decide_tool_approval(
+    decisions: list[ToolApprovalDecisionInput] = []
+    for d in body.decisions:
+        item: ToolApprovalDecisionInput = {"approval_id": d.approval_id, "approved": d.approved}
+        if d.reason is not None:
+            item["reason"] = d.reason
+        decisions.append(item)
+    stream = await client.continue_chat(
         agent_id=body.agent_id,
         session_id=body.session_id,
-        approval_id=body.approval_id,
-        approved=body.approved,
-    )
-    if decision.state == "waiting":
-        return JSONResponse({"state": "waiting"}, status_code=202)
-    resumed = await client.sessions.join_tool_approval_continuation(
-        agent_id=body.agent_id,
-        session_id=body.session_id,
-        continuation_id=decision.continuation_id,
+        decisions=decisions,
     )
     return StreamingResponse(
-        resumed,
+        stream,
         headers={"x-vercel-ai-ui-message-stream": "v1"},
         media_type="text/event-stream",
     )
 ```
 
-4. In the browser, post the decision and render the resumed answer with the AI SDK stream helpers. `renderAssistant` is your callback; replace the displayed message by its ID on each update.
+4. In the browser, collect the round's decisions and render the continued answer with the AI SDK stream helpers. `renderAssistant` is your callback; replace the displayed message by its ID on each update.
 
 ```ts
 import { parseJsonEventStream, readUIMessageStream, uiMessageChunkSchema, type UIMessage } from "ai";
 
 declare function renderAssistant(message: UIMessage): void;
 
-export async function sendDecision(input: {
+export async function sendDecisions(input: {
   agentId: string;
   sessionId: string;
-  approvalId: string;
-  approved: boolean;
+  decisions: { approvalId: string; approved: boolean; reason?: string }[];
 }): Promise<void> {
-  const response = await fetch("/api/tool-approval", {
+  const response = await fetch("/api/tool-approvals/continue", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  if (!response.ok) throw new Error("Approval request failed");
-  if (response.status === 202 || !response.body) return; // Other calls still wait; keep their buttons.
+  if (!response.ok || !response.body) throw new Error("Approval request failed");
 
   const chunks = parseJsonEventStream({ stream: response.body, schema: uiMessageChunkSchema }).pipeThrough(
     new TransformStream({
@@ -225,16 +222,18 @@ export async function sendDecision(input: {
 }
 ```
 
+In a `useChat` UI, `BlazingAgentsChatTransport` and `BlazingAgentsDirectChatTransport` do this for you: once `addToolApprovalResponse` has answered every call in the round, the next `sendMessages` posts the answered assistant message, and a backend built on `createChatRelay` (or the direct transport's own client) turns it into `continueChat` and streams the continuation through the same endpoint.
+
 ## Gotchas
 
 - Only interactive chat can wait for a person. In Tasks and stateless generation, `manual` calls and `auto` calls that escalate are blocked and the agent continues with what it may do. Use `approvalInTasks` with `full` or `deny`, not `manual`.
 - Sending a policy replaces it whole; leaving out `overrides` clears them. Leaving a policy out of the update keeps it. Read the Agent first if you only want to add one override.
 - An override must name a tool the Agent has, once per policy. Removing a tool group or detaching a Connection makes a policy that names its tools invalid, so update the policy in the same change.
 - MCP overrides use the original tool name, not the generated name you see in saved messages. For display, prefer the approval's `tool` field, which has the MCP `connectionId` and original `name`; `toolName` is the generated name.
-- Send decisions through your backend with `decideToolApproval`. Answering only in the browser with AI SDK `addToolApprovalResponse` does not resume the agent.
-- While approvals are pending or a continuation runs, new chat messages and regeneration fail with `session_busy`. Submit Session inputs instead, as in [chat in your app](chat-in-your-app.md). They wait, queued or steering, and never bypass the approval. A steering message that has not reached the agent when the pause starts, or one sent while the approved call's continuation runs, does not join that continuation. It goes back to `queue` mode and runs in the next batch with the same `requestId` and position. Stop also returns `session_busy` during an approval wait.
-- A dropped stream does not stop the continuation. Join the same `continuationId` again; it replays from the start and never reruns the tool. `toolApprovals()` also returns the Session's current `continuation` with its `id` and `state`.
-- Joining only observes a continuation whose chat attached backend functions: function events are stripped, handlers never run, and a queued continuation waits for an executor. Call `resumeChat`/`resume_chat` with the functions instead, as in [backend functions](backend-functions.md).
+- Send decisions through your backend with `continueChat`/`continue_chat`. Answering only in the browser with AI SDK `addToolApprovalResponse` does not resume the agent unless your chat path relays it, as described above.
+- While approvals are pending or a continuation runs, new chat messages and regeneration fail with `session_busy`, and a Session input fails with `steer_not_available` — an approval wait refuses steering, so a message sent then waits in your client's queue, as in [chat in your app](chat-in-your-app.md).
+- A dropped stream does not prove the continuation stopped. Retry `continueChat`/`continue_chat` with the same decisions: identical decisions are idempotent and the first recorded `reason` stays authoritative; a running round returns `session_busy` and a settled one returns `tool_approval_continuation_settled` without running again. `toolApprovals()` also returns the Session's current `continuation` with its `id` and `state` (`waiting`, `running`, `succeeded`, `failed`).
+- The continuation has no saved function definitions. If the chat attached backend functions, pass the same `functions` map on `continueChat`/`continue_chat` or the approved calls cannot run; see [backend functions](backend-functions.md).
 - The same decision sent twice is safe. Reversing a decision returns `tool_approval_decision_conflict` (409).
 - Authenticate the reviewer and use the verified user scope from [multi-user apps](multi-user-apps.md) for approval reads, decisions, and continuation. Keep additional reviewer roles in your backend. The decision cannot change the saved call's arguments.
 - `auto` review runs on the Agent's model and counts toward the Turn's usage.
@@ -244,7 +243,7 @@ export async function sendDecision(input: {
 - Ask the agent to run a shell command. The chat stream ends and `toolApprovals()` lists one `pending` item for `bash` with the command in `input`.
 - Approve it. The resumed stream shows the command's result and the agent's answer. Reload the newest history page: the same assistant message, at the same position, now holds the result. A poll with `after: latestCursor` returns nothing new.
 - Repeat and deny it. The agent receives a denied result and says it could not run the command.
-- Send a new chat message while an approval is pending; it fails with `session_busy`. Submit it as a Session input instead; it stays pending while the approval waits for a decision. Promote it to steering, then approve. The continuation's answer ignores it, its receipt shows `mode: "queue"` again, and it runs in the next batch.
+- Send a new chat message while an approval is pending; it fails with `session_busy`. A Session input submitted then fails with `steer_not_available`, so hold it in your client and send it after the continuation settles. Repeat the same decisions on `continueChat`; the settled round returns `tool_approval_continuation_settled` instead of running again.
 - Start a Task that needs a `manual` tool; the call is blocked and nothing waits.
 
 ## Go deeper

@@ -31,7 +31,7 @@ developer wants to write the agent loop step by step.
 | The product needs | Read |
 | --- | --- |
 | A first working agent, from API key to streamed answer | [Getting started](references/getting-started.md) |
-| Chat inside a web or mobile app, with saved history, queued messages, and steering | [Chat in your app](references/recipes/chat-in-your-app.md) |
+| Chat inside a web or mobile app, with saved history, a client-held queue, and steering | [Chat in your app](references/recipes/chat-in-your-app.md) |
 | Many end users behind one Tenant key, an inbox of conversations | [Multi-user apps](references/recipes/multi-user-apps.md) |
 | Agent work with no user present, on demand or on a schedule | [Background and scheduled work](references/recipes/background-and-scheduled.md) |
 | JSON in a fixed shape, such as extraction or classification | [Structured output](references/recipes/structured-output.md) |
@@ -78,13 +78,13 @@ developer wants to write the agent loop step by step.
 - A resend or retry is a new attempt, and tool side effects can happen again.
   Use a stable idempotency key for Task creation with its initial run and for
   later run submissions. Check SDK support before choosing the create path.
-- While a Turn runs, send new chat messages as Session inputs
-  (`sessions.submitInput()` / `submit_input()`), not as a new chat call, which
-  fails with `session_busy`. Keep each input's `requestId` until its receipt
-  arrives and retry with the same `requestId` and message. BA never starts a
-  queued Turn. Poll inputs for activity, and once the Session is idle with
-  inputs waiting, run them with `sessions.runInputs()` / `client.run_inputs()`
-  and relay that stream like a chat Turn.
+- BA holds no message queue; waiting messages live in the client. While a Turn
+  runs, a new chat call fails with `session_busy` — either steer the Turn with
+  `sessions.submitInput()` / `submit_input()` or hold the message until the
+  Session is idle, then send it as ordinary chat (one per Turn, or several with
+  `messages`). Take a message out of the local queue before sending it, keep
+  each input's `requestId` until its receipt arrives, and never rebuild the
+  queue from receipts or history.
 - Changing an Agent's Provider requires `model` in the same update. A Session
   saves Agent configuration at its first Turn; a Task run saves it when queued.
   Read `agentConfig` with `sessions.get()` or `tasks.getRun()`. Skills, Memory,

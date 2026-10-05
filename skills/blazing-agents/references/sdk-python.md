@@ -1,6 +1,6 @@
 # Python SDK reference
 
-Use this page to call Blazing Agents from a Python backend: install the package, pick a client, run Turns, and find the method for every operation. Paginated Agent and Prompt lists, backend functions, and Session inputs (queue, steering, Stop, and client-run batches) need 0.13.0 or newer, the floor the install command below pins; check the installed package before using them.
+Use this page to call Blazing Agents from a Python backend: install the package, pick a client, run Turns, and find the method for every operation. Paginated Agent and Prompt lists and backend functions need 0.13.0 or newer; Session inputs (steering and Stop), multi-message chat, and approval continuations need 0.14.0 or newer, the floor the install command below pins. Check the installed package before using them.
 
 For the same surface in TypeScript, read [TypeScript SDK reference](sdk-typescript.md). For end-to-end builds, start from a recipe such as [Add chat to your app](recipes/chat-in-your-app.md).
 
@@ -9,9 +9,9 @@ For the same surface in TypeScript, read [TypeScript SDK reference](sdk-typescri
 The PyPI package is `blazing-agents`. The import name is `blazing_agents`. It needs Python 3.11 or newer.
 
 ```bash
-pip install "blazing-agents>=0.13.0"
+pip install "blazing-agents>=0.14.0"
 # or
-uv add "blazing-agents>=0.13.0"
+uv add "blazing-agents>=0.14.0"
 ```
 
 Keep the Tenant API key in `BLAZING_AGENTS_API_KEY` on your backend. It can reach everything in your Tenant, so it never goes to a browser or mobile app.
@@ -69,7 +69,7 @@ Constructor options (all keyword-only):
 
 ## Run Turns: root generation methods
 
-The client itself has five generation methods. Each call runs one metered Turn. Give each call exactly one input: a literal `message` (chat) or `prompt` (completion and object), or a saved Prompt through `prompt_id` with optional `variables`. Every method also accepts `user_id` plus `metadata` for Attribution to your end user.
+The client itself has five generation methods. Each call runs one metered Turn. Give each call exactly one input: a literal `message` or `prompt`, or a saved Prompt through `prompt_id` with optional `variables`. `chat()` alone also takes `messages`, a list of user messages run in one Turn in order — use it for messages your client held while the Session was busy. Every method also accepts `user_id` plus `metadata` for Attribution to your end user.
 
 | Method | Returns | Use it for |
 | --- | --- | --- |
@@ -79,7 +79,7 @@ The client itself has five generation methods. Each call runs one metered Turn. 
 | `object(...)` | Your `output_type` instance, or `JsonValue` | Structured output, validated |
 | `object_stream(...)` | `ObjectStream` of raw JSON text deltas | Structured output, streamed. `get_final_object()` validates at the end |
 
-`resume_chat(...)` is not a generation method: it restarts a Session's approval continuation with backend functions attached and returns a `ChatStream`. See [Backend functions](#backend-functions).
+`continue_chat(...)` is not a generation method: it decides a Session's complete approval round, with backend functions attached, and returns a `ChatStream` for the continuing Turn. See [Backend functions](#backend-functions).
 
 ### Chat returns raw SSE bytes and a Session ID
 
@@ -152,9 +152,9 @@ JSON (convert results with `model_dump(mode="json")`). Attach the map as
 thread. Keep consuming the stream: function calls dispatch as you read their
 events. Failed function calls log warnings on the `blazing_agents` logger.
 
-`resume_chat(*, agent_id, session_id, functions, extra_headers=None, timeout=...)`
-reattaches handlers to the Session's queued or running approval continuation (await
-it on the async client for an `AsyncChatStream`) and raises when none is ready. For
+`continue_chat(*, agent_id, session_id, decisions, functions=..., extra_headers=None, timeout=...)`
+records every decision in the round, reattaches your handlers, and streams the
+continuing Turn (await it on the async client for an `AsyncChatStream`). For
 end-to-end setup, including scoping and approval flow, read
 [backend functions](recipes/backend-functions.md).
 
@@ -247,19 +247,14 @@ Signatures below drop `extra_headers` and `timeout`, which every method accepts.
 | `get(agent_id, session_id)` | `SessionResponse` with `agent_config` |
 | `messages(*, agent_id, session_id, cursor=..., after=..., limit=...)` | `SessionMessagesPage` |
 | `tool_approvals(*, agent_id, session_id)` | `ToolApprovals` (`.data`, `.continuation`) |
-| `decide_tool_approval(*, agent_id, session_id, approval_id, approved, reason=...)` | `ToolApprovalDecision` |
-| `join_tool_approval_continuation(*, agent_id, session_id, continuation_id)` | `ByteStream` (same SSE format as `chat()`) |
-| `submit_input(*, agent_id, session_id, request_id, message, when_busy=...)` | `SessionInputResponse` (`.data`, `.activity`). `when_busy` is `"queue"` (default) or `"steer"`. |
-| `inputs(*, agent_id, session_id, include_completed=..., cursor=..., limit=...)` | `SessionInputsPage` (`.data`, `.next_cursor`, `.activity`) |
-| `promote_input(*, agent_id, session_id, request_id)` | `SessionInputResponse` |
-| `delete_input(*, agent_id, session_id, request_id)` | `SessionInputResponse` with `state="cancelled"` |
-| `stop(*, agent_id, session_id, turn_id)` | `SessionStopResponse` (`.stopped_turn_id`, `.activity`) after that Turn has ended |
-| `resume_inputs(*, agent_id, session_id)` | `SessionActivityResponse` (`.activity`). Unpauses the queue without starting a Turn. |
+| `submit_input(*, agent_id, session_id, request_id, message)` | `SessionInputResponse` (`.data`, `.activity`). Steers the running Turn; raises `steer_not_available` when no Turn can take it. |
+| `inputs(*, agent_id, session_id, include_completed=..., cursor=..., limit=...)` | `SessionInputsPage` (`.data`, `.next_cursor`, `.activity`) — steer receipts plus Session activity |
+| `stop(*, agent_id, session_id, turn_id)` | `SessionStopResponse` (`.stopped_turn_id`, `.activity`) as soon as the stop is recorded; keep reading the existing stream until the Turn settles |
 | `delete(*, agent_id, session_id, delete_artifacts: bool)` | `None` |
 
 The first Turn saves `agent_config`; get it with `client.sessions.get()`. Message pages contain only transcript messages. `after=` returns only messages added later. A tool approval decision and its continuation update the assistant message in place, at the same position, possibly over several rounds. While any loaded message has a tool part in state `approval-requested` or `approval-responded`, poll the newest page without `after` and replace messages by ID; go back to `after` once none remain. Start Sessions with `client.chat()`, not through this resource. `list_latest(by_agent=True)` returns at most one Session per Agent, which suits an inbox view.
 
-While a Turn runs, `chat()` raises `session_busy`; send the message with `submit_input()` instead. BA saves it under your `request_id` (1 to 128 characters, not `.` or `..`) before returning. Retry with the same `request_id` and message after an unknown outcome; a changed payload raises `input_idempotency_conflict`. BA never starts a queued Turn by itself. Once activity is `idle`, run the waiting inputs with `client.run_inputs(agent_id=..., session_id=..., extra_headers=...)` (await it on the async client). It runs them together, in order, in one new Turn and returns a `ChatStream` to relay like `chat()`. It raises `session_busy` when nothing waits, a Turn is running, an approval waits, or the queue is paused. Without a call, the inputs keep waiting. The stream is not replayed after a drop; saved answers are in `messages()`. `promote_input()` moves a waiting input into the running Turn as steering (except across a tool approval, where BA sets it back to `queue` mode for the next batch; read `mode` from the receipt), and `delete_input()` withdraws it; both raise `input_not_pending` once BA has reserved it for delivery. Poll `inputs()` without `cursor` for changes. `stop()` takes the `turn_id` from `activity`, leaves the waiting inputs queued, and raises `session_busy` during an approval wait. `resume_inputs()` unpauses a `paused` queue for the next `run_inputs()` and never resends `uncertain` inputs. When the chat attached backend functions, the Session pauses with `function_executor_required` after each Turn; pass the same map as `run_inputs(..., functions=...)` to run the queue. All methods accept `extra_headers` for user scope. See [Add chat to your app](recipes/chat-in-your-app.md).
+While a Turn runs, `chat()` raises `session_busy`. Either steer the running Turn with `submit_input()`, or hold the message in your own client and send it as ordinary chat once the Session is idle — BA holds no queue. `submit_input()` saves a steer receipt under your `request_id` (1 to 128 characters, not `.` or `..`) before returning. Retry with the same `request_id` and message after an unknown outcome; a changed payload raises `input_idempotency_conflict`. The receipt's `state` moves from `accepted` to `delivered` and ends `committed` (saved in history), `not_placed` (never reached the agent — safe to send as an ordinary chat message), or `uncertain` (may have reached the agent — never resend automatically). Poll `inputs()` without `cursor` for changes; pass `include_completed=True` to see terminal receipts. `stop()` takes the `turn_id` from `activity` and returns as soon as the stop is recorded; keep reading the existing stream until the Turn settles. An unknown `turn_id` raises `not_found`. All methods accept `extra_headers` for user scope. See [Add chat to your app](recipes/chat-in-your-app.md).
 
 ### `client.tasks`
 

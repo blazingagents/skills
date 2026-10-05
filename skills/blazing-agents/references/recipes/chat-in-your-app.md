@@ -1,6 +1,6 @@
 # Add chat to your app
 
-You will have a streaming chat UI in your web app. Each signed-in user gets their own conversations, can reopen them with history, and can stop, resend, and regenerate answers. While the Agent works, users can keep typing. New messages wait in a queue, and any queued message can be sent to the running Turn as steering.
+You will have a streaming chat UI in your web app. Each signed-in user gets their own conversations, can reopen them with history, and can stop, resend, and regenerate answers. While the Agent works, users can keep typing. New messages wait in the client's own queue, and any queued message can be sent to the running Turn as steering.
 
 ## When to use this
 
@@ -10,7 +10,7 @@ Your users chat with an Agent inside your own web product, and conversations mus
 
 Your browser talks only to your backend. The backend authenticates the user and calls BA through `client.forUser(verifiedUserId)`. BA checks that the Agent and Session belong to that user. BA stores the history, so each request carries only the newest message and the Session ID. The first response returns a new Session ID in `Location`. AI SDK `useChat` and `BlazingAgentsChatTransport` render the stream and keep that ID for later messages.
 
-A message sent while the Session is busy goes to the Session's inputs instead of a new chat call, which would fail with `session_busy`. `sessions.submitInput()` saves it under your `requestId` before it returns, so it survives reloads. A `queue` input waits until your client runs the queue. `promoteInput()` turns a waiting input into steering, which the running Turn reads at its next step. `deleteInput()` withdraws a waiting input. `sessions.inputs()` returns the pending inputs and the Session's `activity`; poll it while the Session is busy or inputs wait. When the current Turn has ended or the user pressed Stop, and inputs wait, call `sessions.runInputs()`. It runs every waiting input as one new Turn, each as its own user message, in order, and streams that Turn back to the caller in the chat format. BA never starts a queued Turn by itself; if no client calls `runInputs()`, the inputs keep waiting and nothing is lost. The stream is not replayed after a drop, but the saved answer is in `sessions.messages()` once the Turn ends. An unexpected error pauses the queue and keeps the waiting inputs. `resumeInputs()` unpauses it without starting a Turn, and the next `runInputs()` runs them.
+BA holds no queue. A message sent while the Session is busy either steers the running Turn or waits in your client's own queue until the Turn settles, when your client sends the waiting messages as ordinary chat — one per Turn, or several in one Turn with `client.chat({ messages: [...] })`. `sessions.submitInput()` steers: it takes your `requestId` and the message, binds it to the running Turn, and returns a receipt. A `steer_not_available` (409) means no Turn can take a steer — the Session is idle, stopping, or waiting on an approval — so the message stays queued locally. `sessions.inputs()` returns the steer receipts and the Session's `activity`; poll it while the Session is busy. A receipt ends `committed` (saved in history), `not_placed` (the agent never read it — safe to send as ordinary chat), or `uncertain` (it may have reached the agent — never resend automatically). `sessions.stop()` records cancellation for a Turn ID and returns immediately; keep reading the existing stream until the Turn settles.
 
 ## Build it
 
@@ -22,9 +22,11 @@ npm install @blazingagents/sdk ai @ai-sdk/react zod
 pip install blazing-agents fastapi uvicorn
 ```
 
-Use the updated SDK and server described in [the SDK reference](../sdk-typescript.md). The published package may not yet contain these APIs.
+These APIs need `@blazingagents/sdk` 0.20.0 or `blazing-agents` 0.14.0 or newer.
 
 2. Add the backend. `chat` relays one Turn and `history` returns a Session's saved messages. Mount them as `POST /api/chat` and `GET /api/chat/history` in your framework. In the Next.js App Router, export them as `POST` and `GET` handlers. In Hono, call `chat(c.req.raw)`. Authenticate the user, select their Agent in backend code, validate the request body, then call the scoped client. `sessions.messages()` returns the native UIMessage page. Return its cursors with the messages for older-history controls.
+
+`chat` accepts either one `message` or a `messages` array. The array is how queued messages go out after a busy Turn settles: several user messages run in one Turn, in order, each saved to history. A batch always needs a Session ID.
 
 ```ts
 import { BlazingAgents, BlazingAgentsError } from "@blazingagents/sdk";
@@ -35,7 +37,8 @@ import { z } from "zod";
 declare function authenticate(request: Request): Promise<{ id: string; agentId: string } | null>;
 const tenant = new BlazingAgents({ apiKey: process.env.BLAZING_AGENTS_API_KEY ?? "" });
 const chatBody = z.object({
-  message: z.unknown(),
+  message: z.unknown().optional(),
+  messages: z.array(z.unknown()).optional(),
   messageId: z.string().min(1).optional(),
   sessionId: sessionIdSchema.optional(),
   trigger: z.enum(["submit-message", "regenerate-message"]).default("submit-message"),
@@ -46,20 +49,33 @@ export async function chat(request: Request): Promise<Response> {
   if (!user) return new Response("Sign in first.", { status: 401 });
   try {
     const body = chatBody.parse(await request.json());
-    const messages = await safeValidateUIMessages({ messages: [body.message] });
-    if (!messages.success || messages.data[0].role !== "user") {
+    const raw = body.messages ?? (body.message === undefined ? [] : [body.message]);
+    const validated = await safeValidateUIMessages({ messages: raw });
+    if (!validated.success || validated.data.some((m) => m.role !== "user")) {
       return new Response("Invalid message.", { status: 400 });
     }
     const client = tenant.forUser(user.id);
-    const input = {
+    const shared = {
       agentId: user.agentId,
-      message: messages.data[0],
       messageId: body.messageId,
       abortSignal: request.signal,
     };
-    const result = await client.chat(body.sessionId
-      ? { ...input, sessionId: body.sessionId, trigger: body.trigger }
-      : { ...input, trigger: "submit-message" });
+    let result;
+    if (body.messages !== undefined) {
+      if (body.sessionId === undefined) {
+        return new Response("A batch needs a Session.", { status: 400 });
+      }
+      result = await client.chat({
+        ...shared,
+        messages: validated.data,
+        sessionId: body.sessionId,
+      });
+    } else {
+      const input = { ...shared, message: validated.data[0] };
+      result = await client.chat(body.sessionId === undefined
+        ? { ...input, trigger: "submit-message" }
+        : { ...input, sessionId: body.sessionId, trigger: body.trigger });
+    }
     return result.toResponse();
   } catch (error) {
     if (error instanceof z.ZodError || error instanceof SyntaxError) {
@@ -129,7 +145,8 @@ class HistoryPagination(TypedDict, total=False):
 
 
 class ChatBody(BaseModel):
-    message: dict[str, object]
+    message: dict[str, object] | None = None
+    messages: list[dict[str, object]] | None = None
     messageId: str | None = None
     sessionId: str | None = Field(default=None, pattern=SESSION_ID)
     trigger: Literal["submit-message", "regenerate-message"] = "submit-message"
@@ -137,23 +154,34 @@ class ChatBody(BaseModel):
 
 @app.post("/api/chat")
 async def chat(body: ChatBody, user_id: str = Depends(current_user)):
-    if body.message.get("role") != "user":
+    raw = body.messages if body.messages is not None else ([body.message] if body.message else [])
+    if not raw or any(m.get("role") != "user" for m in raw):
         raise HTTPException(400, "Invalid message.")
     headers = {"cache-control": "no-cache", "x-vercel-ai-ui-message-stream": "v1"}
     extra: dict[str, Any] = {"extra_headers": {"X-BA-User-Id": user_id}}
     if body.messageId:
         extra["message_id"] = body.messageId
     try:
-        if body.sessionId is None:
+        if body.messages is not None:
+            if body.sessionId is None:
+                raise HTTPException(400, "A batch needs a Session.")
             stream = await client.chat(
-                agent_id=agent_for_user(user_id), message=body.message, user_id=user_id, **extra
+                agent_id=agent_for_user(user_id),
+                session_id=body.sessionId,
+                messages=raw,
+                user_id=user_id,
+                **extra,
+            )
+        elif body.sessionId is None:
+            stream = await client.chat(
+                agent_id=agent_for_user(user_id), message=raw[0], user_id=user_id, **extra
             )
             headers["location"] = stream.headers["location"]
         else:
             stream = await client.chat(
                 agent_id=agent_for_user(user_id),
                 session_id=body.sessionId,
-                message=body.message,
+                message=raw[0],
                 trigger=body.trigger,
                 user_id=user_id,
                 **extra,
@@ -196,7 +224,7 @@ async def history(
     }
 ```
 
-3. Add the queue endpoints. `GET /api/chat/queue` returns the Session's pending inputs and activity. `POST /api/chat/queue` takes one action: `submit` a new message, `promote` or `delete` a waiting one, `stop` the running Turn by its `turnId`, or `resume` a paused queue. `POST /api/chat/run` runs the waiting inputs as one Turn and relays its stream. Every call goes through the same verified user scope as `chat`.
+3. Add the Session endpoints. `GET /api/chat/session` returns the Session's steer receipts and activity. `POST /api/chat/steer` submits one message as a steer to the running Turn. `POST /api/chat/stop` stops the running Turn by its `turnId`. Every call goes through the same verified user scope as `chat`. Deleting a queued message needs no endpoint: the queue lives in the browser, so the client just drops the row.
 
 ```ts
 import { BlazingAgents, BlazingAgentsError } from "@blazingagents/sdk";
@@ -207,18 +235,8 @@ import { z } from "zod";
 declare function authenticate(request: Request): Promise<{ id: string; agentId: string } | null>;
 const tenant = new BlazingAgents({ apiKey: process.env.BLAZING_AGENTS_API_KEY ?? "" });
 const turnId = stopSessionBodySchema.shape.turnId;
-const queueAction = z.discriminatedUnion("action", [
-  z.object({
-    action: z.literal("submit"),
-    sessionId,
-    requestId,
-    message: z.unknown(),
-    whenBusy: z.enum(["queue", "steer"]).default("queue"),
-  }),
-  z.object({ action: z.enum(["promote", "delete"]), sessionId, requestId }),
-  z.object({ action: z.literal("stop"), sessionId, turnId }),
-  z.object({ action: z.literal("resume"), sessionId }),
-]);
+const steerBody = z.object({ sessionId, requestId, message: z.unknown() });
+const stopBody = z.object({ sessionId, turnId });
 
 function failure(error: unknown): Response {
   if (error instanceof z.ZodError || error instanceof SyntaxError) {
@@ -230,67 +248,69 @@ function failure(error: unknown): Response {
   throw error;
 }
 
-export async function queue(request: Request): Promise<Response> {
+export async function session(request: Request): Promise<Response> {
   const user = await authenticate(request);
   if (!user) return new Response("Sign in first.", { status: 401 });
-  const sessions = tenant.forUser(user.id).sessions;
-  const agentId = user.agentId;
-  const abortSignal = request.signal;
   try {
-    if (request.method === "GET") {
-      const id = sessionId.parse(new URL(request.url).searchParams.get("sessionId"));
-      return Response.json(await sessions.inputs({ agentId, sessionId: id, abortSignal }));
-    }
-    const body = queueAction.parse(await request.json());
-    const scope = { agentId, sessionId: body.sessionId, abortSignal };
-    switch (body.action) {
-      case "submit": {
-        const messages = await safeValidateUIMessages({ messages: [body.message] });
-        if (!messages.success || messages.data[0].role !== "user") {
-          return Response.json({ error: { code: "invalid_request" } }, { status: 400 });
-        }
-        const { requestId, whenBusy } = body;
-        return Response.json(await sessions.submitInput({ ...scope, requestId, whenBusy, message: messages.data[0] }));
-      }
-      case "promote":
-        return Response.json(await sessions.promoteInput({ ...scope, requestId: body.requestId }));
-      case "delete":
-        return Response.json(await sessions.deleteInput({ ...scope, requestId: body.requestId }));
-      case "stop":
-        return Response.json(await sessions.stop({ ...scope, turnId: body.turnId }));
-      case "resume":
-        return Response.json(await sessions.resumeInputs(scope));
-    }
+    const id = sessionId.parse(new URL(request.url).searchParams.get("sessionId"));
+    const page = await tenant.forUser(user.id).sessions.inputs({
+      agentId: user.agentId,
+      sessionId: id,
+      includeCompleted: true,
+      abortSignal: request.signal,
+    });
+    return Response.json(page);
   } catch (error) {
     return failure(error);
   }
 }
 
-export async function run(request: Request): Promise<Response> {
+export async function steer(request: Request): Promise<Response> {
   const user = await authenticate(request);
   if (!user) return new Response("Sign in first.", { status: 401 });
   try {
-    const body = z.object({ sessionId }).parse(await request.json());
-    const result = await tenant.forUser(user.id).sessions.runInputs({
+    const body = steerBody.parse(await request.json());
+    const validated = await safeValidateUIMessages({ messages: [body.message] });
+    if (!validated.success || validated.data[0].role !== "user") {
+      return Response.json({ error: { code: "invalid_request" } }, { status: 400 });
+    }
+    return Response.json(await tenant.forUser(user.id).sessions.submitInput({
       agentId: user.agentId,
       sessionId: body.sessionId,
+      requestId: body.requestId,
+      message: validated.data[0],
       abortSignal: request.signal,
-    });
-    return result.toResponse();
+    }));
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+export async function stop(request: Request): Promise<Response> {
+  const user = await authenticate(request);
+  if (!user) return new Response("Sign in first.", { status: 401 });
+  try {
+    const body = stopBody.parse(await request.json());
+    return Response.json(await tenant.forUser(user.id).sessions.stop({
+      agentId: user.agentId,
+      sessionId: body.sessionId,
+      turnId: body.turnId,
+      abortSignal: request.signal,
+    }));
   } catch (error) {
     return failure(error);
   }
 }
 ```
 
-Mount `queue` for both `GET` and `POST /api/chat/queue`, and `run` as `POST /api/chat/run`. In Python, add three routes to the FastAPI app from step 2; the first lines repeat its client and sign-in hooks:
+Mount `session` as `GET /api/chat/session`, `steer` as `POST /api/chat/steer`, and `stop` as `POST /api/chat/stop`. In Python, add three routes to the FastAPI app from step 2; the first lines repeat its client and sign-in hooks:
 
 ```python
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 
 from blazing_agents import APIStatusError, AsyncBlazingAgents, BlazingAgentsError
 from fastapi import Depends, FastAPI, HTTPException, Query
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse
 from pydantic import AfterValidator, BaseModel, Field
 
 client = AsyncBlazingAgents()
@@ -318,36 +338,15 @@ def agent_for_user(user_id: str) -> str:
     raise NotImplementedError
 
 
-class Submit(BaseModel):
-    action: Literal["submit"]
+class SteerBody(BaseModel):
     sessionId: str = Field(pattern=SESSION_ID)
     requestId: RequestId
     message: dict[str, object]
-    whenBusy: Literal["queue", "steer"] = "queue"
 
 
-class Change(BaseModel):
-    action: Literal["promote", "delete"]
-    sessionId: str = Field(pattern=SESSION_ID)
-    requestId: RequestId
-
-
-class Stop(BaseModel):
-    action: Literal["stop"]
+class StopBody(BaseModel):
     sessionId: str = Field(pattern=SESSION_ID)
     turnId: str = Field(pattern=TURN_ID)
-
-
-class Resume(BaseModel):
-    action: Literal["resume"]
-    sessionId: str = Field(pattern=SESSION_ID)
-
-
-QueueAction = Annotated[Submit | Change | Stop | Resume, Field(discriminator="action")]
-
-
-class Run(BaseModel):
-    sessionId: str = Field(pattern=SESSION_ID)
 
 
 def scope(user_id: str, session_id: str) -> dict[str, Any]:
@@ -358,13 +357,15 @@ def scope(user_id: str, session_id: str) -> dict[str, Any]:
     }
 
 
-@app.get("/api/chat/queue")
-async def queue(
+@app.get("/api/chat/session")
+async def session(
     session_id: str = Query(alias="sessionId", pattern=SESSION_ID),
     user_id: str = Depends(current_user),
 ):
     try:
-        page = await client.sessions.inputs(**scope(user_id, session_id))
+        page = await client.sessions.inputs(
+            **scope(user_id, session_id), include_completed=True
+        )
     except APIStatusError as exc:
         raise HTTPException(exc.status_code, detail={"code": exc.code}) from exc
     except BlazingAgentsError as exc:
@@ -372,25 +373,16 @@ async def queue(
     return page.model_dump(mode="json", by_alias=True)
 
 
-@app.post("/api/chat/queue")
-async def queue_action(body: QueueAction, user_id: str = Depends(current_user)):
-    sessions = client.sessions
-    target = scope(user_id, body.sessionId)
+@app.post("/api/chat/steer")
+async def steer(body: SteerBody, user_id: str = Depends(current_user)):
+    if body.message.get("role") != "user":
+        raise HTTPException(400, "Invalid message.")
     try:
-        if isinstance(body, Submit):
-            if body.message.get("role") != "user":
-                raise HTTPException(400, "Invalid message.")
-            result = await sessions.submit_input(
-                **target, request_id=body.requestId, message=body.message, when_busy=body.whenBusy
-            )
-        elif isinstance(body, Change) and body.action == "promote":
-            result = await sessions.promote_input(**target, request_id=body.requestId)
-        elif isinstance(body, Change):
-            result = await sessions.delete_input(**target, request_id=body.requestId)
-        elif isinstance(body, Stop):
-            result = await sessions.stop(**target, turn_id=body.turnId)
-        else:
-            result = await sessions.resume_inputs(**target)
+        result = await client.sessions.submit_input(
+            **scope(user_id, body.sessionId),
+            request_id=body.requestId,
+            message=body.message,
+        )
     except APIStatusError as exc:
         return JSONResponse({"error": {"code": exc.code}}, status_code=exc.status_code)
     except BlazingAgentsError:
@@ -398,19 +390,20 @@ async def queue_action(body: QueueAction, user_id: str = Depends(current_user)):
     return result.model_dump(mode="json", by_alias=True)
 
 
-@app.post("/api/chat/run")
-async def run(body: Run, user_id: str = Depends(current_user)):
+@app.post("/api/chat/stop")
+async def stop(body: StopBody, user_id: str = Depends(current_user)):
     try:
-        stream = await client.run_inputs(**scope(user_id, body.sessionId))
+        result = await client.sessions.stop(
+            **scope(user_id, body.sessionId), turn_id=body.turnId
+        )
     except APIStatusError as exc:
         return JSONResponse({"error": {"code": exc.code}}, status_code=exc.status_code)
     except BlazingAgentsError:
         return JSONResponse({"error": {"code": "upstream_error"}}, status_code=502)
-    headers = {"cache-control": "no-cache", "x-vercel-ai-ui-message-stream": "v1"}
-    return StreamingResponse(stream, media_type="text/event-stream", headers=headers)
+    return result.model_dump(mode="json", by_alias=True)
 ```
 
-4. Add the React chat. `ChatPage` loads saved history for the stored Session, then mounts `Chat`. `Chat` keeps a copy of the last successful conversation and restores it after an error or Stop, putting the sent text back in the box for an edited or unchanged resend. While the Session is busy, the composer's button reads Stop until the user types, then Send; a send queues the message. The `queue` block above the composer lists each waiting message on one line with Send (steer the running Turn now) and Delete. `Chat` polls the queue while anything is running or waiting. When the Session is idle and messages wait, `Chat` shows that batch of user messages and calls `resumeStream()`, which posts to `/api/chat/run` through a second AI SDK transport and streams the batch's answer; after that Turn ends it reloads saved history. `Chat` runs each set of waiting messages once. After a failed run, Resume runs them again.
+4. Add the React chat. `ChatPage` loads saved history for the stored Session, then mounts `Chat`. `Chat` keeps a copy of the last successful conversation and restores it after an error or Stop, putting the sent text back in the box for an edited or unchanged resend. While the Session is busy, the composer's button reads Stop until the user types, then Send; a send adds the message to the local `queue`. The `queue` block above the composer lists each waiting message on one line with Send (steer the running Turn now) and Delete (drop it — it was never sent). `Chat` polls `GET /api/chat/session` while the Session is busy or a steer is pending. When the Session is idle and messages wait, `Chat` shows that batch of user messages and calls `resumeStream()`, which posts them to `/api/chat` through a second AI SDK transport as a `messages` array and streams the answer; after that Turn ends it reloads saved history. `Chat` sends each set of waiting messages once; after a failed send, it waits for the user.
 
 ```tsx
 import { useChat } from "@ai-sdk/react";
@@ -424,20 +417,15 @@ interface Conversation {
   messages: UIMessage[];
 }
 
-type QueuedInput = Omit<SessionInput, "message"> & { message: UIMessage };
-
-interface Queue {
-  inputs: QueuedInput[];
-  activity: SessionActivity;
+/** A message this client sent as a steer, with its receipt state once known. */
+interface Steer {
+  requestId: string;
+  message: UIMessage;
+  state: "sending" | SessionInput["state"];
+  turnId?: string;
 }
 
-type QueueAction =
-  | { action: "submit"; requestId: string; message: UIMessage }
-  | { action: "promote" | "delete"; requestId: string }
-  | { action: "stop"; turnId: string }
-  | { action: "resume" };
-
-const empty: Queue = { inputs: [], activity: { state: "idle", turnId: null, reason: null } };
+const idle: SessionActivity = { state: "idle", turnId: null };
 
 function textOf(message: { parts: readonly { type: string }[] }): string {
   return message.parts.map((part) => ("text" in part && typeof part.text === "string" ? part.text : "")).join("");
@@ -500,17 +488,18 @@ function Chat({
 }) {
   const [input, setInput] = useState("");
   const [sessionId, setSessionId] = useState(conversation.sessionId);
-  const [queue, setQueue] = useState(empty);
+  const [queue, setQueue] = useState<UIMessage[]>([]);
+  const [steered, setSteered] = useState<Steer[]>([]);
+  const [activity, setActivity] = useState<SessionActivity>(idle);
   const [queueError, setQueueError] = useState<string>();
   const saved = useRef(conversation.messages);
   const sending = useRef(false);
-  const submitting = useRef(false);
   const sent = useRef("");
-  const draft = useRef<{ text: string; requestId: string; messageId: string }>(undefined);
+  const pendingBatch = useRef<UIMessage[]>([]);
+  const steeredRef = useRef(steered);
+  steeredRef.current = steered;
   const lastTurn = useRef<string | null>(null);
   const reloadAfterTurn = useRef(false);
-  const ran = useRef(new Set<string>());
-  const stoppedBatch = useRef<UIMessage[]>([]);
   const [transport] = useState((): ChatTransport<UIMessage> => {
     const headers = { authorization: `Bearer ${token}` };
     const relay = new BlazingAgentsChatTransport({
@@ -522,12 +511,12 @@ function Chat({
         setSessionId(id);
       },
     });
-    const batch = new DefaultChatTransport<UIMessage>({ api: "/api/chat/run", headers });
+    const batch = new DefaultChatTransport<UIMessage>({ api: "/api/chat", headers });
     return {
       sendMessages: (options) => relay.sendMessages(options),
-      // resumeStream() arrives here; it starts the waiting batch with a POST instead of reattaching.
+      // resumeStream() arrives here; it sends the waiting messages as one Turn.
       reconnectToStream: ({ abortSignal, ...options }) =>
-        batch.sendMessages({ ...options, abortSignal, trigger: "submit-message", messageId: undefined, messages: [] }),
+        batch.sendMessages({ ...options, abortSignal, trigger: "submit-message", messageId: undefined, messages: pendingBatch.current }),
     };
   });
   const chat = useChat({
@@ -535,16 +524,23 @@ function Chat({
     messages: conversation.messages,
     onError() {
       sending.current = false;
+      const unsent = pendingBatch.current;
+      pendingBatch.current = [];
       chat.setMessages(saved.current);
-      setInput((current) => current || sent.current);
+      setInput((current) =>
+        current || sent.current || unsent.map(textOf).filter(Boolean).join("\n"));
     },
     onFinish({ messages, finishReason, isAbort, isError, isDisconnect }) {
       sending.current = false;
       if (isAbort || isError || isDisconnect || !finishReason || finishReason === "error") {
+        const unsent = pendingBatch.current;
+        pendingBatch.current = [];
         chat.setMessages(saved.current);
-        setInput((current) => current || sent.current);
+        setInput((current) =>
+          current || sent.current || unsent.map(textOf).filter(Boolean).join("\n"));
         return;
       }
+      pendingBatch.current = [];
       saved.current = messages;
     },
   });
@@ -552,29 +548,32 @@ function Chat({
   stopOnUnmount.current = chat.stop;
   useEffect(() => () => { void stopOnUnmount.current(); }, []);
   const streaming = chat.status === "submitted" || chat.status === "streaming";
-  const { state, turnId, reason } = queue.activity;
+  const { state, turnId } = activity;
   const busy = streaming || state === "running" || state === "stopping" || state === "approval";
-  const pending = queue.inputs.filter((item) => item.state === "accepted" || item.state === "delivered");
-  const waiting = pending.filter((item) => item.state === "accepted");
-  const uncertain = queue.inputs.filter((item) => item.state === "uncertain");
-  // Consumed inputs are in the agent's context but not yet in saved history.
-  const reading = queue.inputs.filter(
-    (item) => item.state === "consumed" && !chat.messages.some((message) => message.id === item.message.id),
+  const pendingSteers = steered.filter(
+    (item) => item.state === "sending" || item.state === "accepted" || item.state === "delivered",
   );
+  const uncertain = steered.filter((item) => item.state === "uncertain");
   const hasAnswer = chat.messages.some((message) => message.role === "assistant");
 
   const refresh = useCallback(async () => {
     if (!sessionId) return;
-    const response = await fetch(`/api/chat/queue?sessionId=${encodeURIComponent(sessionId)}`, {
+    const response = await fetch(`/api/chat/session?sessionId=${encodeURIComponent(sessionId)}`, {
       headers: { authorization: `Bearer ${token}` },
     });
     if (!response.ok) return;
-    const body: { data: QueuedInput[]; activity: SessionActivity } = await response.json();
-    setQueue({ inputs: body.data, activity: body.activity });
+    const body: { data: SessionInput[]; activity: SessionActivity } = await response.json();
+    const receipts = new Map(body.data.map((receipt) => [receipt.requestId, receipt]));
+    setActivity(body.activity);
+    // Reconcile steers with their receipts; never rebuild the queue from them.
+    setSteered((current) => current.map((item) => {
+      const receipt = receipts.get(item.requestId);
+      return receipt ? { ...item, state: receipt.state, turnId: receipt.turnId } : item;
+    }));
     return body.activity;
   }, [sessionId, token]);
 
-  const watching = Boolean(sessionId) && (busy || (pending.length > 0 && state !== "paused"));
+  const watching = Boolean(sessionId) && (busy || queue.length > 0 || pendingSteers.length > 0);
   useEffect(() => {
     void refresh().catch(() => undefined);
     if (!watching) return;
@@ -584,15 +583,14 @@ function Chat({
 
   const { setMessages, resumeStream } = chat;
   useEffect(() => {
-    if (!sessionId || streaming || state !== "idle") return;
-    if (waiting.every((item) => ran.current.has(item.requestId))) return;
-    for (const item of waiting) ran.current.add(item.requestId);
+    if (!sessionId || streaming || state !== "idle" || queue.length === 0 || chat.error) return;
+    pendingBatch.current = queue;
+    setQueue([]);
     sent.current = "";
     const shown = new Set(saved.current.map((message) => message.id));
-    const batch = waiting.map((item) => item.message).filter((message) => !shown.has(message.id));
-    setMessages([...saved.current, ...batch]);
+    setMessages([...saved.current, ...queue.filter((message) => !shown.has(message.id))]);
     void resumeStream({ body: { sessionId } });
-  }, [sessionId, streaming, state, waiting, setMessages, resumeStream]);
+  }, [sessionId, streaming, state, queue, chat.error, setMessages, resumeStream]);
 
   useEffect(() => {
     if (lastTurn.current !== null && lastTurn.current !== turnId) reloadAfterTurn.current = true;
@@ -610,58 +608,82 @@ function Chat({
         saved.current = body.messages;
         setMessages(body.messages);
         const savedIds = new Set(body.messages.map((message) => message.id));
-        const unsaved = stoppedBatch.current.filter((message) => !savedIds.has(message.id)).map(textOf);
-        stoppedBatch.current = [];
-        if (unsaved.length) setInput((current) => [current, ...unsaved].filter(Boolean).join("\n"));
+        // not_placed steers never reached the agent, so they rejoin the queue;
+        // committed ones are in history; uncertain ones stay flagged.
+        const requeue = steeredRef.current
+          .filter((item) => item.state === "not_placed" && !savedIds.has(item.message.id))
+          .map((item) => item.message);
+        setSteered(steeredRef.current.filter((item) =>
+          item.state !== "not_placed" &&
+          item.state !== "committed" &&
+          !savedIds.has(item.message.id)));
+        if (requeue.length) setQueue((existing) => [...existing, ...requeue]);
       })
       .catch(() => undefined);
     return () => controller.abort();
   }, [turnId, streaming, sessionId, token, setMessages]);
 
-  async function act(body: QueueAction): Promise<boolean> {
+  async function steer(item: UIMessage) {
+    // Dequeue before sending: a queued row is "not sent yet" by definition.
+    setQueue((current) => current.filter((queued) => queued.id !== item.id));
     setQueueError(undefined);
+    const requestId = generateId();
+    setSteered((current) => [...current, { requestId, message: item, state: "sending" }]);
     try {
-      const response = await fetch("/api/chat/queue", {
+      const response = await fetch("/api/chat/steer", {
         method: "POST",
         headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-        body: JSON.stringify({ sessionId, ...body }),
+        body: JSON.stringify({ sessionId, requestId, message: item }),
       });
+      const body: { data?: SessionInput; error?: { code?: string } } = await response
+        .json()
+        .catch(() => ({}));
       if (!response.ok) {
-        const failure: { error?: { code?: string } } = await response.json().catch(() => ({}));
-        setQueueError(failure.error?.code ?? `HTTP ${response.status}`);
+        setSteered((current) => current.filter((entry) => entry.requestId !== requestId));
+        if (response.status < 500) {
+          // A refusal (for example steer_not_available) saved nothing; the
+          // message simply waits again.
+          setQueue((current) => [...current, item]);
+        } else {
+          // The server may have saved it; flag it instead of resending.
+          setSteered((current) => [
+            ...current,
+            { requestId, message: item, state: "uncertain" },
+          ]);
+        }
+        setQueueError(body.error?.code ?? `HTTP ${response.status}`);
+      } else {
+        const receipt = body.data;
+        setSteered((current) =>
+          current.map((entry) =>
+            entry.requestId === requestId
+              ? { ...entry, state: receipt?.state ?? "accepted", turnId: receipt?.turnId }
+              : entry,
+          ),
+        );
       }
-      return response.ok;
     } catch {
+      // The outcome is unknown; flag it instead of resending automatically.
+      setSteered((current) =>
+        current.map((entry) =>
+          entry.requestId === requestId ? { ...entry, state: "uncertain" } : entry,
+        ),
+      );
       setQueueError("network_error");
-      return false;
-    } finally {
-      await refresh().catch(() => undefined);
     }
-  }
-
-  async function resume() {
-    ran.current.clear();
-    chat.clearError();
-    if (state === "paused") await act({ action: "resume" });
-    else await refresh().catch(() => undefined);
+    await refresh().catch(() => undefined);
   }
 
   async function send(event: FormEvent) {
     event.preventDefault();
     const text = input.trim();
     if (!text) return;
-    if (sessionId && (busy || pending.length > 0 || state === "paused")) {
-      if (submitting.current) return;
-      if (draft.current?.text !== text) draft.current = { text, requestId: generateId(), messageId: generateId() };
-      const { requestId, messageId } = draft.current;
-      submitting.current = true;
-      const message: UIMessage = { id: messageId, role: "user", parts: [{ type: "text", text }] };
-      const queued = await act({ action: "submit", requestId, message });
-      submitting.current = false;
-      if (!queued) return;
-      draft.current = undefined;
-      setInput((current) => (current.trim() === text ? "" : current));
-      if (state === "paused") await act({ action: "resume" });
+    if (sessionId && (busy || queue.length > 0)) {
+      setQueue((current) => [
+        ...current,
+        { id: generateId(), role: "user", parts: [{ type: "text", text }] },
+      ]);
+      setInput("");
       return;
     }
     if (sending.current) return;
@@ -674,8 +696,15 @@ function Chat({
 
   async function stop() {
     const current = turnId ?? (await refresh().catch(() => undefined))?.turnId;
-    stoppedBatch.current = queue.inputs.filter((item) => item.turnId === current).map((item) => item.message);
-    if (current) await act({ action: "stop", turnId: current });
+    if (current) {
+      await fetch("/api/chat/stop", {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ sessionId, turnId: current }),
+      }).catch(() => undefined);
+      // The stop is recorded at once; the stream still reports the end.
+      await refresh().catch(() => undefined);
+    }
     if (streaming) {
       await chat.stop();
       chat.setMessages(saved.current);
@@ -691,7 +720,12 @@ function Chat({
     void chat.regenerate();
   }
 
-  const occupied = busy || pending.length > 0;
+  const occupied = busy || queue.length > 0;
+  const reading = steered.filter(
+    (item) =>
+      item.state !== "uncertain" &&
+      !chat.messages.some((message) => message.id === item.message.id),
+  );
   return (
     <main>
       {[...chat.messages, ...reading.map((item) => item.message)].map((message) => (
@@ -702,36 +736,55 @@ function Chat({
       {busy && !streaming && (
         <p role="status">{state === "approval" ? "Waiting for a tool approval." : "The agent is working."}</p>
       )}
-      {(state === "paused" || (state === "idle" && chat.error && waiting.length > 0)) && (
+      {state === "idle" && chat.error && queue.length > 0 && (
         <div role="alert">
           <p>
-            The last Turn did not finish{reason ? ` (${reason})` : ""}. Waiting messages are kept.{" "}
-            <button type="button" onClick={() => void resume()}>Resume</button>
+            The last Turn did not finish. Waiting messages are kept.{" "}
+            <button type="button" onClick={() => chat.clearError()}>Send them now</button>
           </p>
-          {uncertain.map((item) => (
-            <p key={item.requestId}>May not have been delivered: {textOf(item.message)}</p>
-          ))}
         </div>
       )}
-      {pending.length > 0 && (
+      {uncertain.map((item) => (
+        <p key={item.requestId} role="alert">
+          May not have been delivered: {textOf(item.message)}{" "}
+          <button
+            type="button"
+            onClick={() => {
+              setSteered((current) => current.filter((entry) => entry.requestId !== item.requestId));
+              setQueue((existing) => [...existing, item.message]);
+            }}
+          >
+            Send again
+          </button>{" "}
+          <button
+            type="button"
+            onClick={() =>
+              setSteered((current) => current.filter((entry) => entry.requestId !== item.requestId))
+            }
+          >
+            Dismiss
+          </button>
+        </p>
+      ))}
+      {queue.length > 0 && (
         <section aria-label="queue">
           <h2>queue</h2>
-          {pending.map((item) => (
-            <div key={item.requestId} style={{ display: "flex", gap: 8 }}>
+          {queue.map((item) => (
+            <div key={item.id} style={{ display: "flex", gap: 8 }}>
               <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {item.mode === "steer" ? "Steering: " : ""}
-                {textOf(item.message)}
+                {textOf(item)}
               </span>
-              {item.state === "accepted" && item.mode === "queue" && (
-                <button type="button" onClick={() => void act({ action: "promote", requestId: item.requestId })}>
+              {busy && (
+                <button type="button" onClick={() => void steer(item)}>
                   Send
                 </button>
               )}
-              {item.state === "accepted" && (
-                <button type="button" onClick={() => void act({ action: "delete", requestId: item.requestId })}>
-                  Delete
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => setQueue((current) => current.filter((queued) => queued.id !== item.id))}
+              >
+                Delete
+              </button>
             </div>
           ))}
         </section>
@@ -749,7 +802,7 @@ function Chat({
           }}
         />
         {busy && !input.trim() ? (
-          <button type="button" onClick={() => void stop()} disabled={state === "stopping" || state === "approval"}>
+          <button type="button" onClick={() => void stop()} disabled={state === "stopping"}>
             Stop
           </button>
         ) : (
@@ -766,7 +819,7 @@ function Chat({
 
 ## Gotchas
 
-- **History lives in BA.** Send only the newest user message. The transport already does this; a custom client that posts the whole `messages` array gets a 400 from your `chat` handler.
+- **History lives in BA.** Send only new user messages — one `message`, or a `messages` batch of the ones that waited. A client that posts the whole conversation gets a 400: the handler accepts user messages only.
 - **Validate every ID before it reaches a URL.** The browser sends `sessionId`, `turnId`, and `requestId`, and the SDK places them in request paths. A value such as `../../ag_other/sessions/ss_x` or `..` would make the request reach another route. Check them at your relay as the handlers do: `sessionIdSchema` and `sessionInputRequestIdSchema` from `@blazingagents/sdk/contracts` in TypeScript, and the same patterns in Python. A `requestId` of `.` or `..` is invalid.
 - **Derive scope from verified sign-in.** BA enforces ownership when you use `forUser()`. A body `userId` alone grants no access.
 - **Save the Session ID.** The transport receives it before the answer streams. Keep it even when the first Turn fails or is stopped; the Session exists and is simply empty.
@@ -775,16 +828,17 @@ function Chat({
 - **Tool effects can repeat.** Stop cancels the Turn but cannot undo a Tool call that already ran, and a resend can run it again (for example, a second email). Make side-effecting Tools safe to repeat or gate them with [human approval](human-approval.md).
 - **A lost response may already be saved.** A dropped connection is not proof of failure. Reload history before telling the user their message was lost.
 - **Regenerate only after a successful answer.** A prompt that failed was never saved, so there is nothing to regenerate. If regeneration fails or is stopped, the old answer stays.
-- **`session_busy` (HTTP 409)** from `chat` means a Tool approval is pending, an approved call is still running, or another Turn holds the Session, for example one started from another tab. Submit the message as a Session input instead. Stop also returns `session_busy` during an approval wait; decide the approval first.
-- **Queue only after the Session exists.** The first message creates the Session through `chat`. Inputs need a Session ID, which the transport receives before the answer streams.
-- **Keep the `requestId` until the outcome is known.** `submitInput` saves the message before it returns, so a lost response may still have queued it. Retry with the same `requestId` and message, as `Chat` does while the text is unchanged. A changed payload under the same `requestId`, or the same message ID under a new one, returns `input_idempotency_conflict`.
-- **Delete and Send race with delivery.** Promote and Delete work only while an input is `accepted`. Once BA reserves it for a Turn, both return `input_not_pending`; show it as sent. A steering message the agent has read can affect the Turn even if that Turn is later stopped and not saved.
-- **Steering stops at tool approvals.** Steering does not cross a tool approval. A steering message the agent has not read when an approval pause starts, or one sent while the approved call's continuation runs, waits for the next batch instead, with the same `requestId` and position. BA turns it back into a `queue` input, so its row shows Send again. Render each row from the receipt's `mode`, not from the last button the user pressed. Stop still ends the continuation.
-- **Your client starts every batch.** BA never starts a queued Turn. Poll `GET /api/chat/queue` from its first page while the Session is busy or messages wait; the cursor only pages through inputs. When activity is `idle` and inputs are `accepted`, `Chat` calls `POST /api/chat/run` once for that set, including after Stop or Resume. Every waiting input runs in that Turn, each as its own user message. Messages queued after it starts wait for the next call. If no client calls it, the inputs wait, and the next page load runs them.
-- **Only the caller sees a batch stream.** `runInputs` streams the Turn to the request that started it, and nothing replays it. A reload or dropped connection loses the partial answer, and like a dropped `chat` stream it may end the Turn. Reload history and the queue to see what was saved. Two tabs can try to run the same queue; the second gets `session_busy`. `Chat` runs each set of inputs once and waits for Resume after a failed run, so a failure never loops.
-- **Stopped queued messages come back to the composer.** Stopping a Turn cancels the inputs it had taken, and saved history keeps none of them. `Chat` remembers that Turn's batch, and after the history reload it puts back the text of every batch message that history lacks, one per line, the way a stopped `chat` send restores its text. The composer is a `textarea` so those lines stay separate; Enter sends and Shift+Enter adds a line. A message that history has was answered before Stop took effect, so it stays answered.
-- **Stop without a Turn ID only aborts.** `Chat` stops by `turnId`, reading activity once if it has none yet. When there is still no Turn ID, for example while the first message is creating the Session, it can only abort the chat request. That is not the fenced Stop: BA may cancel the Turn and pause the queue with reason `failed`. Show the paused state and let the user press Resume.
-- **Errors pause the queue.** Activity `paused` keeps the waiting inputs until the user presses Resume or sends another message. Resume only unpauses the queue; `Chat` then runs the batch. Inputs marked `uncertain` may have reached the agent before the failure and are never resent automatically; let the user decide.
+- **`session_busy` (HTTP 409)** from `chat` means a Tool approval is pending, a continuation is running, or another Turn holds the Session, for example one started from another tab. Steer the running Turn, or hold the message in the queue and let the next dispatch send it.
+- **Queue only after the Session exists.** The first message creates the Session through `chat`. Steers and batches need a Session ID, which the transport receives before the answer streams.
+- **The queue is yours.** It lives in client state — `useState`, localStorage, or your own store. Take a message out before sending it (a queued row means "not sent"), never auto-retry a send whose outcome is unknown, and never rebuild the queue from receipts or history: the chat endpoint does not reject a message ID already in history, so a rebuilt queue can send a message twice.
+- **Keep the `requestId` until the outcome is known.** `submitInput` saves the steer before it returns, so a lost response may still have placed it. Retry with the same `requestId` and message; a changed payload under the same `requestId`, or the same message ID under a new one, returns `input_idempotency_conflict`.
+- **A steer is provisional until history catches up.** The `data-ba-steer-consumed` chunk on the running stream means the agent took the message; it is not yet proof of a durable save. `committed` proves it, `not_placed` means it never ran (safe to send as chat), and `uncertain` means it may have run — flag it and let the user decide, as `Chat` does.
+- **Steering stops at tool approvals.** An approval wait refuses new steers with `steer_not_available`, so a message sent then stays queued and goes out after the continuation settles. A steer already taken does not cross the pause either: it lands in history only if the Turn that read it commits.
+- **Your client sends every waiting message.** Poll `GET /api/chat/session` while the Session is busy; once activity is `idle` and messages wait, `Chat` posts them to `/api/chat` as one `messages` batch. There is no server queue to drain, so nothing runs without that send — reloads lose the local queue unless you persist it yourself.
+- **Two tabs can send the same Session's Turns.** The second `chat` call while a Turn runs gets `session_busy`. Each tab holds only its own queue, so keep queued sends to the tab that queued them.
+- **A stopped Turn's uncommitted steers rejoin the queue.** After the history reload, a steered message missing from history and marked `not_placed` never ran, so `Chat` queues it again; `uncertain` stays flagged for the user.
+- **Stop without a Turn ID only aborts.** `Chat` stops by `turnId`, reading activity once if it has none yet. When there is still no Turn ID, for example while the first message is creating the Session, it can only abort the chat request — keep the draft and let the user resend.
+- **Stop returns before the Turn ends.** `sessions.stop()` records cancellation and answers immediately; the `stopping` activity and the existing stream report the end. Keep reading the stream instead of polling for a stopped state.
 - **Reload the newest page, not `after`.** A tool approval continuation rewrites its assistant message in place, at the same position, so `messages({ after: latestCursor })` never returns the revised tool result or answer. `Chat` reloads the newest page after each Turn and drops that reload if a new Turn or stream starts first, so an old snapshot cannot overwrite live messages.
 - **Older history.** `sessions.messages` returns the newest page, oldest first. Pass `nextCursor` back as `cursor` to load earlier pages for long conversations. Prepend each older page without reversing its messages.
 - **Proxies must not buffer the stream.** `toResponse()` sets `cache-control: no-cache`; make sure every proxy in front of your backend passes chunks through as they arrive.
@@ -797,14 +851,13 @@ function Chat({
 - Call `POST /api/chat` without your sign-in, and you get 401. Call it as a second user with the first user's Session ID, and BA returns 404.
 - Press Stop mid-answer. The partial answer disappears, your text returns to the box, and Send works again.
 - While an answer streams, the empty composer shows Stop. Type a message, and the button turns to Send. Sending adds a one-line row to the `queue` block. Queue two more. When the answer finishes, the three appear as separate user messages and one new Turn streams its answer to them; after it ends, history shows the same messages in the same order.
-- Queue a message, then press its Send. It joins the running Turn, leaves the queue once the agent reads it, and the current answer takes it into account.
-- Queue a message, then press Delete. It never reaches the agent. Queue another and press Stop. The current Turn ends, and the queued message starts the next one.
-- Reload while messages are queued. The `queue` block comes back.
-- With no chat open, submit an input to an idle Session through the API. It stays `accepted`, and no Turn starts. Open the chat, and `Chat` runs it on load.
-- Reload while a batch answers. The partial answer is not replayed. Once the Session settles, the screen matches saved history and the queue shows any message still waiting.
-- Call `POST /api/chat/run` with nothing waiting; it returns `session_busy`.
-- Retry a submit with the same `requestId` and message; you get the same receipt. Change the text under that `requestId`, and you get `input_idempotency_conflict`.
-- While a Tool approval is pending, queued messages stay in the queue and Stop is disabled; a direct `stop` call returns `session_busy`.
+- Queue a message, then press its Send. It joins the running Turn as a steer, leaves the queue, and the current answer takes it into account; after the Turn ends, history contains the message.
+- Queue a message, then press Delete. It was never sent, so it never reaches the agent. Queue another and press Stop. The current Turn ends, and the queued message goes out as the next one.
+- Reload while messages are queued. The queue is client state, so the rows are gone — persist it yourself if reloads must keep them.
+- Steer a message, then press Stop before the agent reads it. After the Turn settles its receipt ends `not_placed`, and `Chat` queues it again.
+- Reload while a batch answers. The partial answer is not replayed. Once the Session settles, the screen matches saved history.
+- Retry a steer with the same `requestId` and message; you get the same receipt. Change the text under that `requestId`, and you get `input_idempotency_conflict`.
+- While a Tool approval is pending, a steer returns `steer_not_available` and the message stays queued; `chat` returns `session_busy`.
 - Press Regenerate. The last answer is replaced, and after a reload the new answer is the saved one.
 - Usage filtered by your user's ID includes these Turns. See [usage dashboards](usage-dashboards.md).
 
