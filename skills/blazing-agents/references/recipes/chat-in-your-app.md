@@ -10,7 +10,7 @@ Your users chat with an Agent inside your own web product, and conversations mus
 
 Your browser talks only to your backend. The backend authenticates the user and calls BA through `client.forUser(verifiedUserId)`. BA checks that the Agent and Session belong to that user. BA stores the history, so each request carries only the newest message and the Session ID. The first response returns a new Session ID in `Location`. AI SDK `useChat` and `BlazingAgentsChatTransport` render the stream and keep that ID for later messages.
 
-A message sent while the Session is busy goes to the Session's inputs instead of a new chat call, which would fail with `session_busy`. `sessions.submitInput()` saves it under your `requestId` before it returns, so it survives reloads. A `queue` input waits. When the current Turn finishes or the user presses Stop, BA starts one new Turn with every waiting input, each as its own user message, in order. `promoteInput()` turns a waiting input into steering, which the running Turn reads at its next step. `deleteInput()` withdraws a waiting input. `sessions.inputs()` returns the pending inputs and the Session's `activity`; poll it while the Session is busy. A Turn that BA starts from the queue has no chat request of its own. When `activity.turnId` names one, stream it with `sessions.joinInputTurn()`. That stream uses the same format as chat and replays from the start of the Turn, so attach once per Turn and merge by message ID; disconnecting never stops the Turn. The saved answer is also in `sessions.messages()` once the Turn ends. An unexpected error pauses the queue and keeps the waiting inputs until the user resumes it with `resumeInputs()`.
+A message sent while the Session is busy goes to the Session's inputs instead of a new chat call, which would fail with `session_busy`. `sessions.submitInput()` saves it under your `requestId` before it returns, so it survives reloads. A `queue` input waits until your client runs the queue. `promoteInput()` turns a waiting input into steering, which the running Turn reads at its next step. `deleteInput()` withdraws a waiting input. `sessions.inputs()` returns the pending inputs and the Session's `activity`; poll it while the Session is busy or inputs wait. When the current Turn has ended or the user pressed Stop, and inputs wait, call `sessions.runInputs()`. It runs every waiting input as one new Turn, each as its own user message, in order, and streams that Turn back to the caller in the chat format. BA never starts a queued Turn by itself; if no client calls `runInputs()`, the inputs keep waiting and nothing is lost. The stream is not replayed after a drop, but the saved answer is in `sessions.messages()` once the Turn ends. An unexpected error pauses the queue and keeps the waiting inputs. `resumeInputs()` unpauses it without starting a Turn, and the next `runInputs()` runs them.
 
 ## Build it
 
@@ -196,7 +196,7 @@ async def history(
     }
 ```
 
-3. Add the queue endpoints. `GET /api/chat/queue` returns the Session's pending inputs and activity. `POST /api/chat/queue` takes one action: `submit` a new message, `promote` or `delete` a waiting one, `stop` the running Turn by its `turnId`, or `resume` a paused queue. `GET /api/chat/turn` relays the live stream of a Turn started from the queue, and answers 204 when the Turn did not come from the queue. Every call goes through the same verified user scope as `chat`.
+3. Add the queue endpoints. `GET /api/chat/queue` returns the Session's pending inputs and activity. `POST /api/chat/queue` takes one action: `submit` a new message, `promote` or `delete` a waiting one, `stop` the running Turn by its `turnId`, or `resume` a paused queue. `POST /api/chat/run` runs the waiting inputs as one Turn and relays its stream. Every call goes through the same verified user scope as `chat`.
 
 ```ts
 import { BlazingAgents, BlazingAgentsError } from "@blazingagents/sdk";
@@ -266,33 +266,30 @@ export async function queue(request: Request): Promise<Response> {
   }
 }
 
-export async function turn(request: Request): Promise<Response> {
+export async function run(request: Request): Promise<Response> {
   const user = await authenticate(request);
   if (!user) return new Response("Sign in first.", { status: 401 });
   try {
-    const params = new URL(request.url).searchParams;
-    const result = await tenant.forUser(user.id).sessions.joinInputTurn({
+    const body = z.object({ sessionId }).parse(await request.json());
+    const result = await tenant.forUser(user.id).sessions.runInputs({
       agentId: user.agentId,
-      sessionId: sessionId.parse(params.get("sessionId")),
-      turnId: turnId.parse(params.get("turnId")),
+      sessionId: body.sessionId,
       abortSignal: request.signal,
     });
     return result.toResponse();
   } catch (error) {
-    // Not a queued Turn, or no longer visible: tell the transport there is nothing to attach.
-    if (BlazingAgentsError.isInstance(error) && error.code === "not_found") return new Response(null, { status: 204 });
     return failure(error);
   }
 }
 ```
 
-Mount `queue` for both `GET` and `POST /api/chat/queue`, and `turn` as `GET /api/chat/turn`. In Python, add three routes to the FastAPI app from step 2; the first lines repeat its client and sign-in hooks:
+Mount `queue` for both `GET` and `POST /api/chat/queue`, and `run` as `POST /api/chat/run`. In Python, add three routes to the FastAPI app from step 2; the first lines repeat its client and sign-in hooks:
 
 ```python
 from typing import Annotated, Any, Literal
 
 from blazing_agents import APIStatusError, AsyncBlazingAgents, BlazingAgentsError
-from fastapi import Depends, FastAPI, HTTPException, Query, Response
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import AfterValidator, BaseModel, Field
 
@@ -349,6 +346,10 @@ class Resume(BaseModel):
 QueueAction = Annotated[Submit | Change | Stop | Resume, Field(discriminator="action")]
 
 
+class Run(BaseModel):
+    sessionId: str = Field(pattern=SESSION_ID)
+
+
 def scope(user_id: str, session_id: str) -> dict[str, Any]:
     return {
         "agent_id": agent_for_user(user_id),
@@ -397,17 +398,11 @@ async def queue_action(body: QueueAction, user_id: str = Depends(current_user)):
     return result.model_dump(mode="json", by_alias=True)
 
 
-@app.get("/api/chat/turn")
-async def turn(
-    session_id: str = Query(alias="sessionId", pattern=SESSION_ID),
-    turn_id: str = Query(alias="turnId", pattern=TURN_ID),
-    user_id: str = Depends(current_user),
-):
+@app.post("/api/chat/run")
+async def run(body: Run, user_id: str = Depends(current_user)):
     try:
-        stream = await client.sessions.join_input_turn(**scope(user_id, session_id), turn_id=turn_id)
+        stream = await client.run_inputs(**scope(user_id, body.sessionId))
     except APIStatusError as exc:
-        if exc.status_code == 404:  # Not a queued Turn: nothing to attach.
-            return Response(status_code=204)
         return JSONResponse({"error": {"code": exc.code}}, status_code=exc.status_code)
     except BlazingAgentsError:
         return JSONResponse({"error": {"code": "upstream_error"}}, status_code=502)
@@ -415,7 +410,7 @@ async def turn(
     return StreamingResponse(stream, media_type="text/event-stream", headers=headers)
 ```
 
-4. Add the React chat. `ChatPage` loads saved history for the stored Session, then mounts `Chat`. `Chat` keeps a copy of the last successful conversation and restores it after an error or Stop, putting the sent text back in the box for an edited or unchanged resend. While the Session is busy, the composer's button reads Stop until the user types, then Send; a send queues the message. The `queue` block above the composer lists each waiting message on one line with Send (steer the running Turn now) and Delete. `Chat` polls the queue while anything is running or waiting. When BA starts a Turn from the queue, `Chat` shows its batch of user messages and calls `resumeStream()`, which reads `GET /api/chat/turn` through a second AI SDK transport; after that Turn ends it reloads saved history.
+4. Add the React chat. `ChatPage` loads saved history for the stored Session, then mounts `Chat`. `Chat` keeps a copy of the last successful conversation and restores it after an error or Stop, putting the sent text back in the box for an edited or unchanged resend. While the Session is busy, the composer's button reads Stop until the user types, then Send; a send queues the message. The `queue` block above the composer lists each waiting message on one line with Send (steer the running Turn now) and Delete. `Chat` polls the queue while anything is running or waiting. When the Session is idle and messages wait, `Chat` shows that batch of user messages and calls `resumeStream()`, which posts to `/api/chat/run` through a second AI SDK transport and streams the batch's answer; after that Turn ends it reloads saved history. `Chat` runs each set of waiting messages once. After a failed run, Resume runs them again.
 
 ```tsx
 import { useChat } from "@ai-sdk/react";
@@ -514,7 +509,7 @@ function Chat({
   const draft = useRef<{ text: string; requestId: string; messageId: string }>(undefined);
   const lastTurn = useRef<string | null>(null);
   const reloadAfterTurn = useRef(false);
-  const attachTo = useRef({ sessionId: "", turnId: "" });
+  const ran = useRef(new Set<string>());
   const stoppedBatch = useRef<UIMessage[]>([]);
   const [transport] = useState((): ChatTransport<UIMessage> => {
     const headers = { authorization: `Bearer ${token}` };
@@ -527,15 +522,12 @@ function Chat({
         setSessionId(id);
       },
     });
-    // AI SDK treats a 204 from reconnectToStream as nothing to attach.
-    const queuedTurn = new DefaultChatTransport<UIMessage>({
-      api: "/api/chat/turn",
-      headers,
-      prepareReconnectToStreamRequest: ({ api }) => ({ api: `${api}?${new URLSearchParams(attachTo.current)}`, headers }),
-    });
+    const batch = new DefaultChatTransport<UIMessage>({ api: "/api/chat/run", headers });
     return {
       sendMessages: (options) => relay.sendMessages(options),
-      reconnectToStream: (options) => queuedTurn.reconnectToStream(options),
+      // resumeStream() arrives here; it starts the waiting batch with a POST instead of reattaching.
+      reconnectToStream: ({ abortSignal, ...options }) =>
+        batch.sendMessages({ ...options, abortSignal, trigger: "submit-message", messageId: undefined, messages: [] }),
     };
   });
   const chat = useChat({
@@ -563,6 +555,7 @@ function Chat({
   const { state, turnId, reason } = queue.activity;
   const busy = streaming || state === "running" || state === "stopping" || state === "approval";
   const pending = queue.inputs.filter((item) => item.state === "accepted" || item.state === "delivered");
+  const waiting = pending.filter((item) => item.state === "accepted");
   const uncertain = queue.inputs.filter((item) => item.state === "uncertain");
   // Consumed inputs are in the agent's context but not yet in saved history.
   const reading = queue.inputs.filter(
@@ -591,15 +584,15 @@ function Chat({
 
   const { setMessages, resumeStream } = chat;
   useEffect(() => {
-    if (!sessionId || !turnId || streaming || attachTo.current.turnId === turnId) return;
-    const batch = queue.inputs.filter((item) => item.turnId === turnId).map((item) => item.message);
-    if (batch.length === 0) return;
-    attachTo.current = { sessionId, turnId };
+    if (!sessionId || streaming || state !== "idle") return;
+    if (waiting.every((item) => ran.current.has(item.requestId))) return;
+    for (const item of waiting) ran.current.add(item.requestId);
     sent.current = "";
     const shown = new Set(saved.current.map((message) => message.id));
-    setMessages([...saved.current, ...batch.filter((message) => !shown.has(message.id))]);
-    void resumeStream();
-  }, [sessionId, turnId, streaming, queue.inputs, setMessages, resumeStream]);
+    const batch = waiting.map((item) => item.message).filter((message) => !shown.has(message.id));
+    setMessages([...saved.current, ...batch]);
+    void resumeStream({ body: { sessionId } });
+  }, [sessionId, streaming, state, waiting, setMessages, resumeStream]);
 
   useEffect(() => {
     if (lastTurn.current !== null && lastTurn.current !== turnId) reloadAfterTurn.current = true;
@@ -644,6 +637,13 @@ function Chat({
     } finally {
       await refresh().catch(() => undefined);
     }
+  }
+
+  async function resume() {
+    ran.current.clear();
+    chat.clearError();
+    if (state === "paused") await act({ action: "resume" });
+    else await refresh().catch(() => undefined);
   }
 
   async function send(event: FormEvent) {
@@ -702,11 +702,11 @@ function Chat({
       {busy && !streaming && (
         <p role="status">{state === "approval" ? "Waiting for a tool approval." : "The agent is working."}</p>
       )}
-      {state === "paused" && (
+      {(state === "paused" || (state === "idle" && chat.error && waiting.length > 0)) && (
         <div role="alert">
           <p>
-            The last Turn stopped unexpectedly ({reason}). Waiting messages are kept.{" "}
-            <button type="button" onClick={() => void act({ action: "resume" })}>Resume</button>
+            The last Turn did not finish{reason ? ` (${reason})` : ""}. Waiting messages are kept.{" "}
+            <button type="button" onClick={() => void resume()}>Resume</button>
           </p>
           {uncertain.map((item) => (
             <p key={item.requestId}>May not have been delivered: {textOf(item.message)}</p>
@@ -780,11 +780,11 @@ function Chat({
 - **Keep the `requestId` until the outcome is known.** `submitInput` saves the message before it returns, so a lost response may still have queued it. Retry with the same `requestId` and message, as `Chat` does while the text is unchanged. A changed payload under the same `requestId`, or the same message ID under a new one, returns `input_idempotency_conflict`.
 - **Delete and Send race with delivery.** Promote and Delete work only while an input is `accepted`. Once BA reserves it for a Turn, both return `input_not_pending`; show it as sent. A steering message the agent has read can affect the Turn even if that Turn is later stopped and not saved.
 - **Steering stops at tool approvals.** Steering does not cross a tool approval. A steering message the agent has not read when an approval pause starts, or one sent while the approved call's continuation runs, waits for the next batch instead, with the same `requestId` and position. BA turns it back into a `queue` input, so its row shows Send again. Render each row from the receipt's `mode`, not from the last button the user pressed. Stop still ends the continuation.
-- **One batch per Turn.** When a Turn finishes or is stopped, BA starts one new Turn with every queued input, each as its own user message. Messages queued after that Turn starts wait for the next batch. With an empty queue the Session goes idle.
-- **Attach to queued Turns yourself.** Poll `GET /api/chat/queue` from its first page while the Session is busy; the cursor only pages through inputs. When `activity.turnId` names a Turn bound to queued inputs, attach once with `joinInputTurn`. It replays from the start of that Turn, so after a reload the whole answer streams again under the same message ID; replace, never append. Attaching only watches. It never starts, restarts, or stops work, so use Stop to end the Turn. A Turn started by `chat` cannot be attached (404), and a dropped `chat` stream is not replayed; reload history after it ends.
+- **Your client starts every batch.** BA never starts a queued Turn. Poll `GET /api/chat/queue` from its first page while the Session is busy or messages wait; the cursor only pages through inputs. When activity is `idle` and inputs are `accepted`, `Chat` calls `POST /api/chat/run` once for that set, including after Stop or Resume. Every waiting input runs in that Turn, each as its own user message. Messages queued after it starts wait for the next call. If no client calls it, the inputs wait, and the next page load runs them.
+- **Only the caller sees a batch stream.** `runInputs` streams the Turn to the request that started it, and nothing replays it. A reload or dropped connection loses the partial answer, and like a dropped `chat` stream it may end the Turn. Reload history and the queue to see what was saved. Two tabs can try to run the same queue; the second gets `session_busy`. `Chat` runs each set of inputs once and waits for Resume after a failed run, so a failure never loops.
 - **Stopped queued messages come back to the composer.** Stopping a Turn cancels the inputs it had taken, and saved history keeps none of them. `Chat` remembers that Turn's batch, and after the history reload it puts back the text of every batch message that history lacks, one per line, the way a stopped `chat` send restores its text. The composer is a `textarea` so those lines stay separate; Enter sends and Shift+Enter adds a line. A message that history has was answered before Stop took effect, so it stays answered.
 - **Stop without a Turn ID only aborts.** `Chat` stops by `turnId`, reading activity once if it has none yet. When there is still no Turn ID, for example while the first message is creating the Session, it can only abort the chat request. That is not the fenced Stop: BA may cancel the Turn and pause the queue with reason `failed`. Show the paused state and let the user press Resume.
-- **Errors pause the queue.** Activity `paused` keeps the waiting inputs until the user presses Resume or sends another message. Inputs marked `uncertain` may have reached the agent before the failure and are never resent automatically; let the user decide.
+- **Errors pause the queue.** Activity `paused` keeps the waiting inputs until the user presses Resume or sends another message. Resume only unpauses the queue; `Chat` then runs the batch. Inputs marked `uncertain` may have reached the agent before the failure and are never resent automatically; let the user decide.
 - **Reload the newest page, not `after`.** A tool approval continuation rewrites its assistant message in place, at the same position, so `messages({ after: latestCursor })` never returns the revised tool result or answer. `Chat` reloads the newest page after each Turn and drops that reload if a new Turn or stream starts first, so an old snapshot cannot overwrite live messages.
 - **Older history.** `sessions.messages` returns the newest page, oldest first. Pass `nextCursor` back as `cursor` to load earlier pages for long conversations. Prepend each older page without reversing its messages.
 - **Proxies must not buffer the stream.** `toResponse()` sets `cache-control: no-cache`; make sure every proxy in front of your backend passes chunks through as they arrive.
@@ -799,7 +799,10 @@ function Chat({
 - While an answer streams, the empty composer shows Stop. Type a message, and the button turns to Send. Sending adds a one-line row to the `queue` block. Queue two more. When the answer finishes, the three appear as separate user messages and one new Turn streams its answer to them; after it ends, history shows the same messages in the same order.
 - Queue a message, then press its Send. It joins the running Turn, leaves the queue once the agent reads it, and the current answer takes it into account.
 - Queue a message, then press Delete. It never reaches the agent. Queue another and press Stop. The current Turn ends, and the queued message starts the next one.
-- Reload while messages are queued. The `queue` block comes back. Reload again while a queued Turn answers. Its batch and the answer so far reappear and keep streaming, with no duplicate messages, and after it ends history matches the screen.
+- Reload while messages are queued. The `queue` block comes back.
+- With no chat open, submit an input to an idle Session through the API. It stays `accepted`, and no Turn starts. Open the chat, and `Chat` runs it on load.
+- Reload while a batch answers. The partial answer is not replayed. Once the Session settles, the screen matches saved history and the queue shows any message still waiting.
+- Call `POST /api/chat/run` with nothing waiting; it returns `session_busy`.
 - Retry a submit with the same `requestId` and message; you get the same receipt. Change the text under that `requestId`, and you get `input_idempotency_conflict`.
 - While a Tool approval is pending, queued messages stay in the queue and Stop is disabled; a direct `stop` call returns `session_busy`.
 - Press Regenerate. The last answer is replaced, and after a reload the new answer is the saved one.
