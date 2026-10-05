@@ -81,9 +81,10 @@ developer wants to write the agent loop step by step.
 - While a Turn runs, send new chat messages as Session inputs
   (`sessions.submitInput()` / `submit_input()`), not as a new chat call, which
   fails with `session_busy`. Keep each input's `requestId` until its receipt
-  arrives and retry with the same `requestId` and message. Poll inputs for
-  activity, and stream each Turn BA starts from the queue with
-  `joinInputTurn()` / `join_input_turn()`, merging by message ID.
+  arrives and retry with the same `requestId` and message. BA never starts a
+  queued Turn. Poll inputs for activity, and once the Session is idle with
+  inputs waiting, run them with `sessions.runInputs()` / `client.run_inputs()`
+  and relay that stream like a chat Turn.
 - Changing an Agent's Provider requires `model` in the same update. A Session
   saves Agent configuration at its first Turn; a Task run saves it when queued.
   Read `agentConfig` with `sessions.get()` or `tasks.getRun()`. Skills, Memory,

@@ -6,8 +6,8 @@ through lists, handle errors, and connect `useChat` to your own backend.
 
 The examples for user scope, paginated Agents and Prompts, session usage, and
 backend functions require TypeScript SDK 0.16.0 or newer. Session inputs (queue,
-steering, and Stop) require 0.18.0 or newer. Check the installed package's types
-before using these APIs.
+steering, Stop, and client-run batches) require 0.19.0 or newer. Check the
+installed package's types before using these APIs.
 
 For the same surface in Python, read [Python SDK reference](sdk-python.md). For
 end-to-end builds, start from a recipe such as
@@ -321,16 +321,15 @@ The first Turn saves the Agent configuration. Read it with `(await client.sessio
 | `toolApprovals({ agentId, sessionId })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/tool-approvals` | `{ data, continuation }`. Each item has `approvalId`, `toolName`, `input`, `decision` (`pending`, `approved`, `denied`). |
 | `decideToolApproval({ agentId, sessionId, approvalId, approved, reason? })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/tool-approvals/{approvalId}` | `{ continuationId, state }` |
 | `joinToolApprovalContinuation({ agentId, sessionId, continuationId })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/tool-approval-continuations/{continuationId}` | `TerminalStreamResult` with `toResponse()`, `toStream()`, `requestId`. Streams the resumed Turn. |
-| `submitInput({ agentId, sessionId, requestId, message, whenBusy? })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/inputs` | `{ data: SessionInput, activity }`. Saved before it returns. `requestId` is 1 to 128 characters and not `.` or `..`. `whenBusy` is `"queue"` (default) or `"steer"`. Same `requestId` and payload returns the same receipt; a changed payload returns `input_idempotency_conflict`. |
+| `submitInput({ agentId, sessionId, requestId, message, whenBusy? })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/inputs` | `{ data: SessionInput, activity }`. Saved before it returns. `requestId` is 1 to 128 characters and not `.` or `..`. `whenBusy` is `"queue"` (default) or `"steer"`. Same `requestId` and payload returns the same receipt; a changed payload returns `input_idempotency_conflict`. Never starts a Turn; a waiting input runs only through `runInputs()`. |
 | `inputs({ agentId, sessionId, includeCompleted?, limit?, cursor? })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/inputs` | `{ data, nextCursor, activity }` in submission order. Poll without `cursor` to see changes; `cursor` only pages. |
 | `promoteInput({ agentId, sessionId, requestId })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/inputs/{requestId}/promote` | `{ data, activity }`. Queue to steer; keeps identity and order. `input_not_pending` once delivered. Steering does not enter an approval continuation. BA sets it back to `queue` for the next batch, so read `mode` from the receipt. |
 | `deleteInput({ agentId, sessionId, requestId })` | `DELETE /v1/agents/{agentId}/sessions/{sessionId}/inputs/{requestId}` | `{ data, activity }` with `state: "cancelled"`, `reason: "deleted"`. `input_not_pending` once delivered. |
-| `stop({ agentId, sessionId, turnId })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/stop` | `{ stoppedTurnId, activity }` after that Turn has ended. `activity` may already show the next queued Turn. `session_busy` during an approval wait. |
-| `resumeInputs({ agentId, sessionId })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/inputs/resume` | `{ activity }`. Restarts a `paused` queue in order; never resends `uncertain` inputs. Leaves a `function_executor_required` pause in place. |
-| `joinInputTurn({ agentId, sessionId, turnId, functions? })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/input-turns/{turnId}` | `TerminalStreamResult`. Streams a Turn BA started from the queue, from its start, in the chat format. Only watches; `not_found` for Turns not started from the queue. Pass `functions` to run backend functions for it. |
-| `runInputs({ agentId, sessionId, functions? })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/inputs/run` | `TerminalStreamResult`. Runs the waiting queue as one Turn with your backend functions and clears a `function_executor_required` pause. `session_busy` when the queue is empty, a Turn is running, or an approval waits. |
+| `stop({ agentId, sessionId, turnId })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/stop` | `{ stoppedTurnId, activity }` after that Turn has ended. Waiting inputs stay queued until you call `runInputs()`. `session_busy` during an approval wait. |
+| `resumeInputs({ agentId, sessionId })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/inputs/resume` | `{ activity }`. Unpauses a `paused` queue without starting a Turn; call `runInputs()` next. Never resends `uncertain` inputs. Leaves a `function_executor_required` pause in place. |
+| `runInputs({ agentId, sessionId, functions? })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/inputs/run` | `TerminalStreamResult` streamed only to this caller and never replayed. Runs every waiting input, in order, as one Turn; this is the only way a queued Turn starts. Pass the chat's `functions` to run a queue paused with `function_executor_required`. `session_busy` when nothing waits, a Turn is running, an approval waits, or the queue is paused. |
 
-A `SessionInput` has `requestId`, `sequence`, `message`, `mode` (`queue` or `steer`), `state` (`accepted`, `delivered`, `consumed`, `committed`, `cancelled`, `uncertain`), `turnId`, `reason`, and timestamps. `activity` is `{ state, turnId, reason }` with `state` one of `idle`, `running`, `stopping`, `approval`, `paused`. While busy, queued inputs wait and run together in one new Turn when the current one finishes or is stopped. A Turn started from the queue has no chat request. Stream it with `joinInputTurn()` once `activity.turnId` names it. It replays from the start, so merge by message ID. Saved answers are also in `messages()`. See [Add chat to your app](recipes/chat-in-your-app.md) for the full flow.
+A `SessionInput` has `requestId`, `sequence`, `message`, `mode` (`queue` or `steer`), `state` (`accepted`, `delivered`, `consumed`, `committed`, `cancelled`, `uncertain`), `turnId`, `reason`, and timestamps. `activity` is `{ state, turnId, reason }` with `state` one of `idle`, `running`, `stopping`, `approval`, `paused`. While busy, queued inputs wait. Once activity is `idle`, call `runInputs()` to run them all, in order, as one new Turn, and relay its stream like a chat Turn. Inputs submitted after it starts wait for the next call. BA never starts a queued Turn by itself, so inputs wait until a client runs them. A dropped batch stream is not replayed; saved answers are in `messages()`. See [Add chat to your app](recipes/chat-in-your-app.md) for the full flow.
 
 ### `client.tasks` (Tasks and Task runs)
 
@@ -651,11 +650,11 @@ database.
 For a native app that holds its own server-issued credentials and calls the SDK
 directly, `BlazingAgentsDirectChatTransport({ getClient, agentId, sessionId?,
 onSessionId?, functions? })` drives `useChat` through `client.chat()` without a
-relay. It also has `joinInputTurn({ turnId, abortSignal? })` and
-`runInputs({ abortSignal? })`, which return `ReadableStream<UIMessageChunk>`
-for a Turn started from the queue, using the transport's Session, `getClient`,
-and `functions`. `sendMessages` is unchanged; attach yourself once `inputs()` reports
-the queued Turn's `turnId`.
+relay. It also has `runInputs({ abortSignal? })`, which runs the Session's
+waiting inputs and returns that Turn as `ReadableStream<UIMessageChunk>`, using
+the transport's Session, `getClient`, and `functions`. `sendMessages` is
+unchanged; call `runInputs` yourself once `inputs()` shows the Session idle with
+inputs waiting.
 
 ## Gotchas
 
@@ -673,7 +672,8 @@ the queued Turn's `turnId`.
 - The chat transport does not resume an interrupted stream; `reconnectToStream`
   returns `null`. Reload history and the Session's `inputs()` before resending.
 - `chat` on a busy Session fails with `session_busy`. Send the message with
-  `sessions.submitInput()` instead so it waits in the queue.
+  `sessions.submitInput()` instead so it waits in the queue, then run the queue
+  with `sessions.runInputs()` once the Turn ends.
 - Agent and Prompt names can repeat. Read every page before resolving a name
   to an ID; reject multiple exact matches.
 

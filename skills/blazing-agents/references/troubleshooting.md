@@ -67,7 +67,8 @@ Use `BlazingAgentsError.isInstance(error)` instead of `instanceof`, which fails 
 | `session_version_mismatch` (409) | Two turns ran on the same Session at once; this one was not saved. | [Send one turn at a time](#session-busy). |
 | `input_idempotency_conflict` (409) | A Session input reused a `requestId` with a different message or `whenBusy`, or reused a message ID under a new `requestId`. | [Retry with the original request](#queued-input-errors). |
 | `input_not_pending` (409) on promote or delete | BA already reserved the queued input for delivery. | [Treat it as sent](#queued-input-errors). |
-| Queued messages never start; activity is `paused` | The previous turn failed or its worker was lost, so BA paused the queue. | [Resume the queue](#queued-input-errors). |
+| Queued messages never start; activity is `idle` | BA never starts a queued turn. No client has called `runInputs`/`run_inputs`. | [Run the queue](#queued-input-errors). |
+| Queued messages never start; activity is `paused` | The previous turn failed or its worker was lost, so BA paused the queue. | [Resume, then run the queue](#queued-input-errors). |
 | `invalid_cursor` (400) | The cursor was altered, came from another list, or was reused with different filters. | [Restart pagination](#invalid-cursor). |
 | Tool call never runs; the agent reports it was denied | The approval policy for this surface is `deny`, or `manual`/`auto` in a Task or stateless generation, where no person can approve. | [Change the policy or use chat](#tool-blocked-by-approval-policy). |
 | Turn fails with `mcp_connection_discovery_failed` (502), or the connection shows `needs_auth` | An attached MCP connection needs OAuth sign-in, or its server is down. | [Finish sign-in or detach](#mcp-authorization-missing). |
@@ -139,7 +140,7 @@ To fix it:
 - `session_version_mismatch` (409) means two turns ran on the same Session at once and this one was not saved. Read the Session's messages to see what was saved, then resend if needed.
 - To prevent both, submit new messages as Session inputs while a turn runs instead of making new chat calls, and send one chat turn at a time per Session.
 - Stopping during an approval wait also returns `session_busy`. Decide the approvals; Stop never decides them for you.
-- Deleting a Session returns `session_busy` while any turn runs, including one started from its queue. Deleting an idle Session is allowed even with queued inputs. They never run, and its inputs and queued-turn streams disappear with it (`not_found`).
+- Deleting a Session returns `session_busy` while any turn runs, including one started from its queue. Deleting an idle Session is allowed even with queued inputs. They never run, and its inputs disappear with it (`not_found`).
 
 ## Queued input errors
 
@@ -148,8 +149,10 @@ Session inputs carry your `requestId`. BA compares the original message and `whe
 - A `requestId` must be 1 to 128 characters and not exactly `.` or `..`, because a URL would collapse those path segments. BA rejects one on submit, and both SDKs refuse it before sending a promote or delete. Generate IDs instead of deriving them from user text.
 - `input_idempotency_conflict` (409): the `requestId` was reused with a changed message or `whenBusy`, or the message ID was already used under another `requestId`. When an acknowledgement was lost, retry with the original `requestId` and payload, or list the Session's inputs. Never mint a new `requestId` for a message whose outcome you do not know; that can deliver it twice.
 - `input_not_pending` (409) on promote or delete: the input was already reserved for delivery, so it can no longer be withdrawn or moved. Show it as sent and let the transcript catch up. The agent may already have acted on it.
-- Activity `paused` with reason `failed` or `owner_lost`: an unexpected error stopped the queue and kept the waiting inputs. Show the error, then resume the queue when the user is ready. Inputs in state `uncertain` may have reached the agent before the failure and are never replayed; ask the user before sending them again.
-- Activity `paused` with reason `function_executor_required`: the chat attached backend functions, which only your process can run, so BA does not start queued turns on its own. `resumeInputs` leaves this pause in place. Call `sessions.runInputs({ agentId, sessionId, functions })` (`client.run_inputs` in Python) from your backend to run the waiting queue as one turn and stream it. It returns `session_busy` when the queue is empty, a turn is running, or an approval waits.
+- Activity `idle` with inputs `accepted`: nothing has run the queue. BA never starts a queued turn, so inputs wait until a client calls `sessions.runInputs({ agentId, sessionId })` (`client.run_inputs` in Python). Call it after each turn ends and relay its stream. It returns `session_busy` when nothing waits, a turn is running, an approval waits, or the queue is paused.
+- Activity `paused` with reason `failed` or `owner_lost`: an unexpected error stopped the queue and kept the waiting inputs. Show the error, and when the user is ready call `resumeInputs`, then `runInputs`; resuming alone starts nothing. Inputs in state `uncertain` may have reached the agent before the failure and are never replayed; ask the user before sending them again.
+- Activity `paused` with reason `function_executor_required`: the chat attached backend functions, which only your process can run. `resumeInputs` leaves this pause in place. Call `runInputs` from your backend with the same `functions` map to run the waiting queue as one turn and stream it.
+- A batch stream dropped: `runInputs` output is never replayed. Reload history and `inputs()` to see what was saved and what still waits.
 
 ## Invalid cursor
 

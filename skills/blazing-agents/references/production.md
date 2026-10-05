@@ -107,6 +107,7 @@ The SDKs never retry for you. An error entry saying "retrying can succeed" tells
 | Submitting a Session input with the same `requestId` and unchanged message | Yes. You get the same receipt back. A changed message or `whenBusy` returns `input_idempotency_conflict`. |
 | Promoting or deleting the same Session input again | Yes, while it is still pending. Once delivered, both return `input_not_pending`. |
 | Stopping the same Turn again | Yes. Stop names the Turn, so a repeat never stops the next queued Turn. |
+| Running a Session's queued inputs again | Yes. A batch takes only inputs still waiting, so no input runs twice. A call while a batch runs, or with nothing waiting, returns `session_busy` and starts nothing. |
 | Creating another resource, or a Task without a key | No. Reconcile a lost response before retrying. Agent and Prompt names can repeat, so a name match alone cannot identify the created resource. |
 
 Retry these codes with backoff, jitter, and an overall deadline, and honor the `Retry-After` header when present (`error.headers` in TypeScript, `error.retry_after` in Python): `rate_limited`, `session_busy`, `session_version_mismatch`, `task_active_run_exists`, `workspace_busy`, `internal`, `service_unavailable`, `model_validation_unavailable`, `mcp_connection_unreachable`, `mcp_connection_discovery_failed`. Fix the request for every other code. See [troubleshooting](troubleshooting.md) for each one.
@@ -183,11 +184,11 @@ For per-user usage reporting, read [usage dashboards](recipes/usage-dashboards.m
 Cancellation asks work to stop. It never undoes what already happened.
 
 - **Chat Stop:** pass your incoming request's `abortSignal` to `client.chat()` so a user's Stop ends the stream and asks Blazing Agents to cancel the turn. A cancelled turn adds nothing to the Session history, but the exchange may already have been saved before the Stop arrived, so reload history instead of guessing. Keep the user's draft so they can resend.
-- **Stop with queued messages:** Stop the Session's current Turn by its `turnId`. The call returns only after that Turn has ended, then BA starts one Turn with all queued messages. A steering message the agent already read may have had effects even though the stopped Turn is not saved. Stop never decides a pending tool approval.
+- **Stop with queued messages:** Stop the Session's current Turn by its `turnId`. The call returns only after that Turn has ended. The queued messages keep waiting until your client runs them with `sessions.runInputs()` (`client.run_inputs` in Python) as one Turn. A steering message the agent already read may have had effects even though the stopped Turn is not saved. Stop never decides a pending tool approval.
 - **Task runs:** `client.tasks.cancelRun({ taskId, runId })` (`cancel_run` in Python) asks the run to stop at its next safe point. Keep polling until it reaches a final status. It may finish first, so handle `succeeded` as well as `canceled`.
 - **Time limits:** a run that hits its time limit stops and ends as `failed`.
 - **Side effects:** a Workspace command or file operation that already started may finish after cancellation. Files it changed and effects on remote systems stay. Plan to clean up or reverse them yourself.
-- **Disconnects:** closing the connection to a tool approval continuation does not stop it. Join the same `continuationId` again to keep reading.
+- **Disconnects:** closing the connection to a tool approval continuation does not stop it. Join the same `continuationId` again to keep reading. A queued batch from `runInputs()` follows chat instead. Pass the request's `abortSignal`, expect a disconnect to cancel the turn, and reload history, because its stream cannot be joined again.
 
 ## Respect limits
 
