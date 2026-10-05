@@ -6,7 +6,7 @@ and its `ai@^7` peer dependency there. Do not add dependencies to the user's
 application solely for an administrative call.
 
 Agent and Prompt pagination and keyed Task creation require SDK 0.16.0 or
-later; the current release is 0.19.0. With an older installation, inspect the
+later; the current release is 0.20.0. With an older installation, inspect the
 installed declarations before using those operations.
 
 Skill file operations (`getFile`, `putFile`, and `deleteFile`) require SDK
@@ -57,7 +57,7 @@ These are the supported administrative methods:
 | Agents | `list`, `get` | `create`, `update`, `delete` |
 | Providers | `client.providers.list()`, `get(id)`, `listModels(id)` | — |
 | Workspaces | `list`, `get` | `create`, `update`, `delete` |
-| Skills | `client.agent(agentId).skills.list/get/getFile` | `create`, `upload`, `putFile`, `deleteFile`, `copy`, `delete` |
+| Skills | `client.agent({ agentId }).skills.list/get/getFile` | `create`, `upload`, `putFile`, `deleteFile`, `copy`, `delete` |
 | Prompts | `client.prompts.list/get` | `create`, `update`, `delete` |
 | Tasks | `client.tasks.list/get/listRuns/getRun/runMessages` | `create`, `update`, `delete`, `createRun`, `cancelRun` |
 | Usage | `client.usage.overview()`, `get()`, `getForAgent(agentId)` | — |

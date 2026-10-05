@@ -34,7 +34,7 @@ Not the same as: a Session. The agent is configuration; a session is one convers
 
 The Agent settings saved with a Session at its first Turn or with a Task run when queued. It includes the model, instructions, tools, approval policies, and compaction settings. Later Agent edits affect new work; existing Sessions and queued runs keep their saved settings. Read `agentConfig` with `sessions.get()` or `tasks.getRun()`, including before a Task run has a Session.
 
-Not the same as a copy of every dependency. Provider keys, MCP credentials and connection details, Workspace attachment, Skills, and Memories use their current state. Local callback functions come from each SDK request; paused approval definitions remain available for that continuation.
+Not the same as a copy of every dependency. Provider keys, MCP credentials and connection details, Workspace attachment, Skills, and Memories use their current state. Local callback functions come from each SDK request; pass them again on the approval continuation call.
 
 ### Admin Agent
 
@@ -56,11 +56,13 @@ One stored conversation with one agent, identified by `ss_...`. BA returns the I
 
 Not the same as: Memory. A session is one conversation; memories carry facts across conversations.
 
-### Session input (queue and steer)
+### Session input (steer)
 
-A user message submitted to an existing session through its inputs resource, identified by your own `requestId` (1 to 128 characters, not `.` or `..`). BA saves it before acknowledging, so it survives reloads and is listed with the session's current activity (`idle`, `running`, `stopping`, `approval`, or `paused`). While a turn runs, a `queue` input waits. BA never starts a queued turn by itself. Once that turn finishes or the user stops it, your client runs the queue, and BA starts one new turn with every waiting input, each as its own user message, in submission order. Without that call, the inputs keep waiting. A `steer` input joins the running turn as soon as the agent can take it; if that turn is already finishing, it waits for the next batch instead. Steering does not cross a tool approval. A steering message the agent has not read when an approval pause starts, or one sent while the approved call's continuation runs, goes back to `queue` mode and waits for the next batch, with the same `requestId` and position. The receipt's `mode` is always current. The run call streams that turn back to its caller and is never replayed. A failed turn pauses the session with its waiting inputs kept. Resuming unpauses it, and the next run call starts them. You can promote a waiting input to `steer` or delete it until BA reserves it for delivery. Its `state` moves from `accepted` to `delivered`, `consumed` (the agent has read it), and `committed` (saved in history), or ends `cancelled` or `uncertain`.
+A user message your client sends to a running turn through the session's inputs resource, identified by your own `requestId` (1 to 128 characters, not `.` or `..`). The submit is steering only: the message joins the running turn as soon as the agent can take it, and the steer is refused with `steer_not_available` when no turn can take one (the session is idle or stopping, or a tool approval is waiting). The receipt's `state` moves from `accepted` to `delivered` and ends `committed` (saved in history), `not_placed` (the agent never read it — safe to send as an ordinary chat message), or `uncertain` (it may have reached the agent — never resend it automatically). `inputs()` lists the receipts alongside the session's current `activity` (`idle`, `running`, `stopping`, or `approval`).
 
-Not the same as: a chat message sent with `chat()`. That starts a turn now and fails with `session_busy` while the session is busy; an input waits its turn instead.
+BA holds no queue. A message your user sends while a turn runs either steers it or waits in your own client; once the turn settles, send the waiting messages as ordinary chat turns — one per turn, or several in one turn with `chat({ messages: [...] })`. Take each message out of your queue before sending it, and never rebuild the queue from receipts or history.
+
+Not the same as: a chat message sent with `chat()`. That starts a turn now and fails with `session_busy` while the session is busy; a steer joins the running turn instead.
 
 ### Prompt
 
@@ -110,7 +112,7 @@ Not the same as: a Chat Connection (a Slack or Telegram bot). Attaching a connec
 
 ### Backend function
 
-A function in your own backend that a chat agent can call. You attach a map of them to one `chat()` call (TypeScript `defineFunction`, Python `define_function`); BA shows the model only each name, description, and input schema, and your SDK validates the input, runs the handler, and submits its JSON result. Functions are attached per request, never saved on the Agent, and exist only in interactive chat, including a chat resumed with `resumeChat`/`resume_chat` after an approval pause.
+A function in your own backend that a chat agent can call. You attach a map of them to one `chat()` call (TypeScript `defineFunction`, Python `define_function`); BA shows the model only each name, description, and input schema, and your SDK validates the input, runs the handler, and submits its JSON result. Functions are attached per request, never saved on the Agent, and exist only in interactive chat, including the `continueChat`/`continue_chat` call that continues a Turn after an approval pause.
 
 Not the same as: an MCP Connection, whose tools live on a remote server and also work in Tasks, stateless generation, and Slack or Telegram.
 
@@ -180,7 +182,7 @@ Tenant ── API key (your backend only)
   ├─ Agent (current configuration) ───────────┘
   │    ├─ Skills, Memory, built-in tool groups, tool approval rules
   │    ├─ Session (saved agentConfig) ── Turns ── Artifacts, tool approvals
-  │    │    └─ Session inputs (queued and steering messages) ── next Turn
+  │    │    └─ Session inputs (steer receipts) ── the running Turn
   │    ├─ Task (+ Schedule) ── Task runs (saved agentConfig) ── fresh Session ── Turn
   │    └─ Chat Connection (Slack/Telegram) ── Sessions ── Turns
   │

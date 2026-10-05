@@ -8,7 +8,7 @@ The agent needs a tool that only your backend can provide (reading the signed-in
 
 ## How it works
 
-You pass a map of named functions on a single `chat()` call. Blazing Agents sends the model only each function's name, description, and input schema. When the model calls one, the SDK hands the call back to your backend process, validates the input, runs your handler, and submits its JSON result; the browser stream stays clean of those private events. The functions belong to that request and are never saved on the Agent, so you attach them again on every chat call and on `resumeChat()` after an approval pause. Your code and credentials never leave your backend.
+You pass a map of named functions on a single `chat()` call. Blazing Agents sends the model only each function's name, description, and input schema. When the model calls one, the SDK hands the call back to your backend process, validates the input, runs your handler, and submits its JSON result; the browser stream stays clean of those private events. The functions belong to that request and are never saved on the Agent, so you attach them again on every chat call and on `continueChat()` after an approval pause. Your code and credentials never leave your backend.
 
 ## Build it
 
@@ -120,10 +120,10 @@ async def chat(body: ChatBody, user_id: str = Depends(current_user)):
     return StreamingResponse(stream, media_type="text/event-stream", headers=headers)
 ```
 
-2. Resume with the functions after an approval pause. When the chat attached functions, any approval pause, even one for a built-in or MCP tool, waits for your backend to reattach them. In the decision route from [human approval](human-approval.md), which authenticates the reviewer and checks their access to the Session first, replace the join with `resumeChat` (`resume_chat` in Python) once every pending call has a decision. Rebuild the handlers the same way, closing over the Session owner's verified identity.
+2. Continue with the functions after an approval pause. When the chat attached functions, the continuation needs them too: the round's decisions and the handlers arrive together on one `continueChat` (`continue_chat` in Python) call, which records the complete round and streams the rest of the Turn. In the decision route from [human approval](human-approval.md), which authenticates the reviewer and checks their access to the Session first, collect the whole round's decisions and rebuild the handlers the same way, closing over the Session owner's verified identity.
 
 ```ts
-import type { BlazingAgents, ChatFunctions } from "@blazingagents/sdk";
+import type { BlazingAgents, ChatFunctions, ToolApprovalDecision } from "@blazingagents/sdk";
 
 declare const client: BlazingAgents;
 declare const sessionOwnerId: string; // the Session's owner, from your records
@@ -131,34 +131,22 @@ declare function chatFunctionsFor(userId: string): ChatFunctions; // the map fro
 
 declare const agentId: string;
 declare const sessionId: string;
-declare const approvalId: string;
-declare const approved: boolean;
+declare const decisions: ToolApprovalDecision[]; // every approval in the round
 
-export async function resumeAfterDecision(): Promise<Response> {
-  const decision = await client.sessions.decideToolApproval({
+export async function continueAfterDecisions(): Promise<Response> {
+  const continued = await client.forUser(sessionOwnerId).continueChat({
     agentId,
     sessionId,
-    approvalId,
-    approved,
-  });
-  if (decision.state === "waiting") {
-    return Response.json({ state: "waiting" }, { status: 202 });
-  }
-  const resumed = await client.forUser(sessionOwnerId).resumeChat({
-    agentId,
-    sessionId,
-    continuationId: decision.continuationId,
+    decisions,
     functions: chatFunctionsFor(sessionOwnerId),
   });
-  return resumed.toResponse();
+  return continued.toResponse();
 }
 ```
 
 ```python
-from typing import Any
-
-from blazing_agents import AsyncBlazingAgents, ChatFunction
-from fastapi.responses import JSONResponse, StreamingResponse
+from blazing_agents import AsyncBlazingAgents, ChatFunction, ToolApprovalDecisionInput
+from fastapi.responses import StreamingResponse
 
 client = AsyncBlazingAgents()
 
@@ -168,38 +156,35 @@ def chat_functions_for(user_id: str) -> dict[str, ChatFunction]:
     raise NotImplementedError
 
 
-async def resume_after_decision(
-    agent_id: str, session_id: str, approval_id: str, approved: bool, session_owner_id: str
-) -> JSONResponse | StreamingResponse:
-    decision = await client.sessions.decide_tool_approval(
-        agent_id=agent_id, session_id=session_id, approval_id=approval_id, approved=approved
-    )
-    if decision.state == "waiting":
-        return JSONResponse({"state": "waiting"}, status_code=202)
-    resumed = await client.resume_chat(
+async def continue_after_decisions(
+    agent_id: str,
+    session_id: str,
+    decisions: list[ToolApprovalDecisionInput],
+    session_owner_id: str,
+) -> StreamingResponse:
+    stream = await client.continue_chat(
         agent_id=agent_id,
         session_id=session_id,
+        decisions=decisions,
         functions=chat_functions_for(session_owner_id),
         extra_headers={"X-BA-User-Id": session_owner_id},
     )
     return StreamingResponse(
-        resumed,
+        stream,
         headers={"x-vercel-ai-ui-message-stream": "v1"},
         media_type="text/event-stream",
     )
 ```
 
-`resume_chat()` finds the Session's queued or running continuation itself; only TypeScript takes `continuationId`.
-
 ## Gotchas
 
-- Functions travel only on Turns your backend starts with `chat()`, `resumeChat()`, or `runInputs()`: never on Tasks (including scheduled), stateless `completion`/`object`, or Slack/Telegram Turns. Use [MCP](external-tools-mcp.md) for those.
+- Functions travel only on Turns your backend starts with `chat()` or `continueChat()`: never on Tasks (including scheduled), stateless `completion`/`object`, or Slack/Telegram Turns. Use [MCP](external-tools-mcp.md) for those.
 - Nothing is saved on the Agent. Send `functions` on every chat call and rebuild the map per request so handlers capture that request's verified user.
 - Never trust a user ID the model supplies as an argument; build handlers after authenticating and query with the verified ID.
 - Backend functions follow `approvalInChat.default`; per-tool `overrides` name built-in and MCP tools only.
-- Queued messages need your functions too. BA never starts a queued Turn, and after a chat that attached functions the Session pauses with `function_executor_required`. Run the queue from your backend with `sessions.runInputs({ agentId, sessionId, functions })` (`client.run_inputs` in Python) and relay its stream. It runs the inputs already queued and never submits a message again. Without `functions` it returns `session_busy`. Each later batch pauses the same way and needs another `runInputs` call; `resumeInputs` does not clear this pause. See [chat in your app](chat-in-your-app.md).
-- A paused chat needs `resumeChat`/`resume_chat`. `joinToolApprovalContinuation`/`join_tool_approval_continuation` only observe: they strip function events and never run your handlers. Resuming with no ready continuation raises an error.
-- The saved schema wins on resume. A missing handler or invalid input reaches the agent as a tool error, so keep the resumed handlers compatible with what chat advertised.
+- Messages that waited while the Session was busy go out through your own `chat()` calls, so attach the same `functions` map to each one, including a multi-message `chat({ messages: [...] })`. See [chat in your app](chat-in-your-app.md).
+- An approval pause continues through `continueChat`/`continue_chat`, which records the complete round's decisions and streams the Turn. Without the `functions` map, approved function calls cannot run.
+- The saved schema wins on the continuation. A missing handler or invalid input reaches the agent as a tool error, so keep the continued handlers compatible with what chat advertised.
 - Each call has a 60-second deadline, including claim time. Cancellation is cooperative (pass `signal`, or check `cancelled` in a synchronous Python handler) and cannot undo a side effect that already happened.
 - The idempotency key marks one execution. A user resend gets a fresh key, so payments and other business operations need your own stable transaction ID.
 - The SDK retries transient claim and result failures without rerunning your handler. If the connection drops after a side effect, the outcome can be unknown; check your own records before repeating it.
@@ -211,13 +196,13 @@ async def resume_after_decision(
 
 - Ask the agent something only the function can answer ("What is the status of my order ORD-1234?"). The answer contains your live data, and your backend logs show the handler ran.
 - Ask for an order that belongs to another user. The handler still queries by the verified ID and the agent reports the order as missing.
-- Set `approvalInChat.default` to `"manual"`, ask again, and record the decision. Joining the continuation alone leaves it waiting; `resumeChat` with the functions streams the resumed answer.
+- Set `approvalInChat.default` to `"manual"`, ask again, and record the round's decisions. `continueChat` with the functions streams the continued answer.
 - Send the same message twice. Each run logs a different `idempotencyKey`; use that to confirm your downstream dedupe key is your own, not this one.
 
 ## Go deeper
 
 - [Backend functions](https://docs.blazingagents.com/agents/tools/backend-functions)
 - [Tool approvals](https://docs.blazingagents.com/agents/tools/tool-approvals)
-- `defineFunction` and `resumeChat` in the [TypeScript client](https://docs.blazingagents.com/sdk/typescript/client#define-function)
-- `define_function` and `resume_chat` in the [Python client](https://docs.blazingagents.com/sdk/python/client#define-function)
+- `defineFunction` and `continueChat` in the [TypeScript client](https://docs.blazingagents.com/sdk/typescript/client#define-function)
+- `define_function` and `continue_chat` in the [Python client](https://docs.blazingagents.com/sdk/python/client#define-function)
 - [Human approval](human-approval.md) for the full decide-and-resume flow
