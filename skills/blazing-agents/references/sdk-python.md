@@ -1,6 +1,6 @@
 # Python SDK reference
 
-Use this page to call Blazing Agents from a Python backend: install the package, pick a client, run Turns, and find the method for every operation. The paginated Agent and Prompt lists and backend functions require the updated Python SDK and server, and Session inputs (queue, steering, and Stop) require 0.12.0 or newer; check the installed package before using them. The install command below uses the published 0.10.0 floor.
+Use this page to call Blazing Agents from a Python backend: install the package, pick a client, run Turns, and find the method for every operation. Paginated Agent and Prompt lists, backend functions, and Session inputs (queue, steering, Stop, and client-run batches) need 0.13.0 or newer, the floor the install command below pins; check the installed package before using them.
 
 For the same surface in TypeScript, read [TypeScript SDK reference](sdk-typescript.md). For end-to-end builds, start from a recipe such as [Add chat to your app](recipes/chat-in-your-app.md).
 
@@ -9,9 +9,9 @@ For the same surface in TypeScript, read [TypeScript SDK reference](sdk-typescri
 The PyPI package is `blazing-agents`. The import name is `blazing_agents`. It needs Python 3.11 or newer.
 
 ```bash
-pip install "blazing-agents>=0.10.0"
+pip install "blazing-agents>=0.13.0"
 # or
-uv add "blazing-agents>=0.10.0"
+uv add "blazing-agents>=0.13.0"
 ```
 
 Keep the Tenant API key in `BLAZING_AGENTS_API_KEY` on your backend. It can reach everything in your Tenant, so it never goes to a browser or mobile app.
@@ -254,13 +254,12 @@ Signatures below drop `extra_headers` and `timeout`, which every method accepts.
 | `promote_input(*, agent_id, session_id, request_id)` | `SessionInputResponse` |
 | `delete_input(*, agent_id, session_id, request_id)` | `SessionInputResponse` with `state="cancelled"` |
 | `stop(*, agent_id, session_id, turn_id)` | `SessionStopResponse` (`.stopped_turn_id`, `.activity`) after that Turn has ended |
-| `resume_inputs(*, agent_id, session_id)` | `SessionActivityResponse` (`.activity`) |
-| `join_input_turn(*, agent_id, session_id, turn_id)` | `ByteStream` (same SSE format as `chat()`). Watches a Turn started from the queue, from its start. |
+| `resume_inputs(*, agent_id, session_id)` | `SessionActivityResponse` (`.activity`). Unpauses the queue without starting a Turn. |
 | `delete(*, agent_id, session_id, delete_artifacts: bool)` | `None` |
 
 The first Turn saves `agent_config`; get it with `client.sessions.get()`. Message pages contain only transcript messages. `after=` returns only messages added later. A tool approval decision and its continuation update the assistant message in place, at the same position, possibly over several rounds. While any loaded message has a tool part in state `approval-requested` or `approval-responded`, poll the newest page without `after` and replace messages by ID; go back to `after` once none remain. Start Sessions with `client.chat()`, not through this resource. `list_latest(by_agent=True)` returns at most one Session per Agent, which suits an inbox view.
 
-While a Turn runs, `chat()` raises `session_busy`; send the message with `submit_input()` instead. BA saves it under your `request_id` (1 to 128 characters, not `.` or `..`) before returning. Retry with the same `request_id` and message after an unknown outcome; a changed payload raises `input_idempotency_conflict`. Queued inputs run together, in order, in one new Turn when the current Turn finishes or is stopped. `promote_input()` moves a waiting input into the running Turn as steering (except across a tool approval, where BA sets it back to `queue` mode for the next batch; read `mode` from the receipt), and `delete_input()` withdraws it; both raise `input_not_pending` once BA has reserved it for delivery. Poll `inputs()` without `cursor` for changes. A Turn started from the queue has no chat request. Relay `sessions.join_input_turn(turn_id=...)` once `activity.turn_id` names it. It replays from the start, so merge by message ID; saved answers are also in `messages()`. `stop()` takes the `turn_id` from `activity` and raises `session_busy` during an approval wait. `resume_inputs()` restarts a `paused` queue and never resends `uncertain` inputs. When the chat attached backend functions, the queue pauses with `function_executor_required` instead; run it with `client.run_inputs(agent_id=..., session_id=..., functions=...)`, or reattach handlers to a running queued Turn with `client.join_input_turn(..., turn_id=..., functions=...)`. All methods accept `extra_headers` for user scope. See [Add chat to your app](recipes/chat-in-your-app.md).
+While a Turn runs, `chat()` raises `session_busy`; send the message with `submit_input()` instead. BA saves it under your `request_id` (1 to 128 characters, not `.` or `..`) before returning. Retry with the same `request_id` and message after an unknown outcome; a changed payload raises `input_idempotency_conflict`. BA never starts a queued Turn by itself. Once activity is `idle`, run the waiting inputs with `client.run_inputs(agent_id=..., session_id=..., extra_headers=...)` (await it on the async client). It runs them together, in order, in one new Turn and returns a `ChatStream` to relay like `chat()`. It raises `session_busy` when nothing waits, a Turn is running, an approval waits, or the queue is paused. Without a call, the inputs keep waiting. The stream is not replayed after a drop; saved answers are in `messages()`. `promote_input()` moves a waiting input into the running Turn as steering (except across a tool approval, where BA sets it back to `queue` mode for the next batch; read `mode` from the receipt), and `delete_input()` withdraws it; both raise `input_not_pending` once BA has reserved it for delivery. Poll `inputs()` without `cursor` for changes. `stop()` takes the `turn_id` from `activity`, leaves the waiting inputs queued, and raises `session_busy` during an approval wait. `resume_inputs()` unpauses a `paused` queue for the next `run_inputs()` and never resends `uncertain` inputs. When the chat attached backend functions, the Session pauses with `function_executor_required` after each Turn; pass the same map as `run_inputs(..., functions=...)` to run the queue. All methods accept `extra_headers` for user scope. See [Add chat to your app](recipes/chat-in-your-app.md).
 
 ### `client.tasks`
 
