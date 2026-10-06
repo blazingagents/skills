@@ -819,6 +819,8 @@ function Chat({
 
 ## Add a requested fork
 
+Session forking requires `@blazingagents/sdk` 0.21.0 or `blazing-agents` 0.15.0 or newer.
+
 The chat example above does not ship a fork control. To add one, have your backend read the Session transcript under the signed-in user's scope and select the exact assistant message the user chose. Offer the action only for top-level `branchable: true`; a completed-looking Tool part or closed stream does not prove eligibility.
 
 Persist one idempotency key for that user action before calling the SDK. Keep the source and selected message fixed on retries. The TypeScript call is `client.sessions.fork({ agentId, sessionId, messageId, idempotencyKey })`; Python uses `client.sessions.fork(agent_id, session_id, message_id=message_id, idempotency_key=idempotency_key)`. The async Python client awaits the same operation.

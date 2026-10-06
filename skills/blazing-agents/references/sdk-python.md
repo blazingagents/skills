@@ -1,6 +1,6 @@
 # Python SDK reference
 
-Use this page to call Blazing Agents from a Python backend: install the package, pick a client, run Turns, and find the method for every operation. Paginated Agent and Prompt lists and backend functions need 0.13.0 or newer; Session inputs (steering and Stop), multi-message chat, and approval continuations need 0.14.0 or newer, the floor the install command below pins. Check the installed package before using them.
+Use this page to call Blazing Agents from a Python backend: install the package, pick a client, run Turns, and find the method for every operation. Paginated Agent and Prompt lists and backend functions need 0.13.0 or newer; Session inputs (steering and Stop), multi-message chat, and approval continuations need 0.14.0 or newer, the floor the install command below pins. Session forking requires 0.15.0 or newer. Check the installed package before using them.
 
 For the same surface in TypeScript, read [TypeScript SDK reference](sdk-typescript.md). For end-to-end builds, start from a recipe such as [Add chat to your app](recipes/chat-in-your-app.md).
 
