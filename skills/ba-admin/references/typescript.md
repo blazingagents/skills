@@ -61,7 +61,7 @@ These are the supported administrative methods:
 | Prompts | `client.prompts.list/get` | `create`, `update`, `delete` |
 | Tasks | `client.tasks.list/get/listRuns/getRun/runMessages` | `create`, `update`, `delete`, `createRun`, `cancelRun` |
 | Usage | `client.usage.overview()`, `get()`, `getForAgent(agentId)` | — |
-| Sessions | `client.sessions.list/listLatest/messages/inputs` | `delete` |
+| Sessions | `client.sessions.list/listLatest/get/messages/inputs` | `delete`; `fork` when requested |
 | Artifacts | `client.artifacts.list()` | — |
 
 Resource method names are invoked on the object shown in the first column's
@@ -99,6 +99,17 @@ const agentId = matches[0].id;
 - `client.agents.delete({ agentId, includeArtifacts })` requires an explicit
   Artifact choice. Preserve Artifacts when the user explicitly chooses
   preservation; never infer deletion.
+- For a requested fork, resolve the source Session and explicit selected assistant
+  message. Require `branchable: true` from `sessions.messages()`. Call
+  `client.sessions.fork({ agentId, sessionId, messageId, idempotencyKey })` with a
+  key saved before sending; retry the same values after uncertain acknowledgement.
+  Never fork automatically. Verify the child with `sessions.get()` and
+  `sessions.messages()`, report its ID and informational `forkedFrom`, and leave
+  continuation to the user's requested workflow. Forking runs no model or Tool;
+  Workspace files and Memories stay shared/live. A changed message under one key
+  returns `idempotency_conflict`, unavailable selection `session_fork_unavailable`,
+  and replay of a deleted child `session_fork_deleted`.
+
 - `client.sessions.delete({ agentId, sessionId, deleteArtifacts })` has the same
   explicit Artifact-choice requirement.
 - Workspace deletion may return `"pending"`; report it as accepted cleanup,
