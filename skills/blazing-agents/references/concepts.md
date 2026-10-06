@@ -52,9 +52,13 @@ Not the same as: a Session. A session holds many turns; one-off generation runs 
 
 ### Session
 
-One stored conversation with one agent, identified by `ss_...`. BA returns the ID on the first chat call; pass it on the next call and the agent sees the whole history, so your backend never stores or replays messages. You need sessions for chat. The first Turn saves the Agent configuration that later Turns use. When you delete a session you choose whether its Artifacts go too (`deleteArtifacts`, `delete_artifacts` in Python).
+One stored conversation with one agent, identified by `ss_...`. BA returns the ID on the first chat call; pass it on the next call and the agent continues with the saved conversation context, so your backend never stores or replays messages. You need sessions for chat. A chat-created Session saves Agent configuration on its first Turn; a fork inherits the source snapshot at creation. Later Turns use those saved settings. When you delete a session you choose whether its Artifacts go too (`deleteArtifacts`, `delete_artifacts` in Python).
 
 Not the same as: Memory. A session is one conversation; memories carry facts across conversations.
+
+### Session fork
+
+A new idle Session copied through a selected accepted assistant reply. Select an explicit message with `branchable: true` and keep one idempotency key across retries. Continue using the child Session ID. Forking runs no model or Tool; Workspace files and Memories stay shared/live.
 
 ### Session input (steer)
 

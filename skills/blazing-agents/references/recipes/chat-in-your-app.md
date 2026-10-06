@@ -817,6 +817,16 @@ function Chat({
 }
 ```
 
+## Add a requested fork
+
+The chat example above does not ship a fork control. To add one, have your backend read the Session transcript under the signed-in user's scope and select the exact assistant message the user chose. Offer the action only for top-level `branchable: true`; a completed-looking Tool part or closed stream does not prove eligibility.
+
+Persist one idempotency key for that user action before calling the SDK. Keep the source and selected message fixed on retries. The TypeScript call is `client.sessions.fork({ agentId, sessionId, messageId, idempotencyKey })`; Python uses `client.sessions.fork(agent_id, session_id, message_id=message_id, idempotency_key=idempotency_key)`. The async Python client awaits the same operation.
+
+Return the child's Session ID and switch the conversation using the same Session-switching flow as other saved Sessions. Load its saved history and send future messages through ordinary `chat()` with the child's ID. Keep source and child queues separate. The child starts idle, includes the selected reply, and inherits the saved Agent configuration and user label. No model or Tool runs during creation. Workspace files and Memories remain shared/live, and later child Turns incur normal token usage.
+
+After a lost acknowledgement, reuse the exact key and selection to recover the same child. Do not create a new key as a retry. Handle `idempotency_conflict` by restoring the original selection; reload history after `session_fork_unavailable`; stop retrying a deleted child after `session_fork_deleted`. A successful replay works even after source deletion. Eligible replies inherited into the child can be forked again.
+
 ## Gotchas
 
 - **History lives in BA.** Send only new user messages — one `message`, or a `messages` batch of the ones that waited. A client that posts the whole conversation gets a 400: the handler accepts user messages only.
@@ -860,6 +870,16 @@ function Chat({
 - While a Tool approval is pending, a steer returns `steer_not_available` and the message stays queued; `chat` returns `session_busy`.
 - Press Regenerate. The last answer is replaced, and after a reload the new answer is the saved one.
 - Usage filtered by your user's ID includes these Turns. See [usage dashboards](usage-dashboards.md).
+
+### Check an added fork flow
+
+- Select an older eligible assistant reply while the source streams a later Turn. The child includes the selected reply and starts idle, without new model/Tool execution or usage.
+- Verify a streaming reply is ineligible, including when it is absent from saved history or its live chunks omit `branchable`. A persisted pending approval reply has `branchable: false`; do not offer it as a choice.
+- Continue source and child independently, reload both, then fork an eligible inherited reply from the child.
+- Lose the creation response and resend the same key and message. It returns the same child. Change the message under that key and verify `idempotency_conflict`.
+- Delete the source after creation and replay the original request; it returns the child. Delete the child and replay; it returns `session_fork_deleted`.
+- Try another user's source ID and get `not_found`. Confirm the child retains the source user scope.
+- Change a Workspace file through one conversation and observe that current file in the other. Confirm the child's saved Agent configuration matches its source after an Agent edit.
 
 ## Go deeper
 
