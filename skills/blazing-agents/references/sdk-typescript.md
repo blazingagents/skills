@@ -7,7 +7,7 @@ through lists, handle errors, and connect `useChat` to your own backend.
 The examples for user scope, paginated Agents and Prompts, session usage, and
 backend functions require TypeScript SDK 0.16.0 or newer. Session inputs
 (steering and Stop), multi-message chat, and approval continuations require
-0.20.0 or newer. Check the installed package's types before using these APIs.
+0.20.0 or newer. Session forking requires 0.21.0 or newer. Check the installed package's types before using these APIs.
 
 For the same surface in Python, read [Python SDK reference](sdk-python.md). For
 end-to-end builds, start from a recipe such as
@@ -310,19 +310,27 @@ means the result is `{ data, nextCursor }` (see [Pagination](#pagination)).
 
 ### `client.sessions`
 
-The first Turn saves the Agent configuration. Read it with `(await client.sessions.get({ agentId, sessionId })).agentConfig`; message pages contain only transcript messages.
+A chat-created Session saves Agent configuration on its first Turn; a fork inherits the source snapshot at creation. Read it with `(await client.sessions.get({ agentId, sessionId })).agentConfig`; message pages contain only transcript messages.
 
 | Method | HTTP | Returns / notes |
 | --- | --- | --- |
 | `list({ agentId, cursor?, limit?, userId? })` | `GET /v1/agents/{agentId}/sessions` | Page of Sessions (`id`, `userId`, `messageCount`, `lastMessagePreview`, `metadata`, timestamps). |
 | `listLatest({ byAgent?, userId?, cursor?, limit? })` | `GET /v1/sessions/latest` | Page of the Tenant's most recently updated Sessions, newest first. `byAgent: true` returns at most one per Agent. Items add `agentId`, `model`, `thinkingLevel`, `status`. |
 | `get({ agentId, sessionId })` | `GET /v1/agents/{agentId}/sessions/{sessionId}` | `SessionResponse` with `agentConfig` |
-| `messages({ agentId, sessionId, cursor?, after?, limit? })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/messages` | `{ data: UIMessage[], nextCursor, latestCursor }`. `cursor` walks older pages; `after` walks forward. Not both. |
+| `fork({ agentId, sessionId, messageId, idempotencyKey, abortSignal? })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/fork` | `SessionResponse` with saved `agentConfig` and required nullable `forkedFrom` |
+| `messages({ agentId, sessionId, cursor?, after?, limit? })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/messages` | `{ data: SessionMessage[], nextCursor, latestCursor }`; each message has required top-level `branchable`. `cursor` walks older pages; `after` walks forward. Not both. |
 | `delete({ agentId, sessionId, deleteArtifacts })` | `DELETE /v1/agents/{agentId}/sessions/{sessionId}` | `void`. `deleteArtifacts` is required. `session_busy` while any Turn runs. |
 | `toolApprovals({ agentId, sessionId })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/tool-approvals` | `{ data, continuation }`. Each item has `approvalId`, `toolName`, `input`, `decision` (`pending`, `approved`, `denied`). `continuation` is `{ id, state }` with state `waiting`, `running`, `succeeded`, or `failed`, or `null`. |
 | `submitInput({ agentId, sessionId, requestId, message })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/inputs` | `{ data: SessionInput, activity }`. Steers the running Turn; `steer_not_available` (409) when no Turn can take a steer (idle, stopping, or an approval wait) — keep the message in your own queue and send it as ordinary chat later. `requestId` is 1 to 128 characters and not `.` or `..`. Retrying with the same `requestId` and payload returns the same receipt; a changed payload returns `input_idempotency_conflict`. |
 | `inputs({ agentId, sessionId, includeCompleted?, limit?, cursor? })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/inputs` | `{ data, nextCursor, activity }` — steer receipts in submission order plus the Session's `activity`. Without `includeCompleted`, `data` lists only pending and `uncertain` receipts. Poll without `cursor` to see changes; `cursor` only pages. |
 | `stop({ agentId, sessionId, turnId })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/stop` | `{ stoppedTurnId, activity }` as soon as the stop is recorded, not after the Turn ends. Keep reading the existing stream until it settles. An unknown `turnId` returns `not_found`; a settled Turn's ID never stops a later Turn. |
+
+
+Fork only when the user requests another conversation from a selected reply. Read the transcript and use a message whose required top-level `branchable` is `true`; never infer eligibility from rendered parts or stream completion. Earlier accepted replies remain eligible while the source runs. Streaming replies and pending approvals are ineligible. Eligibility comes from persisted transcript messages; live stream chunks need not carry `branchable`. A missing or not-yet-persisted reply is ineligible.
+
+Save one explicit idempotency key before sending. After a lost response, retry the same source, message ID, and key. Creation returns 201 and identical replay returns 200 with the same child, including after source deletion. A different message under the same key returns `idempotency_conflict` (409); a removed or ineligible selection returns `session_fork_unavailable` (409); a deleted child on replay returns `session_fork_deleted` (410); missing or inaccessible source/Agent returns `not_found` (404).
+
+The child is idle, with history through the selected assistant reply inclusive. Creation runs no model or Tool and adds no usage. Continue with ordinary `chat()` and the child's Session ID; later Turns incur normal token usage. Inherited eligible replies can be forked again. The child inherits saved Agent configuration, metadata and `userId`; Workspace files and Memories remain shared/live. Active Turns, approvals, Tasks, queued inputs and usage records are not copied. Session details from `get()` and `fork()` have required nullable `forkedFrom` (`forked_from` in Python), `{ sessionId, messageId }` for children and null for ordinary Sessions. Lists omit provenance; provenance is informational.
 
 A `SessionInput` is a steer receipt: `requestId`, `sequence`, `message`, `state`, the `turnId` it was bound to, `reason`, and timestamps. `state` moves from `accepted` to `delivered` and ends `committed` (saved in history), `not_placed` (never reached the agent — safe to send as an ordinary chat message), or `uncertain` (may have reached the agent — never resend automatically). `reason` is `stopped`, `failed`, `owner_lost`, `turn_finished`, or `null`. `activity` is `{ state, turnId }` with `state` one of `idle`, `running`, `stopping`, `approval`. The running Turn's stream also emits a transient `data-ba-steer-consumed` chunk when the agent takes a steer; treat it as provisional and confirm it in history after the Turn settles. BA holds no queue: messages that arrive while the Session is busy wait in your own client and go out as ordinary `chat` calls once the Turn settles. See [Add chat to your app](recipes/chat-in-your-app.md) for the full flow.
 

@@ -103,6 +103,7 @@ The SDKs never retry for you. An error entry saying "retrying can succeed" tells
 | Cancelling a Task run | Yes. Cancelling a finished run does nothing and returns no error. |
 | Continuing an approval round with the same decisions | Yes. Identical decisions are idempotent; the first `reason` wins. A changed decision returns `tool_approval_decision_conflict`, a running round returns `session_busy`, and a settled round returns `tool_approval_continuation_settled` without running again. |
 | Sending a chat message again | It starts a new turn. Tools with side effects, such as sending an email, can run again. The chat endpoint does not reject a message ID already in history. |
+| Forking a Session with the same explicit idempotency key and selected message | Yes. It returns the same child. Reuse the original key after a lost response; changing the message returns `idempotency_conflict`. A deleted child returns `session_fork_deleted`. |
 | Submitting a Session input (steer) with the same `requestId` and unchanged message | Yes. You get the same receipt back. A changed message returns `input_idempotency_conflict`. |
 | Stopping the same Turn again | Yes. Stop names the Turn, so a repeat never stops a later Turn. |
 | Creating another resource, or a Task without a key | No. Reconcile a lost response before retrying. Agent and Prompt names can repeat, so a name match alone cannot identify the created resource. |
@@ -157,7 +158,7 @@ Every response carries an `X-Request-Id` header. It is not in the JSON body. Rea
 
 ## Inspect Agent configuration
 
-The first Turn saves the Agent configuration for its Session. Later Turns in that Session use those settings after Agent edits. Read them with `(await client.sessions.get({ agentId, sessionId })).agentConfig` (`client.sessions.get(agent_id=..., session_id=...).agent_config` in Python). Session lists and message pages stay compact.
+A chat-created Session saves Agent configuration on its first Turn. A fork inherits the source's saved configuration at creation. Later Turns in that Session use those settings after Agent edits. Read them with `(await client.sessions.get({ agentId, sessionId })).agentConfig` (`client.sessions.get(agent_id=..., session_id=...).agent_config` in Python). Session lists and message pages stay compact.
 
 Each Task run saves the Agent configuration when queued. Read `(await client.tasks.getRun({ taskId, runId })).agentConfig` (`client.tasks.get_run(task_id, run_id).agent_config` in Python), even before the run starts a Session. The run's Session uses that same configuration. Stateless calls use the current Agent configuration at each invocation.
 

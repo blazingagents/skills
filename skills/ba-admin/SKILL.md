@@ -28,8 +28,9 @@ be trusted with that authority.
    already explicitly authorizes that exact mutation; otherwise ask once.
    Agent and Session deletion also require an explicit Artifact disposition.
 5. Execute the smallest SDK program that performs the requested operation.
-   Give Task creation a stable `idempotencyKey` when it submits a run. After an
-   ambiguous network result, retry that exact Task creation with the same key;
+   Give Task creation a stable `idempotencyKey` when it submits a run. Give a
+   requested Session fork a selected eligible message and a stable key. After an
+   ambiguous network result, retry that exact Task creation or fork with the same key;
    reconcile other mutations by reading the resource before another write.
 6. Verify mutations with a read call when the resource still exists. Report the
    affected IDs and outcome without credential values or secret-bearing input.
@@ -37,7 +38,7 @@ be trusted with that authority.
 Use public SDK methods backed by `/v1`. The Admin scope is Tenant settings;
 Agent, Workspace, Skill, Prompt, and Task management; Provider reads and model
 discovery; Task-run observation and cancellation; usage queries; Session reads
-and deletion; Artifact listings; and Chat Connection configuration, health, and delivery outcomes. Keep Provider credential mutation, MCP
+and deletion, plus Session forking when explicitly requested; Artifact listings; and Chat Connection configuration, health, and delivery outcomes. Keep Provider credential mutation, MCP
 Connection management, Memory mutation, Artifact deletion/download, generation,
 Agent enable/disable or Version restoration, and API-key lifecycle outside this
 Skill.
