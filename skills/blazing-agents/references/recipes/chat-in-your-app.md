@@ -10,28 +10,28 @@ Your users chat with an Agent inside your own web product, and conversations mus
 
 Your browser talks only to your backend. The backend authenticates the user and calls BA through `client.forUser(verifiedUserId)`. BA checks that the Agent and Session belong to that user. BA stores the history, so each request carries only the newest message and the Session ID. The first response returns a new Session ID in `Location`. AI SDK `useChat` and `BlazingAgentsChatTransport` render the stream and keep that ID for later messages.
 
-BA holds no queue. A message sent while the Session is busy either steers the running Turn or waits in your client's own queue until the Turn settles, when your client sends the waiting messages as ordinary chat — one per Turn, or several in one Turn with `client.chat({ messages: [...] })`. `sessions.submitInput()` steers: it takes your `requestId` and the message, binds it to the running Turn, and returns a receipt. A `steer_not_available` (409) means no Turn can take a steer — the Session is idle, stopping, or waiting on an approval — so the message stays queued locally. `sessions.inputs()` returns the steer receipts and the Session's `activity`; poll it while the Session is busy. A receipt ends `committed` (saved in history), `not_placed` (the agent never read it — safe to send as ordinary chat), or `uncertain` (it may have reached the agent — never resend automatically). `sessions.stop()` records cancellation for a Turn ID and returns immediately; keep reading the existing stream until the Turn settles.
+BA holds no queue. A message sent while the Session is busy either steers the running Turn or waits in your client's own queue until the Turn settles, when your client sends the waiting messages as ordinary chat — one per Turn, or several in one Turn with `client.chat({ messages: [...] })`. `sessions.submitInput()` steers: it takes your `requestId` and the message, binds it to the running Turn, and returns a receipt; retry with the same `requestId` and message until the outcome is known. A `steer_not_available` (409) means no Turn can take a steer — the Session is idle, stopping, or waiting on an approval — so the message stays queued locally. `sessions.inputs()` returns the steer receipts and the Session's `activity`; poll it while the Session is busy. A receipt's `state` moves from `accepted` to `delivered` and ends `committed` (saved in history), `not_placed` (the agent never read it — safe to send as ordinary chat), or `uncertain` (it may have reached the agent — never resend automatically). `sessions.stop()` records cancellation for a Turn ID and returns immediately; keep reading the existing stream until the Turn settles.
 
 ## Build it
 
 1. Install the packages. Your backend needs `@blazingagents/sdk` (or `blazing-agents` for Python). Your React frontend needs `@blazingagents/sdk`, `ai`, and `@ai-sdk/react`.
 
 ```bash
-npm install @blazingagents/sdk ai @ai-sdk/react zod
+npm install @blazingagents/sdk ai@^7 @ai-sdk/react zod
 # Python backend instead:
-pip install blazing-agents fastapi uvicorn
+pip install "blazing-agents>=0.15.0" fastapi uvicorn
 ```
 
-These APIs need `@blazingagents/sdk` 0.20.0 or `blazing-agents` 0.14.0 or newer.
+These APIs need `@blazingagents/sdk` 0.20.0 or `blazing-agents` 0.14.0 or newer. [Forks](#add-a-requested-fork) need 0.21.0 or 0.15.0.
 
 2. Add the backend. `chat` relays one Turn and `history` returns a Session's saved messages. Mount them as `POST /api/chat` and `GET /api/chat/history` in your framework. In the Next.js App Router, export them as `POST` and `GET` handlers. In Hono, call `chat(c.req.raw)`. Authenticate the user, select their Agent in backend code, validate the request body, then call the scoped client. `sessions.messages()` returns the native UIMessage page. Return its cursors with the messages for older-history controls.
 
-`chat` accepts either one `message` or a `messages` array. The array is how queued messages go out after a busy Turn settles: several user messages run in one Turn, in order, each saved to history. A batch always needs a Session ID.
+`chat` accepts either one `message` or a `messages` array. The array is how queued messages go out after a busy Turn settles: several user messages run in one Turn, in order, each saved to history. A batch always needs a Session ID. When a Tool approval round is answered with `addToolApprovalResponse`, `BlazingAgentsChatTransport` posts the answered assistant message as `message` with the Session ID once `useChat` sends it (for example with `sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses`); `chat` reads the round's decisions from the parts after its last `step-start` and continues the Turn with `continueChat`.
 
 ```ts
-import { BlazingAgents, BlazingAgentsError } from "@blazingagents/sdk";
+import { BlazingAgents, BlazingAgentsError, type ToolApprovalDecision } from "@blazingagents/sdk";
 import { sessionIdSchema } from "@blazingagents/sdk/contracts";
-import { safeValidateUIMessages } from "ai";
+import { isToolUIPart, safeValidateUIMessages, type UIMessage } from "ai";
 import { z } from "zod";
 
 declare function authenticate(request: Request): Promise<{ id: string; agentId: string } | null>;
@@ -44,6 +44,18 @@ const chatBody = z.object({
   trigger: z.enum(["submit-message", "regenerate-message"]).default("submit-message"),
 });
 
+function approvalDecisions(message: UIMessage): ToolApprovalDecision[] {
+  const lastStep = message.parts.map((part) => part.type).lastIndexOf("step-start");
+  return message.parts.slice(lastStep + 1).flatMap((part) =>
+    isToolUIPart(part) && part.state === "approval-responded"
+      ? [{
+          approvalId: part.approval.id,
+          approved: part.approval.approved,
+          ...(part.approval.reason === undefined ? {} : { reason: part.approval.reason }),
+        }]
+      : []);
+}
+
 export async function chat(request: Request): Promise<Response> {
   const user = await authenticate(request);
   if (!user) return new Response("Sign in first.", { status: 401 });
@@ -51,10 +63,25 @@ export async function chat(request: Request): Promise<Response> {
     const body = chatBody.parse(await request.json());
     const raw = body.messages ?? (body.message === undefined ? [] : [body.message]);
     const validated = await safeValidateUIMessages({ messages: raw });
-    if (!validated.success || validated.data.some((m) => m.role !== "user")) {
+    if (!validated.success) return new Response("Invalid message.", { status: 400 });
+    const client = tenant.forUser(user.id);
+    const [answered] = validated.data;
+    if (body.message !== undefined && answered?.role === "assistant") {
+      const decisions = approvalDecisions(answered);
+      if (body.sessionId === undefined || decisions.length === 0) {
+        return new Response("Invalid approval.", { status: 400 });
+      }
+      const continued = await client.continueChat({
+        agentId: user.agentId,
+        sessionId: body.sessionId,
+        decisions,
+        abortSignal: request.signal,
+      });
+      return continued.toResponse();
+    }
+    if (validated.data.some((m) => m.role !== "user")) {
       return new Response("Invalid message.", { status: 400 });
     }
-    const client = tenant.forUser(user.id);
     const shared = {
       agentId: user.agentId,
       messageId: body.messageId,
@@ -120,10 +147,15 @@ The Python SDK accepts the verified scope in `extra_headers` on every call. The 
 ```python
 from typing import Any, Literal, TypedDict
 
-from blazing_agents import APIStatusError, AsyncBlazingAgents, BlazingAgentsError
+from blazing_agents import (
+    APIStatusError,
+    AsyncBlazingAgents,
+    BlazingAgentsError,
+    ToolApprovalDecisionInput,
+)
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, TypeAdapter
 
 client = AsyncBlazingAgents()  # reads BLAZING_AGENTS_API_KEY
 SESSION_ID = r"^ss_[0-9A-Za-z]{16}$"
@@ -144,6 +176,39 @@ class HistoryPagination(TypedDict, total=False):
     cursor: str
 
 
+class Approval(BaseModel):
+    id: str
+    approved: bool
+    reason: str | None = None
+
+
+class Part(BaseModel):
+    type: str
+    state: str | None = None
+    approval: Approval | None = None
+
+
+PARTS = TypeAdapter(list[Part])
+
+
+def approval_decisions(message: dict[str, object]) -> list[ToolApprovalDecisionInput]:
+    """The round's decisions: answered Tool parts after the last step-start."""
+    parts = PARTS.validate_python(message.get("parts", []))
+    starts = [i for i, part in enumerate(parts) if part.type == "step-start"]
+    decisions: list[ToolApprovalDecisionInput] = []
+    for part in parts[starts[-1] + 1 if starts else 0 :]:
+        if part.state != "approval-responded" or part.approval is None:
+            continue
+        item: ToolApprovalDecisionInput = {
+            "approval_id": part.approval.id,
+            "approved": part.approval.approved,
+        }
+        if part.approval.reason is not None:
+            item["reason"] = part.approval.reason
+        decisions.append(item)
+    return decisions
+
+
 class ChatBody(BaseModel):
     message: dict[str, object] | None = None
     messages: list[dict[str, object]] | None = None
@@ -155,14 +220,30 @@ class ChatBody(BaseModel):
 @app.post("/api/chat")
 async def chat(body: ChatBody, user_id: str = Depends(current_user)):
     raw = body.messages if body.messages is not None else ([body.message] if body.message else [])
-    if not raw or any(m.get("role") != "user" for m in raw):
+    approval = (
+        body.messages is None
+        and body.message is not None
+        and body.message.get("role") == "assistant"
+    )
+    if not raw or (not approval and any(m.get("role") != "user" for m in raw)):
         raise HTTPException(400, "Invalid message.")
     headers = {"cache-control": "no-cache", "x-vercel-ai-ui-message-stream": "v1"}
-    extra: dict[str, Any] = {"extra_headers": {"X-BA-User-Id": user_id}}
+    scope = {"X-BA-User-Id": user_id}
+    extra: dict[str, Any] = {"extra_headers": scope}
     if body.messageId:
         extra["message_id"] = body.messageId
     try:
-        if body.messages is not None:
+        if approval:
+            decisions = approval_decisions(raw[0])
+            if body.sessionId is None or not decisions:
+                raise HTTPException(400, "Invalid approval.")
+            stream = await client.continue_chat(
+                agent_id=agent_for_user(user_id),
+                session_id=body.sessionId,
+                decisions=decisions,
+                extra_headers=scope,
+            )
+        elif body.messages is not None:
             if body.sessionId is None:
                 raise HTTPException(400, "A batch needs a Session.")
             stream = await client.chat(
@@ -403,7 +484,7 @@ async def stop(body: StopBody, user_id: str = Depends(current_user)):
     return result.model_dump(mode="json", by_alias=True)
 ```
 
-4. Add the React chat. `ChatPage` loads saved history for the stored Session, then mounts `Chat`. `Chat` keeps a copy of the last successful conversation and restores it after an error or Stop, putting the sent text back in the box for an edited or unchanged resend. While the Session is busy, the composer's button reads Stop until the user types, then Send; a send adds the message to the local `queue`. The `queue` block above the composer lists each waiting message on one line with Send (steer the running Turn now) and Delete (drop it — it was never sent). `Chat` polls `GET /api/chat/session` while the Session is busy or a steer is pending. When the Session is idle and messages wait, `Chat` shows that batch of user messages and calls `resumeStream()`, which posts them to `/api/chat` through a second AI SDK transport as a `messages` array and streams the answer; after that Turn ends it reloads saved history. `Chat` sends each set of waiting messages once; after a failed send, it waits for the user.
+4. Add the React chat. `ChatPage` loads saved history for the stored Session, then mounts `Chat`. `Chat` keeps a copy of the last successful conversation and restores it after an error or Stop, putting the sent text back in the box for an edited or unchanged resend. While the Session is busy, the composer's button reads Stop until the user types, then Send; a send adds the message to the local `queue`. The `queue` block above the composer lists each waiting message on one line with Send (steer the running Turn now) and Delete (drop it — it was never sent). `Chat` polls `GET /api/chat/session` while the Session is busy or a steer is pending. When the Session is idle and messages wait, `Chat` shows that batch of user messages and calls `resumeStream()`, which posts them to `/api/chat` through a second AI SDK transport as a `messages` array and streams the answer; after that Turn ends it reloads saved history. `Chat` sends each set of waiting messages once; after a failed send, it waits for the user. Send again on an `uncertain` steer requeues the same message ID; when it was saved after all, the batch returns `message_id_conflict`, and `Chat` reloads history and requeues only the messages history lacks.
 
 ```tsx
 import { useChat } from "@ai-sdk/react";
@@ -500,6 +581,8 @@ function Chat({
   steeredRef.current = steered;
   const lastTurn = useRef<string | null>(null);
   const reloadAfterTurn = useRef(false);
+  const conflicted = useRef<UIMessage[]>([]);
+  const [reloads, setReloads] = useState(0);
   const [transport] = useState((): ChatTransport<UIMessage> => {
     const headers = { authorization: `Bearer ${token}` };
     const relay = new BlazingAgentsChatTransport({
@@ -522,11 +605,18 @@ function Chat({
   const chat = useChat({
     transport,
     messages: conversation.messages,
-    onError() {
+    onError(error) {
       sending.current = false;
       const unsent = pendingBatch.current;
       pendingBatch.current = [];
       chat.setMessages(saved.current);
+      if (error.message.includes("message_id_conflict")) {
+        // Part of the batch is already saved: reload history, then requeue the rest.
+        conflicted.current = unsent;
+        reloadAfterTurn.current = true;
+        setReloads((count) => count + 1);
+        return;
+      }
       setInput((current) =>
         current || sent.current || unsent.map(textOf).filter(Boolean).join("\n"));
     },
@@ -581,7 +671,7 @@ function Chat({
     return () => clearInterval(timer);
   }, [watching, refresh]);
 
-  const { setMessages, resumeStream } = chat;
+  const { setMessages, resumeStream, clearError } = chat;
   useEffect(() => {
     if (!sessionId || streaming || state !== "idle" || queue.length === 0 || chat.error) return;
     pendingBatch.current = queue;
@@ -617,11 +707,19 @@ function Chat({
           item.state !== "not_placed" &&
           item.state !== "committed" &&
           !savedIds.has(item.message.id)));
-        if (requeue.length) setQueue((existing) => [...existing, ...requeue]);
+        // A message_id_conflict batch never ran; resend only what history lacks.
+        const unsaved = conflicted.current.filter((message) => !savedIds.has(message.id));
+        if (conflicted.current.length) {
+          conflicted.current = [];
+          clearError();
+        }
+        if (requeue.length || unsaved.length) {
+          setQueue((existing) => [...unsaved, ...existing, ...requeue]);
+        }
       })
       .catch(() => undefined);
     return () => controller.abort();
-  }, [turnId, streaming, sessionId, token, setMessages]);
+  }, [turnId, streaming, sessionId, token, reloads, setMessages, clearError]);
 
   async function steer(item: UIMessage) {
     // Dequeue before sending: a queued row is "not sent yet" by definition.
@@ -750,6 +848,8 @@ function Chat({
           <button
             type="button"
             onClick={() => {
+              // Keeps the message ID: if it was saved, the send returns
+              // message_id_conflict and Chat reloads history instead.
               setSteered((current) => current.filter((entry) => entry.requestId !== item.requestId));
               setQueue((existing) => [...existing, item.message]);
             }}
@@ -821,28 +921,35 @@ function Chat({
 
 Session forking requires `@blazingagents/sdk` 0.21.0 or `blazing-agents` 0.15.0 or newer.
 
-The chat example above does not ship a fork control. To add one, have your backend read the Session transcript under the signed-in user's scope and select the exact assistant message the user chose. Offer the action only for top-level `branchable: true`; a completed-looking Tool part or closed stream does not prove eligibility.
+The chat example above does not ship a fork control. Fork only when the user asks for another conversation from a selected reply. Have your backend read the Session transcript under the signed-in user's scope and select the exact assistant message the user chose. Offer the action only for a message whose required top-level `branchable` is `true`; never infer eligibility from rendered parts, a completed-looking Tool part, or a closed stream. Eligibility comes from persisted transcript messages, and live stream chunks need not carry `branchable`. Earlier accepted replies stay eligible while the source runs. Streaming replies, pending approvals, and missing or not-yet-persisted replies are ineligible.
 
-Persist one idempotency key for that user action before calling the SDK. Keep the source and selected message fixed on retries. The TypeScript call is `client.sessions.fork({ agentId, sessionId, messageId, idempotencyKey })`; Python uses `client.sessions.fork(agent_id, session_id, message_id=message_id, idempotency_key=idempotency_key)`. The async Python client awaits the same operation.
+Persist one explicit idempotency key for that user action before calling the SDK. Keep the source and selected message fixed on retries. The TypeScript call is `client.sessions.fork({ agentId, sessionId, messageId, idempotencyKey })`; Python uses `client.sessions.fork(agent_id, session_id, message_id=message_id, idempotency_key=idempotency_key)`. The async Python client awaits the same operation.
 
-Return the child's Session ID and switch the conversation using the same Session-switching flow as other saved Sessions. Load its saved history and send future messages through ordinary `chat()` with the child's ID. Keep source and child queues separate. The child starts idle, includes the selected reply, and inherits the saved Agent configuration and user label. No model or Tool runs during creation. Workspace files and Memories remain shared/live, and later child Turns incur normal token usage.
+The child is idle, with history through the selected assistant reply inclusive. Creation runs no model or Tool and adds no usage. Return the child's Session ID and switch the conversation using the same Session-switching flow as other saved Sessions. Load its saved history and send future messages through ordinary `chat()` with the child's ID; later child Turns incur normal token usage. Keep source and child queues separate. The child inherits the saved Agent configuration snapshot, metadata, and user label (`userId`); Workspace files and Memories remain shared/live. Active Turns, approvals, Tasks, queued inputs, and usage records are not copied. Eligible replies inherited into the child can be forked again. Session details from `get()` and `fork()` carry required nullable `forkedFrom` (`forked_from` in Python): `{ sessionId, messageId }` for a child and `null` for an ordinary Session. Lists omit it, and it is informational only.
 
-After a lost acknowledgement, reuse the exact key and selection to recover the same child. Do not create a new key as a retry. Handle `idempotency_conflict` by restoring the original selection; reload history after `session_fork_unavailable`; stop retrying a deleted child after `session_fork_deleted`. A successful replay works even after source deletion. Eligible replies inherited into the child can be forked again.
+Creation returns 201. After a lost acknowledgement, reuse the exact key and selection: an identical replay returns 200 with the same child, even after source deletion. Do not create a new key as a retry. Handle these errors:
+
+| Code | Meaning | Do |
+| --- | --- | --- |
+| `idempotency_conflict` (409) | A different message under the same key. | Restore the original selection. |
+| `session_fork_unavailable` (409) | The selection was removed or is ineligible. | Reload history. |
+| `session_fork_deleted` (410) | Replay of a child that was deleted. | Stop retrying. |
+| `not_found` (404) | The source Session or Agent is missing or outside the user's scope. | Check the IDs and scope. |
 
 ## Gotchas
 
-- **History lives in BA.** Send only new user messages — one `message`, or a `messages` batch of the ones that waited. A client that posts the whole conversation gets a 400: the handler accepts user messages only.
+- **History lives in BA.** Send only new user messages — one `message`, or a `messages` batch of the ones that waited. A client that posts the whole conversation gets a 400: the handler accepts user messages, or one answered assistant message that carries an approval round.
 - **Validate every ID before it reaches a URL.** The browser sends `sessionId`, `turnId`, and `requestId`, and the SDK places them in request paths. A value such as `../../ag_other/sessions/ss_x` or `..` would make the request reach another route. Check them at your relay as the handlers do: `sessionIdSchema` and `sessionInputRequestIdSchema` from `@blazingagents/sdk/contracts` in TypeScript, and the same patterns in Python. A `requestId` of `.` or `..` is invalid.
 - **Derive scope from verified sign-in.** BA enforces ownership when you use `forUser()`. A body `userId` alone grants no access.
 - **Save the Session ID.** The transport receives it before the answer streams. Keep it even when the first Turn fails or is stopped; the Session exists and is simply empty.
 - **Keep one transport per conversation.** `useChat` ignores a new transport after mount. To switch Session or user, remount `Chat` with a new `key`, as `ChatPage` does. Clear persisted user data on sign-out and abort requests from the old account.
-- **Resend is a new attempt.** Give every send a fresh message ID; message IDs are not idempotency keys. A failed or stopped Turn adds nothing to history, so the edited or unchanged text is simply sent again.
+- **Resend is a new attempt.** A failed or stopped Turn adds nothing to history, so the edited or unchanged text is simply sent again with a fresh message ID. Message IDs are not idempotency keys, but BA refuses one it has already saved.
 - **Tool effects can repeat.** Stop cancels the Turn but cannot undo a Tool call that already ran, and a resend can run it again (for example, a second email). Make side-effecting Tools safe to repeat or gate them with [human approval](human-approval.md).
 - **A lost response may already be saved.** A dropped connection is not proof of failure. Reload history before telling the user their message was lost.
 - **Regenerate only after a successful answer.** A prompt that failed was never saved, so there is nothing to regenerate. If regeneration fails or is stopped, the old answer stays.
 - **`session_busy` (HTTP 409)** from `chat` means a Tool approval is pending, a continuation is running, or another Turn holds the Session, for example one started from another tab. Steer the running Turn, or hold the message in the queue and let the next dispatch send it.
 - **Queue only after the Session exists.** The first message creates the Session through `chat`. Steers and batches need a Session ID, which the transport receives before the answer streams.
-- **The queue is yours.** It lives in client state — `useState`, localStorage, or your own store. Take a message out before sending it (a queued row means "not sent"), never auto-retry a send whose outcome is unknown, and never rebuild the queue from receipts or history: the chat endpoint does not reject a message ID already in history, so a rebuilt queue can send a message twice.
+- **The queue is yours.** It lives in client state — `useState`, localStorage, or your own store. Take a message out before sending it (a queued row means "not sent"), never auto-retry a send whose outcome is unknown, and never rebuild the queue from receipts or history. A send containing any message ID already in history returns `message_id_conflict` (409) before model or Tool work: the message is already saved, so reload history instead of resending. Regeneration may reuse IDs.
 - **Keep the `requestId` until the outcome is known.** `submitInput` saves the steer before it returns, so a lost response may still have placed it. Retry with the same `requestId` and message; a changed payload under the same `requestId`, or the same message ID under a new one, returns `input_idempotency_conflict`.
 - **A steer is provisional until history catches up.** The `data-ba-steer-consumed` chunk on the running stream means the agent took the message; it is not yet proof of a durable save. `committed` proves it, `not_placed` means it never ran (safe to send as chat), and `uncertain` means it may have run — flag it and let the user decide, as `Chat` does.
 - **Steering stops at tool approvals.** An approval wait refuses new steers with `steer_not_available`, so a message sent then stays queued and goes out after the continuation settles. A steer already taken does not cross the pause either: it lands in history only if the Turn that read it commits.
@@ -871,6 +978,8 @@ After a lost acknowledgement, reuse the exact key and selection to recover the s
 - Retry a steer with the same `requestId` and message; you get the same receipt. Change the text under that `requestId`, and you get `input_idempotency_conflict`.
 - While a Tool approval is pending, a steer returns `steer_not_available` and the message stays queued; `chat` returns `session_busy`.
 - Press Regenerate. The last answer is replaced, and after a reload the new answer is the saved one.
+- Post a message whose ID is already in history to `/api/chat`; you get `message_id_conflict` (409) and no new Turn. Press Send again on an `uncertain` steer that was saved; `Chat` reloads history and shows the message once.
+- If your UI answers Tool approvals with `addToolApprovalResponse`, answer one. The transport posts the answered assistant message, `chat` continues the Turn, and the answer streams into the same message.
 - Usage filtered by your user's ID includes these Turns. See [usage dashboards](usage-dashboards.md).
 
 ### Check an added fork flow

@@ -36,7 +36,7 @@ Keys are created and revoked only in the dashboard at `https://www.blazingagents
 
 Name each key for one workload or environment, such as `Production API`, so you know what breaks when you revoke it. A key with an expiration stops working the same way a revoked key does, so track expiry dates.
 
-Provider keys cannot be changed in place. To rotate one, create a new Provider, move your Agents to it by sending `providerId` and `model` together, then delete the old Provider. Saved Sessions and queued or running Task runs that still name the old Provider block deletion with `provider_historical_use`; see [troubleshooting](troubleshooting.md#provider-credential-rejected).
+Provider keys cannot be changed in place. To rotate one, create a new Provider, move your Agents to it by sending `providerId` and `model` together, then delete the old Provider. Saved Sessions and queued or running Task runs that still name the old Provider block deletion with `provider_historical_use`. Move them first, or delete with `confirmSnapshotInvalidation: true` (`confirm_snapshot_invalidation=True` in Python) and accept that work needing the deleted Provider then fails with `provider_not_found`; see [troubleshooting](troubleshooting.md#provider-credential-rejected).
 
 ## One client per credential
 
@@ -93,7 +93,7 @@ For per-user Sessions and dashboards, read [multi-user apps](recipes/multi-user-
 
 ## Retry only what is safe
 
-The SDKs never retry for you. An error entry saying "retrying can succeed" tells you the cause may be temporary. It does not tell you the retry is safe, because a request that timed out may already have taken effect.
+The SDKs never retry for you, except backend-function claim and result submissions. An error entry saying "retrying can succeed" tells you the cause may be temporary. It does not tell you the retry is safe, because a request that timed out may already have taken effect.
 
 | Operation | Safe to repeat? |
 | --- | --- |
@@ -102,7 +102,7 @@ The SDKs never retry for you. An error entry saying "retrying can succeed" tells
 | Starting a Task run with the same idempotency key | Yes. You get the same run back. |
 | Cancelling a Task run | Yes. Cancelling a finished run does nothing and returns no error. |
 | Continuing an approval round with the same decisions | Yes. Identical decisions are idempotent; the first `reason` wins. A changed decision returns `tool_approval_decision_conflict`, a running round returns `session_busy`, and a settled round returns `tool_approval_continuation_settled` without running again. |
-| Sending a chat message again | It starts a new turn. Tools with side effects, such as sending an email, can run again. The chat endpoint does not reject a message ID already in history. |
+| Sending a chat message again | It starts a new turn. Tools with side effects, such as sending an email, can run again. A message ID already in history returns `message_id_conflict` (409) before model or Tool work; regeneration may reuse IDs. |
 | Forking a Session with the same explicit idempotency key and selected message | Yes. It returns the same child. Reuse the original key after a lost response; changing the message returns `idempotency_conflict`. A deleted child returns `session_fork_deleted`. |
 | Submitting a Session input (steer) with the same `requestId` and unchanged message | Yes. You get the same receipt back. A changed message returns `input_idempotency_conflict`. |
 | Stopping the same Turn again | Yes. Stop names the Turn, so a repeat never stops a later Turn. |

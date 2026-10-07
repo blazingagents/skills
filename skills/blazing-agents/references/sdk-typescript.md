@@ -325,14 +325,9 @@ A chat-created Session saves Agent configuration on its first Turn; a fork inher
 | `inputs({ agentId, sessionId, includeCompleted?, limit?, cursor? })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/inputs` | `{ data, nextCursor, activity }` — steer receipts in submission order plus the Session's `activity`. Without `includeCompleted`, `data` lists only pending and `uncertain` receipts. Poll without `cursor` to see changes; `cursor` only pages. |
 | `stop({ agentId, sessionId, turnId })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/stop` | `{ stoppedTurnId, activity }` as soon as the stop is recorded, not after the Turn ends. Keep reading the existing stream until it settles. An unknown `turnId` returns `not_found`; a settled Turn's ID never stops a later Turn. |
 
+Fork eligibility, retries, child contents, and error codes are in [Add a requested fork](recipes/chat-in-your-app.md#add-a-requested-fork).
 
-Fork only when the user requests another conversation from a selected reply. Read the transcript and use a message whose required top-level `branchable` is `true`; never infer eligibility from rendered parts or stream completion. Earlier accepted replies remain eligible while the source runs. Streaming replies and pending approvals are ineligible. Eligibility comes from persisted transcript messages; live stream chunks need not carry `branchable`. A missing or not-yet-persisted reply is ineligible.
-
-Save one explicit idempotency key before sending. After a lost response, retry the same source, message ID, and key. Creation returns 201 and identical replay returns 200 with the same child, including after source deletion. A different message under the same key returns `idempotency_conflict` (409); a removed or ineligible selection returns `session_fork_unavailable` (409); a deleted child on replay returns `session_fork_deleted` (410); missing or inaccessible source/Agent returns `not_found` (404).
-
-The child is idle, with history through the selected assistant reply inclusive. Creation runs no model or Tool and adds no usage. Continue with ordinary `chat()` and the child's Session ID; later Turns incur normal token usage. Inherited eligible replies can be forked again. The child inherits saved Agent configuration, metadata and `userId`; Workspace files and Memories remain shared/live. Active Turns, approvals, Tasks, queued inputs and usage records are not copied. Session details from `get()` and `fork()` have required nullable `forkedFrom` (`forked_from` in Python), `{ sessionId, messageId }` for children and null for ordinary Sessions. Lists omit provenance; provenance is informational.
-
-A `SessionInput` is a steer receipt: `requestId`, `sequence`, `message`, `state`, the `turnId` it was bound to, `reason`, and timestamps. `state` moves from `accepted` to `delivered` and ends `committed` (saved in history), `not_placed` (never reached the agent — safe to send as an ordinary chat message), or `uncertain` (may have reached the agent — never resend automatically). `reason` is `stopped`, `failed`, `owner_lost`, `turn_finished`, or `null`. `activity` is `{ state, turnId }` with `state` one of `idle`, `running`, `stopping`, `approval`. The running Turn's stream also emits a transient `data-ba-steer-consumed` chunk when the agent takes a steer; treat it as provisional and confirm it in history after the Turn settles. BA holds no queue: messages that arrive while the Session is busy wait in your own client and go out as ordinary `chat` calls once the Turn settles. See [Add chat to your app](recipes/chat-in-your-app.md) for the full flow.
+A `SessionInput` is a steer receipt: `requestId`, `sequence`, `message`, `state` (`accepted`, `delivered`, `committed`, `not_placed`, or `uncertain`), the `turnId` it was bound to, `reason` (`stopped`, `failed`, `owner_lost`, `turn_finished`, or `null`), and timestamps. `activity` is `{ state, turnId }` with `state` one of `idle`, `running`, `stopping`, `approval`. What each receipt state means, the `data-ba-steer-consumed` stream chunk, and the client-held queue are in [Add chat to your app](recipes/chat-in-your-app.md).
 
 ### `client.tasks` (Tasks and Task runs)
 
@@ -409,7 +404,7 @@ A `SessionInput` is a steer receipt: `requestId`, `sequence`, `message`, `state`
 
 | Method | HTTP | Returns / notes |
 | --- | --- | --- |
-| `list({ status?, since?, cursor?, limit? })` | `GET /v1/chat-deliveries` | Page of `TenantChatDelivery`. Failed and ambiguous deliveries across every connection, newest first (an attention feed, not full history). `status` narrows to `failed` or `ambiguous` (default both); pending/confirmed are rejected, use the per-connection deliveries list for those. `since` is an inclusive ISO 8601 lower bound. |
+| `list({ status?, since?, cursor?, limit? })` | `GET /v1/chat-deliveries` | Page of `TenantChatDelivery`. Failed and ambiguous deliveries across every connection, newest first (an attention feed, not full history). `status` is an array of `failed` and/or `ambiguous` (default both); pending/confirmed are rejected. One connection's full deliveries list and repair are REST-only, not in the SDK: `GET /v1/chat-connections/{id}/deliveries` and `POST /v1/chat-connections/{id}/deliveries/{deliveryId}/repair`. `since` is an inclusive ISO 8601 lower bound. |
 
 ### `client.agent({ agentId }).skills`
 
@@ -451,10 +446,10 @@ These bill your own customers through your Polar or Dodo account.
 | `merchantConnection.get()` | `GET /v1/merchant-connection` | `MerchantConnectionResponse` |
 | `merchantConnection.update(body)` | `PATCH /v1/merchant-connection` | `MerchantConnectionResponse` |
 | `merchantConnection.retire()` | `DELETE /v1/merchant-connection` | `void`. Deliveries stop. |
-| `merchantBindings.list({ userId?, cursor?, limit? })` | `GET /v1/merchant-connection/bindings` | Page of bindings |
+| `merchantBindings.list({ userId?, cursor?, limit? })` | `GET /v1/merchant-connection/bindings` | `{ bindings, nextCursor }` |
 | `merchantBindings.put({ userId, ...body })` | `PUT /v1/merchant-connection/bindings/{userId}` | `MerchantBindingResponse` |
 | `merchantBindings.delete({ userId })` | `DELETE /v1/merchant-connection/bindings/{userId}` | `void` |
-| `merchantUsageEvents.list({ status?, cursor?, limit? })` | `GET /v1/merchant-usage-events` | Page of events |
+| `merchantUsageEvents.list({ status?, cursor?, limit? })` | `GET /v1/merchant-usage-events` | `{ events, nextCursor }` |
 | `merchantUsageEvents.get({ eventId })` | `GET /v1/merchant-usage-events/{eventId}` | `MerchantUsageEventResponse` |
 | `merchantUsageEvents.summary({ days? })` | `GET /v1/merchant-usage-events/summary` | `MerchantUsageSummaryResponse` |
 | `merchantUsageEvents.retry({ eventId })` | `POST /v1/merchant-usage-events/{eventId}/retry` | `MerchantUsageEventResponse` |
@@ -468,7 +463,9 @@ or `null` on the last page. Pass it back as `cursor` with the same filters. The
 SDK does not auto-paginate.
 
 Provider, MCP Connection, and Chat Connection lists return named arrays and are
-not paginated. Agent and Prompt lists use `{ data, nextCursor }` too.
+not paginated. Agent and Prompt lists use `{ data, nextCursor }` too. Merchant
+binding and usage-event lists page with named arrays: `{ bindings, nextCursor }`
+and `{ events, nextCursor }`.
 
 ```ts
 import type { BlazingAgents } from "@blazingagents/sdk";

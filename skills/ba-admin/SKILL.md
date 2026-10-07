@@ -40,5 +40,5 @@ Agent, Workspace, Skill, Prompt, and Task management; Provider reads and model
 discovery; Task-run observation and cancellation; usage queries; Session reads
 and deletion, plus Session forking when explicitly requested; Artifact listings; and Chat Connection configuration, health, and delivery outcomes. Keep Provider credential mutation, MCP
 Connection management, Memory mutation, Artifact deletion/download, generation,
-Agent enable/disable or Version restoration, and API-key lifecycle outside this
+Agent enable/disable, and API-key lifecycle outside this
 Skill.

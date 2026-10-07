@@ -75,22 +75,26 @@ def set_policies(agent_id: str, mcp_connection_id: str) -> None:
     )
 ```
 
-2. After a chat stream ends, list the Session's approvals on your backend and send the pending ones to the reviewer. In a `useChat` UI, the paused Turn ends with a tool part in the `approval-requested` state; use that as the cue to fetch this list.
+2. After a chat stream ends, list the Session's approvals on your backend and send the pending ones to the reviewer. In a `useChat` UI, the paused Turn ends with a tool part in the `approval-requested` state; use that as the cue to fetch this list. Here the signed-in user reviews their own Session: the backend reads the user's Agent ID from trusted state, validates the Session ID, and calls BA under that user's scope, so BA rejects another user's Session. For a separate reviewer role, check it in your backend and scope the calls to the Session's owner.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
+import { sessionIdSchema } from "@blazingagents/sdk/contracts";
 
-declare function reviewerMayAccess(request: Request, sessionId: string): Promise<boolean>;
+declare function authenticate(request: Request): Promise<{ id: string; agentId: string } | null>;
 
-const client = new BlazingAgents({ apiKey: process.env.BLAZING_AGENTS_API_KEY ?? "" });
+const tenant = new BlazingAgents({ apiKey: process.env.BLAZING_AGENTS_API_KEY ?? "" });
 
 export async function GET(request: Request): Promise<Response> {
-  const url = new URL(request.url);
-  const agentId = url.searchParams.get("agentId") ?? "";
-  const sessionId = url.searchParams.get("sessionId") ?? "";
-  if (!(await reviewerMayAccess(request, sessionId))) return new Response(null, { status: 403 });
+  const user = await authenticate(request);
+  if (!user) return new Response("Sign in first.", { status: 401 });
+  const sessionId = sessionIdSchema.safeParse(new URL(request.url).searchParams.get("sessionId"));
+  if (!sessionId.success) return new Response("Invalid Session ID.", { status: 400 });
 
-  const { data } = await client.sessions.toolApprovals({ agentId, sessionId });
+  const { data } = await tenant.forUser(user.id).sessions.toolApprovals({
+    agentId: user.agentId,
+    sessionId: sessionId.data,
+  });
   const pending = data
     .filter((item) => item.decision === "pending")
     .map((item) => ({ approvalId: item.approvalId, tool: item.tool ?? item.toolName, input: item.input }));
@@ -100,18 +104,35 @@ export async function GET(request: Request): Promise<Response> {
 
 ```python
 from blazing_agents import AsyncBlazingAgents
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Query, Request
 
 app = FastAPI()
 client = AsyncBlazingAgents()
+SESSION_ID = r"^ss_[0-9A-Za-z]{16}$"
+
+
+def current_user(request: Request) -> str:
+    """Your sign-in check. Return your user's ID or raise HTTPException(401)."""
+    raise NotImplementedError
+
+
+def agent_for_user(user_id: str) -> str:
+    """Read this user's Agent ID from trusted backend state."""
+    raise NotImplementedError
 
 
 @app.get("/api/tool-approvals")
-async def list_pending(agent_id: str, session_id: str) -> dict[str, object]:
-    # Authenticate the reviewer and check they may access this Session first.
-    approvals = await client.sessions.tool_approvals(agent_id=agent_id, session_id=session_id)
+async def list_pending(
+    session_id: str = Query(alias="sessionId", pattern=SESSION_ID),
+    user_id: str = Depends(current_user),
+) -> dict[str, object]:
+    approvals = await client.sessions.tool_approvals(
+        agent_id=agent_for_user(user_id),
+        session_id=session_id,
+        extra_headers={"X-BA-User-Id": user_id},
+    )
     pending = [
-        {"approval_id": item.approval_id, "tool": item.tool or item.tool_name, "input": item.input}
+        {"approvalId": item.approval_id, "tool": item.tool or item.tool_name, "input": item.input}
         for item in approvals.data
         if item.decision == "pending"
     ]
@@ -122,65 +143,80 @@ async def list_pending(agent_id: str, session_id: str) -> dict[str, object]:
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
+import { sessionIdSchema, toolApprovalDecisionSchema } from "@blazingagents/sdk/contracts";
 import { z } from "zod";
 
-declare function reviewerMayAccess(request: Request, sessionId: string): Promise<boolean>;
+declare function authenticate(request: Request): Promise<{ id: string; agentId: string } | null>;
 
-const client = new BlazingAgents({ apiKey: process.env.BLAZING_AGENTS_API_KEY ?? "" });
+const tenant = new BlazingAgents({ apiKey: process.env.BLAZING_AGENTS_API_KEY ?? "" });
 const bodySchema = z.object({
-  agentId: z.string(),
-  sessionId: z.string(),
-  decisions: z.array(z.object({
-    approvalId: z.string(),
-    approved: z.boolean(),
-    reason: z.string().optional(),
-  })).min(1),
+  sessionId: sessionIdSchema,
+  decisions: z.array(toolApprovalDecisionSchema).min(1),
 });
 
 export async function POST(request: Request): Promise<Response> {
-  const { agentId, sessionId, decisions } = bodySchema.parse(await request.json());
-  if (!(await reviewerMayAccess(request, sessionId))) return new Response(null, { status: 403 });
+  const user = await authenticate(request);
+  if (!user) return new Response("Sign in first.", { status: 401 });
+  const body = bodySchema.safeParse(await request.json());
+  if (!body.success) return new Response("Invalid request.", { status: 400 });
 
-  const continued = await client.continueChat({ agentId, sessionId, decisions });
+  const continued = await tenant.forUser(user.id).continueChat({
+    agentId: user.agentId,
+    sessionId: body.data.sessionId,
+    decisions: body.data.decisions,
+    abortSignal: request.signal,
+  });
   return continued.toResponse();
 }
 ```
 
 ```python
 from blazing_agents import AsyncBlazingAgents, ToolApprovalDecisionInput
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 app = FastAPI()
 client = AsyncBlazingAgents()
+SESSION_ID = r"^ss_[0-9A-Za-z]{16}$"
+
+
+def current_user(request: Request) -> str:
+    """Your sign-in check. Return your user's ID or raise HTTPException(401)."""
+    raise NotImplementedError
+
+
+def agent_for_user(user_id: str) -> str:
+    """Read this user's Agent ID from trusted backend state."""
+    raise NotImplementedError
 
 
 class Decision(BaseModel):
-    approval_id: str
+    approvalId: str
     approved: bool
     reason: str | None = None
 
 
 class ContinueBody(BaseModel):
-    agent_id: str
-    session_id: str
-    decisions: list[Decision]
+    sessionId: str = Field(pattern=SESSION_ID)
+    decisions: list[Decision] = Field(min_length=1)
 
 
 @app.post("/api/tool-approvals/continue")
-async def continue_round(body: ContinueBody) -> StreamingResponse:
-    # Authenticate the reviewer and check they may access this Session first.
+async def continue_round(
+    body: ContinueBody, user_id: str = Depends(current_user)
+) -> StreamingResponse:
     decisions: list[ToolApprovalDecisionInput] = []
     for d in body.decisions:
-        item: ToolApprovalDecisionInput = {"approval_id": d.approval_id, "approved": d.approved}
+        item: ToolApprovalDecisionInput = {"approval_id": d.approvalId, "approved": d.approved}
         if d.reason is not None:
             item["reason"] = d.reason
         decisions.append(item)
     stream = await client.continue_chat(
-        agent_id=body.agent_id,
-        session_id=body.session_id,
+        agent_id=agent_for_user(user_id),
+        session_id=body.sessionId,
         decisions=decisions,
+        extra_headers={"X-BA-User-Id": user_id},
     )
     return StreamingResponse(
         stream,
@@ -197,7 +233,6 @@ import { parseJsonEventStream, readUIMessageStream, uiMessageChunkSchema, type U
 declare function renderAssistant(message: UIMessage): void;
 
 export async function sendDecisions(input: {
-  agentId: string;
   sessionId: string;
   decisions: { approvalId: string; approved: boolean; reason?: string }[];
 }): Promise<void> {
@@ -222,7 +257,7 @@ export async function sendDecisions(input: {
 }
 ```
 
-In a `useChat` UI, `BlazingAgentsChatTransport` and `BlazingAgentsDirectChatTransport` do this for you: once `addToolApprovalResponse` has answered every call in the round, the next `sendMessages` posts the answered assistant message, and a backend built on `createChatRelay` (or the direct transport's own client) turns it into `continueChat` and streams the continuation through the same endpoint.
+In a `useChat` UI, `BlazingAgentsChatTransport` and `BlazingAgentsDirectChatTransport` can do this instead: once `addToolApprovalResponse` has answered every call in the round, the next `sendMessages` posts the answered assistant message. The transport does it for you only with a backend built on `createChatRelay` (or the direct transport's own client), which turns that message into `continueChat` and streams the continuation through the same endpoint. A hand-written chat handler must accept the assistant message and call `continueChat` itself, as the handler in [chat in your app](chat-in-your-app.md) does.
 
 ## Gotchas
 

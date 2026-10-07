@@ -38,7 +38,7 @@ Not the same as a copy of every dependency. Provider keys, MCP credentials and c
 
 ### Admin Agent
 
-A BA-managed agent that every tenant gets automatically. It powers BA's built-in assistant for managing your tenant, and the dashboard marks it **Powers BA Assist for this tenant**. You choose its Provider, model, and thinking level; BA controls everything else, so you cannot rename, disable, delete, or restore it, change its instructions or tools, or give it tasks (`admin_agent_managed`). It shows up in `agents.list()` next to your own agents, so keep your own record of the agent IDs your app created instead of treating every listed agent as yours.
+A BA-managed agent that every tenant gets automatically. It powers BA's built-in assistant for managing your tenant, and the dashboard marks it **Powers BA Assist for this tenant**. You choose its Provider, model, and thinking level; BA controls everything else, so you cannot rename, disable, or delete it, change its instructions or tools, or give it tasks (`admin_agent_managed`). It shows up in `agents.list()` next to your own agents, so keep your own record of the agent IDs your app created instead of treating every listed agent as yours.
 
 Not the same as: an agent for your product. Build your own agents for your users.
 
@@ -58,13 +58,11 @@ Not the same as: Memory. A session is one conversation; memories carry facts acr
 
 ### Session fork
 
-A new idle Session copied through a selected accepted assistant reply. Select an explicit message with `branchable: true` and keep one idempotency key across retries. Continue using the child Session ID. Forking runs no model or Tool; Workspace files and Memories stay shared/live.
+A new idle Session copied through a selected accepted assistant reply (`branchable: true`). Continue with the child Session ID. See [Add a requested fork](recipes/chat-in-your-app.md#add-a-requested-fork).
 
 ### Session input (steer)
 
-A user message your client sends to a running turn through the session's inputs resource, identified by your own `requestId` (1 to 128 characters, not `.` or `..`). The submit is steering only: the message joins the running turn as soon as the agent can take it, and the steer is refused with `steer_not_available` when no turn can take one (the session is idle or stopping, or a tool approval is waiting). The receipt's `state` moves from `accepted` to `delivered` and ends `committed` (saved in history), `not_placed` (the agent never read it — safe to send as an ordinary chat message), or `uncertain` (it may have reached the agent — never resend it automatically). `inputs()` lists the receipts alongside the session's current `activity` (`idle`, `running`, `stopping`, or `approval`).
-
-BA holds no queue. A message your user sends while a turn runs either steers it or waits in your own client; once the turn settles, send the waiting messages as ordinary chat turns — one per turn, or several in one turn with `chat({ messages: [...] })`. Take each message out of your queue before sending it, and never rebuild the queue from receipts or history.
+A user message your client sends to a running turn through the session's inputs resource, identified by your own `requestId`. The message joins the running turn as soon as the agent can take it, and BA returns a receipt. BA holds no queue: a message that cannot steer waits in your own client. See [Add chat to your app](recipes/chat-in-your-app.md#how-it-works) for receipt states and the client-held queue.
 
 Not the same as: a chat message sent with `chat()`. That starts a turn now and fails with `session_busy` while the session is busy; a steer joins the running turn instead.
 

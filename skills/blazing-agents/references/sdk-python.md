@@ -1,6 +1,6 @@
 # Python SDK reference
 
-Use this page to call Blazing Agents from a Python backend: install the package, pick a client, run Turns, and find the method for every operation. Paginated Agent and Prompt lists and backend functions need 0.13.0 or newer; Session inputs (steering and Stop), multi-message chat, and approval continuations need 0.14.0 or newer, the floor the install command below pins. Session forking requires 0.15.0 or newer. Check the installed package before using them.
+Use this page to call Blazing Agents from a Python backend: install the package, pick a client, run Turns, and find the method for every operation. Paginated Agent and Prompt lists and backend functions need 0.13.0 or newer; Session inputs (steering and Stop), multi-message chat, and approval continuations need 0.14.0 or newer. Session forking requires 0.15.0 or newer, the floor the install command below pins. Check the installed package before using them.
 
 For the same surface in TypeScript, read [TypeScript SDK reference](sdk-typescript.md). For end-to-end builds, start from a recipe such as [Add chat to your app](recipes/chat-in-your-app.md).
 
@@ -9,9 +9,9 @@ For the same surface in TypeScript, read [TypeScript SDK reference](sdk-typescri
 The PyPI package is `blazing-agents`. The import name is `blazing_agents`. It needs Python 3.11 or newer.
 
 ```bash
-pip install "blazing-agents>=0.14.0"
+pip install "blazing-agents>=0.15.0"
 # or
-uv add "blazing-agents>=0.14.0"
+uv add "blazing-agents>=0.15.0"
 ```
 
 Keep the Tenant API key in `BLAZING_AGENTS_API_KEY` on your backend. It can reach everything in your Tenant, so it never goes to a browser or mobile app.
@@ -255,16 +255,9 @@ Signatures below drop `extra_headers` and `timeout`, which every method accepts.
 
 A chat-created Session saves `agent_config` on its first Turn; a fork inherits the source snapshot at creation; get it with `client.sessions.get()`. Message pages contain only transcript messages. `after=` returns only messages added later. A tool approval decision and its continuation update the assistant message in place, at the same position, possibly over several rounds. While any loaded message has a tool part in state `approval-requested` or `approval-responded`, poll the newest page without `after` and replace messages by ID; go back to `after` once none remain. Start an empty Session with `client.chat()` or copy an accepted conversation with `sessions.fork()`. `list_latest(by_agent=True)` returns at most one Session per Agent, which suits an inbox view.
 
+`fork()` requires `message_id` and `idempotency_key`. The explicit key overrides any case variant of `Idempotency-Key` in `extra_headers`. Other resource options, including `timeout`, remain available. The child's `forked_from` is a `SessionForkedFrom` with `session_id` and `message_id`, or `None` for an ordinary Session. Fork eligibility, retries, child contents, and error codes are in [Add a requested fork](recipes/chat-in-your-app.md#add-a-requested-fork).
 
-Fork only when the user requests another conversation from a selected reply. Read the transcript and use a message whose required top-level `branchable` is `true`; never infer eligibility from rendered parts or stream completion. Earlier accepted replies remain eligible while the source runs. Streaming replies and pending approvals are ineligible. Eligibility comes from persisted transcript messages; live stream chunks need not carry `branchable`. A missing or not-yet-persisted reply is ineligible.
-
-Save one explicit idempotency key before sending. After a lost response, retry the same source, message ID, and key. Creation returns 201 and identical replay returns 200 with the same child, including after source deletion. A different message under the same key returns `idempotency_conflict` (409); a removed or ineligible selection returns `session_fork_unavailable` (409); a deleted child on replay returns `session_fork_deleted` (410); missing or inaccessible source/Agent returns `not_found` (404).
-
-The child is idle, with history through the selected assistant reply inclusive. Creation runs no model or Tool and adds no usage. Continue with ordinary `chat()` and the child's Session ID; later Turns incur normal token usage. Inherited eligible replies can be forked again. The child inherits saved Agent configuration, metadata and `userId`; Workspace files and Memories remain shared/live. Active Turns, approvals, Tasks, queued inputs and usage records are not copied. Session details from `get()` and `fork()` have required nullable `forkedFrom` (`forked_from` in Python), `{ sessionId, messageId }` for children and null for ordinary Sessions. Lists omit provenance; provenance is informational.
-
-Python requires `message_id` and `idempotency_key`. The explicit key overrides any case variant of `Idempotency-Key` in `extra_headers`. Other resource options, including `timeout`, remain available.
-
-While a Turn runs, `chat()` raises `session_busy`. Either steer the running Turn with `submit_input()`, or hold the message in your own client and send it as ordinary chat once the Session is idle — BA holds no queue. `submit_input()` saves a steer receipt under your `request_id` (1 to 128 characters, not `.` or `..`) before returning. Retry with the same `request_id` and message after an unknown outcome; a changed payload raises `input_idempotency_conflict`. The receipt's `state` moves from `accepted` to `delivered` and ends `committed` (saved in history), `not_placed` (never reached the agent — safe to send as an ordinary chat message), or `uncertain` (may have reached the agent — never resend automatically). Poll `inputs()` without `cursor` for changes; pass `include_completed=True` to see terminal receipts. `stop()` takes the `turn_id` from `activity` and returns as soon as the stop is recorded; keep reading the existing stream until the Turn settles. An unknown `turn_id` raises `not_found`. All methods accept `extra_headers` for user scope. See [Add chat to your app](recipes/chat-in-your-app.md).
+While a Turn runs, `chat()` raises `session_busy`; steer with `submit_input()` or hold the message in your own client. `submit_input()` saves a steer receipt under your `request_id` (1 to 128 characters, not `.` or `..`) before returning. Retry with the same `request_id` and message; a changed payload raises `input_idempotency_conflict`. A receipt's `state` is `accepted`, `delivered`, `committed`, `not_placed`, or `uncertain`. Poll `inputs()` without `cursor` for changes; pass `include_completed=True` to see terminal receipts. `stop()` takes the `turn_id` from `activity`; an unknown `turn_id` raises `not_found`. All methods accept `extra_headers` for user scope. What each receipt state means and how the client-held queue works are in [Add chat to your app](recipes/chat-in-your-app.md#how-it-works).
 
 ### `client.tasks`
 
@@ -380,7 +373,7 @@ Run a saved Prompt with `client.chat(prompt_id=..., variables={...})` or the oth
 | `list(*, status=..., since=..., cursor=..., limit=...)` | `ChatDeliveriesPage` |
 | `iter(*, status=..., since=..., cursor=..., limit=...)` | `Iterator[TenantChatDelivery]` |
 
-Failed and ambiguous deliveries across every connection, newest first (an attention feed, not full history). `status` narrows to `failed` or `ambiguous` (default both); pending/confirmed are rejected, use the per-connection deliveries list for those.
+Failed and ambiguous deliveries across every connection, newest first (an attention feed, not full history). `status` is a sequence of `failed` and/or `ambiguous` (default both); pending/confirmed are rejected. One connection's full deliveries list and repair are REST-only, not in the SDK: `GET /v1/chat-connections/{id}/deliveries` and `POST /v1/chat-connections/{id}/deliveries/{deliveryId}/repair`.
 
 ### `client.usage` and `client.tenant`
 

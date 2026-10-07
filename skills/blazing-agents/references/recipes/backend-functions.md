@@ -12,13 +12,14 @@ You pass a map of named functions on a single `chat()` call. Blazing Agents send
 
 ## Build it
 
-1. Add the functions inside your chat route, after authenticating the request, so every handler closes over the verified user. Scope the call with `forUser` (TypeScript) or `X-BA-User-Id` (Python) as in [chat in your app](chat-in-your-app.md).
+1. Add the functions inside your chat route, after authenticating the request, so every handler closes over the verified user. Scope the call with `forUser` (TypeScript) or `X-BA-User-Id` (Python) as in [chat in your app](chat-in-your-app.md). Read the user's Agent ID from trusted backend state, never from the request, and validate the browser's `sessionId` before it reaches the SDK.
 
 ```ts
 import { BlazingAgents, defineFunction, type ChatFunctions, type UIMessage } from "@blazingagents/sdk";
+import { sessionIdSchema } from "@blazingagents/sdk/contracts";
 import { z } from "zod";
 
-declare function authenticate(request: Request): Promise<{ id: string } | null>;
+declare function authenticate(request: Request): Promise<{ id: string; agentId: string } | null>;
 declare function findOrder(
   userId: string,
   orderId: string,
@@ -27,9 +28,8 @@ declare function findOrder(
 
 const client = new BlazingAgents({ apiKey: process.env.BLAZING_AGENTS_API_KEY ?? "" });
 const chatBody = z.object({
-  agentId: z.string(),
   message: z.custom<UIMessage>(),
-  sessionId: z.string().optional(),
+  sessionId: sessionIdSchema.optional(),
 });
 
 export async function POST(request: Request): Promise<Response> {
@@ -50,7 +50,7 @@ export async function POST(request: Request): Promise<Response> {
     }),
   };
 
-  const input = { agentId: body.agentId, message: body.message, functions };
+  const input = { agentId: user.agentId, message: body.message, functions };
   const result = body.sessionId
     ? await client.forUser(user.id).chat({ ...input, sessionId: body.sessionId })
     : await client.forUser(user.id).chat(input);
@@ -64,14 +64,20 @@ from typing import Any
 from blazing_agents import AsyncBlazingAgents, FunctionContext, define_function
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 app = FastAPI()
 client = AsyncBlazingAgents()  # reads BLAZING_AGENTS_API_KEY
+SESSION_ID = r"^ss_[0-9A-Za-z]{16}$"
 
 
 def current_user(request: Request) -> str:
     """Your sign-in check. Return the verified user ID or raise HTTPException(401)."""
+    raise NotImplementedError
+
+
+def agent_for_user(user_id: str) -> str:
+    """Read this user's Agent ID from trusted backend state."""
     raise NotImplementedError
 
 
@@ -85,9 +91,8 @@ class OrderInput(BaseModel):
 
 
 class ChatBody(BaseModel):
-    agent_id: str
     message: dict[str, Any]
-    session_id: str | None = None
+    sessionId: str | None = Field(default=None, pattern=SESSION_ID)
 
 
 @app.post("/api/chat")
@@ -109,13 +114,13 @@ async def chat(body: ChatBody, user_id: str = Depends(current_user)):
     }
 
     extra: dict[str, Any] = {"extra_headers": {"X-BA-User-Id": user_id}}
-    if body.session_id is not None:
-        extra["session_id"] = body.session_id
+    if body.sessionId is not None:
+        extra["session_id"] = body.sessionId
     stream = await client.chat(
-        agent_id=body.agent_id, message=body.message, functions=functions, **extra
+        agent_id=agent_for_user(user_id), message=body.message, functions=functions, **extra
     )
     headers = {"x-vercel-ai-ui-message-stream": "v1"}
-    if body.session_id is None:
+    if body.sessionId is None:
         headers["location"] = stream.headers["location"]
     return StreamingResponse(stream, media_type="text/event-stream", headers=headers)
 ```
