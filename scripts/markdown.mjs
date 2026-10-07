@@ -27,6 +27,7 @@ export function fencedBlocks(lines) {
       open.body.push(text);
     }
   });
+  if (open) blocks.push({ lang: open.lang, line: open.line, code: open.body.join("\n") + "\n" });
   return blocks;
 }
 
@@ -34,7 +35,7 @@ export function fencedBlocks(lines) {
 export function fencedLines(lines) {
   const inside = new Set();
   for (const block of fencedBlocks(lines)) {
-    const end = block.line + block.code.split("\n").length;
+    const end = Math.min(lines.length, block.line + block.code.split("\n").length);
     for (let line = block.line; line <= end; line++) inside.add(line);
   }
   return inside;
