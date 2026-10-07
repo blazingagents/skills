@@ -97,7 +97,7 @@ export async function startWeeklyReport(week: string): Promise<string | null> {
     });
     return runId;
   } catch (error) {
-    if (error instanceof BlazingAgentsError && error.code === "task_active_run_exists") {
+    if (BlazingAgentsError.isInstance(error) && error.code === "task_active_run_exists") {
       return null;
     }
     throw error;

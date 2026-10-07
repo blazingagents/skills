@@ -29,7 +29,7 @@ One-off Tenant setup, such as creating the Provider and Agent, can also be done 
 
 ```bash
 npm pkg set type=module
-npm install @blazingagents/sdk ai
+npm install @blazingagents/sdk ai@^7
 ```
 
 ```bash
@@ -175,7 +175,7 @@ with client.chat(agent_id=agent.id, message=message) as stream:
 
 ## Check it works
 
-- Step 2 prints `Connected. Your tenant has N agents.` An authentication error means the key is not exported in that shell or was copied incompletely.
+- Step 2 prints `Connected. First page has N agents.` An authentication error means the key is not exported in that shell or was copied incompletely.
 - Step 3 prints `Session: ss_...` then `data: {...}` lines ending with `data: [DONE]`.
 - Run step 3 again. The Provider and Agent IDs stay the same; the Session ID is new.
 - The Provider and Agent appear in the dashboard.

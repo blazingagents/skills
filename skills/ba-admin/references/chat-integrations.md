@@ -1,34 +1,35 @@
 # Slack and Telegram connections
 
 Use BA's managed Chat Connections when the user wants an existing Agent in Slack
-or Telegram. BA hosts Vercel Chat SDK, Sessions, replies, and approval cards.
+or Telegram. BA keeps the Sessions, posts replies, and renders approval cards.
 Use TypeScript `client.chatConnections` (0.9.0+) or Python
 `client.chat_connections` (0.6.0+) for connection configuration.
 
 Read [setup](https://docs.blazingagents.com/platform/chat-integrations) before
-creating a connection, including saving the final callback URL after creation. Read the
+creating a connection, including registering the returned `webhookUrl` on the platform. Read the
 [TypeScript](https://docs.blazingagents.com/sdk/typescript/chat-integrations) or
 [Python](https://docs.blazingagents.com/sdk/python/chat-integrations) SDK reference
 for exact arguments. Keep bot credentials in environment variables;
 report only IDs, enabled state, and safe health results.
 
 The resource provides list, get, create, update, credential rotation, health checks,
-enable, disable, and delete. Update accepts only the name and callback URL;
-changing the Agent or bot requires a new connection. The `chatDeliveries`
+enable, disable, and delete. Update accepts only `name` and `configuration`;
+BA generates `webhookUrl`. Changing the Agent or bot requires a new connection. The `chatDeliveries`
 resource (Python `chat_deliveries`) is an attention feed: failed and
 ambiguous replies and approval cards across every connection.
 
-- Create: resolve the Agent, verify the intended bot/installation, create once with intake disabled,
-  update the saved callback URL using the returned ID, register that URL in the
-  platform, run health, enable, and test a real reply.
-  Platform registration is separate from BA connection creation.
+- Create: resolve the Agent, verify the intended bot/installation, create once
+  with `enabled: false`, and read `webhookUrl` from the response. For Slack,
+  register that URL as both the Event Subscriptions and Interactivity Request
+  URL; for Telegram, enabling registers it. Run health, enable, and test a real
+  reply. Platform registration is separate from BA connection creation.
 - Inspect: list/get connections, then run health if fresh evidence is needed.
   `unknown` requires manual verification; token validity does not prove delivery.
 - Inspect deliveries: read-only. List the tenant-wide feed, which returns
   only failed and ambiguous deliveries, optionally bounded by `since`;
   report IDs, connection, status, and diagnostic. Do not repair.
 - Rotate: replace the complete credentials for the same installation. Preserve
-  Sessions; update Telegram's registered secret when changing it.
+  Sessions.
 - Disable/delete: explain that disable stops new intake while admitted work may
   finish; delete preserves Sessions and leaves platform registration unchanged.
 
