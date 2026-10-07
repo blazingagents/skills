@@ -67,6 +67,7 @@ Use `BlazingAgentsError.isInstance(error)` instead of `instanceof`, which fails 
 | `tool_approval_continuation_settled` (409) on a continuation call | The approval round already ran to a terminal state. | Read the Session's messages instead of deciding again. |
 | `session_version_mismatch` (409) | Two turns ran on the same Session at once; this one was not saved. | [Send one turn at a time](#session-busy). |
 | `input_idempotency_conflict` (409) | A Session input reused a `requestId` with a different message, or reused a message ID under a new `requestId`. | [Retry with the original request](#session-input-errors). |
+| `message_id_conflict` (409) on chat | The submission contains a message ID already in accepted history; nothing ran. | The message is already saved; reload history instead of resending. Regeneration may reuse IDs. |
 | `steer_not_available` (409) on a Session input | No Turn can take a steer: the Session is idle or stopping, or an approval is waiting. | [Hold the message and send it as chat](#session-input-errors). |
 | A message sent while a turn ran never reaches the agent | BA holds no queue; the message was still waiting in the client. | [Send waiting messages after the turn settles](#session-input-errors). |
 | `invalid_cursor` (400) | The cursor was altered, came from another list, or was reused with different filters. | [Restart pagination](#invalid-cursor). |
@@ -148,8 +149,8 @@ Session inputs are steer attempts on the running turn. Each carries your `reques
 - A `requestId` must be 1 to 128 characters and not exactly `.` or `..`, because a URL would collapse those path segments. Generate IDs instead of deriving them from user text.
 - `input_idempotency_conflict` (409): the `requestId` was reused with a changed message, or the message ID was already used under another `requestId`. When an acknowledgement was lost, retry with the original `requestId` and payload, or list the Session's inputs. Never mint a new `requestId` for a message whose outcome you do not know; that can deliver it twice.
 - `steer_not_available` (409): the submit was refused because no turn could take a steer — the Session is idle, stopping, or waiting on a tool approval. Nothing was saved. Keep the message in your client and send it as ordinary chat once activity is `idle`.
-- Receipt states settle as `committed` (the message is in saved history), `not_placed` (it never reached the agent — send it as an ordinary chat message), or `uncertain` (it may have reached the agent — never resend automatically; ask the user). Read terminal receipts with `inputs({ includeCompleted: true })`.
-- `inputs()` is receipts, not your queue. Never rebuild the client's waiting messages from receipts or history, and never auto-retry a send whose outcome is unknown; the chat endpoint does not reject a message ID already in history.
+- Read terminal receipts with `inputs({ includeCompleted: true })`. `inputs()` is receipts, not your queue. For receipt states and what to do with each, read [chat in your app](recipes/chat-in-your-app.md#how-it-works).
+- `message_id_conflict` (409) on chat: the submission contains a message ID already in accepted history, so it ran nothing. The message is already saved; reload history instead of resending. Regeneration may reuse IDs.
 
 ## Invalid cursor
 
@@ -257,7 +258,7 @@ For every check that is `fail` or `unknown`, verify that setting by hand on the 
 - `channel_membership`: the bot is in the listed channel or chat. `channelIds` and `chatIds` choose where checks look; they do not restrict where the bot answers.
 - `bot_identity`: the bot identity read from the token matches the connection. On failure, check that the token is current and for the same bot. Rotate with the full credential set for Slack, or only the new bot token for Telegram.
 - Also confirm that both the connection and its Agent are enabled, your subscription is active, and, for Slack, that both the Event Subscriptions and Interactivity request URLs point at `webhookUrl`.
-- If the agent finished but no reply appeared, list the connection's deliveries. `confirmed` means the platform accepted the reply, `failed` means it did not, and `ambiguous` means it may have been sent. Repairing a delivery posts the saved reply without running the agent again, and it can post a duplicate. `chatDeliveries.list()` (Python `chat_deliveries.list()`) with a `since` lists failed and ambiguous deliveries across all connections at once.
+- If the agent finished but no reply appeared, list the connection's deliveries with REST `GET /v1/chat-connections/{id}/deliveries`; neither SDK exposes it. `confirmed` means the platform accepted the reply, `failed` means it did not, and `ambiguous` means it may have been sent. Repairing a delivery with REST `POST /v1/chat-connections/{id}/deliveries/{deliveryId}/repair` posts the saved reply without running the agent again, and it can post a duplicate. `chatDeliveries.list()` (Python `chat_deliveries.list()`) with a `since` lists failed and ambiguous deliveries across all connections at once.
 
 See [Slack and Telegram](recipes/slack-and-telegram.md) for setup.
 

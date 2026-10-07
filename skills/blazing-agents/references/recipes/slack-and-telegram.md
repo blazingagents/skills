@@ -188,11 +188,11 @@ def remove(client: BlazingAgents, chat_connection_id: str) -> None:
 
 ## Watch for failed deliveries
 
-`chatDeliveries.list()` (Python `chat_deliveries.list()`) is an attention feed: it lists failed and ambiguous deliveries across every connection, newest first, optionally bounded by `since`. Use it for an operator status view; each entry carries `connectionId`, `agentId`, and `platform` so you can tell which bot is affected. For everything else, list one connection's deliveries.
+`chatDeliveries.list()` (Python `chat_deliveries.list()`) is an attention feed: it lists failed and ambiguous deliveries across every connection, newest first, optionally bounded by `since`. Use it for an operator status view; each entry carries `connectionId`, `agentId`, and `platform` so you can tell which bot is affected. For pending and confirmed deliveries, or to repair one, use REST: `GET /v1/chat-connections/{id}/deliveries` and `POST /v1/chat-connections/{id}/deliveries/{deliveryId}/repair`; neither SDK exposes them.
 
 ## Go deeper
 
 - [Slack and Telegram](https://docs.blazingagents.com/platform/chat-integrations)
 - [TypeScript chat connections](https://docs.blazingagents.com/sdk/typescript/chat-integrations) and [Python chat connections](https://docs.blazingagents.com/sdk/python/chat-integrations)
-- [Chat connections REST API](https://docs.blazingagents.com/api-reference/rest-api/chat-connections), including listing and repairing deliveries when a finished reply never appeared
+- [Chat connections REST API](https://docs.blazingagents.com/api-reference/rest-api/chat-connections), including the REST-only per-connection deliveries list and repair for a finished reply that never appeared
 - [Tool approvals](https://docs.blazingagents.com/agents/tools/tool-approvals)

@@ -31,7 +31,7 @@ developer wants to write the agent loop step by step.
 | The product needs | Read |
 | --- | --- |
 | A first working agent, from API key to streamed answer | [Getting started](references/getting-started.md) |
-| Chat inside a web or mobile app, with saved history, a client-held queue, and steering | [Chat in your app](references/recipes/chat-in-your-app.md) |
+| Chat inside a web or mobile app, with saved history, a client-held queue, steering, and forks | [Chat in your app](references/recipes/chat-in-your-app.md) |
 | Many end users behind one Tenant key, an inbox of conversations | [Multi-user apps](references/recipes/multi-user-apps.md) |
 | Agent work with no user present, on demand or on a schedule | [Background and scheduled work](references/recipes/background-and-scheduled.md) |
 | JSON in a fixed shape, such as extraction or classification | [Structured output](references/recipes/structured-output.md) |
@@ -40,7 +40,7 @@ developer wants to write the agent loop step by step.
 | Remote or third-party tools, or tools for Tasks, generation, and bots | [External tools with MCP](references/recipes/external-tools-mcp.md) |
 | A person or a reviewing model approving risky tool calls | [Human approval](references/recipes/human-approval.md) |
 | The same agent in Slack or Telegram | [Slack and Telegram](references/recipes/slack-and-telegram.md) |
-| Better instructions, reusable prompts, Skills, Memory, rollback | [Shape agent behavior](references/recipes/shape-agent-behavior.md) |
+| Better instructions, reusable prompts, Skills, Memory, saved configuration snapshots | [Shape agent behavior](references/recipes/shape-agent-behavior.md) |
 | Usage dashboards, quotas, and billing end users for tokens | [Usage and billing](references/recipes/usage-dashboards.md) |
 
 ## Workflow
