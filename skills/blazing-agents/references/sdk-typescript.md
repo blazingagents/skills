@@ -346,6 +346,11 @@ A `SessionInput` is a steer receipt: `requestId`, `sequence`, `message`, `state`
 
 ### `client.workspaces`
 
+Workspace responses carry required `tier`, either `core` or `plus`. Create with `tier` to choose Plus; omission defaults to Core. Tier cannot change through updates. Create and attach another Workspace to change it, without automatic file copying. Core files are temporary. Plus resumes a native whole-root snapshot after controlled preserving shutdown, normally idle; processes and memory do not resume.
+
+Agent creation accepts `workspaceTier` in TypeScript or `workspace_tier` in Python only when creating a new Workspace. It defaults to Core and cannot combine with `workspaceId` or `workspace_id`, including an explicit Core request. An existing Workspace keeps its tier.
+
+
 | Method | HTTP | Returns / notes |
 | --- | --- | --- |
 | `create(body?)` | `POST /v1/workspaces` | `Workspace` |

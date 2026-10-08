@@ -8,7 +8,7 @@ The Agent's job produces a file: a report, a CSV export, a generated document, o
 
 ## How it works
 
-Every Agent has a Workspace: a private file system with a shell, rooted at `/workspace`. Files there outlive Sessions, so the next Session, Task run, or another Agent sharing the Workspace sees them. The Agent touches the Workspace only through Workspace Tools (`read`, `write`, `edit`, `grep`, `glob`, `bash`, `publish_artifacts`), which you switch on with the `workspace` tool group. Workspace files are private. To hand one to your app, the Agent calls `publish_artifacts`, which makes a fixed copy called an Artifact, attached to the Session that published it. Your backend lists Artifacts by Agent or Session and creates short-lived download URLs.
+Every Agent has a Workspace: a private file system with a shell, rooted at `/workspace`. Core files last until the Workspace stops. Choose Plus for snapshot resume after controlled shutdown when files must survive between conversations. The Agent touches the Workspace only through Workspace Tools (`read`, `write`, `edit`, `grep`, `glob`, `bash`, `publish_artifacts`), which you switch on with the `workspace` tool group. Workspace files are private. To hand one to your app, the Agent calls `publish_artifacts`, which makes a fixed copy called an Artifact, attached to the Session that published it. Your backend lists Artifacts by Agent or Session and creates short-lived download URLs.
 
 ## Build it
 
@@ -27,6 +27,7 @@ const agent = await client.agents.create({
   model: "openai/gpt-6-luna",
   instructions:
     "Write reports as Markdown files. When a file is finished, publish it with publish_artifacts.",
+  workspaceTier: "plus",
   tools: ["workspace"],
 });
 console.log(agent.id, agent.workspaceId);
@@ -45,6 +46,7 @@ agent = client.agents.create(
         "Write reports as Markdown files. "
         "When a file is finished, publish it with publish_artifacts."
     ),
+    workspace_tier="plus",
     tools=["workspace"],
 )
 print(agent.id, agent.workspace_id)
@@ -63,6 +65,7 @@ declare const reviewerAgentId: string;
 
 const workspace = await client.workspaces.create({
   name: "Release files",
+  tier: "plus",
   networkPolicy: { mode: "allowlist", allowedHosts: ["registry.npmjs.org"] },
 });
 
@@ -78,6 +81,7 @@ from blazing_agents import BlazingAgents
 def share_workspace(client: BlazingAgents, agent_ids: list[str]) -> str:
     workspace = client.workspaces.create(
         name="Release files",
+        tier="plus",
         network_policy={"mode": "allowlist", "allowed_hosts": ["registry.npmjs.org"]},
     )
     for agent_id in agent_ids:
