@@ -209,10 +209,10 @@ Signatures below drop `extra_headers` and `timeout`, which every method accepts.
 
 | Method | Returns |
 | --- | --- |
-| `create(*, name, provider_id=..., model=..., workspace_id=..., thinking_level=..., tools=..., instructions=..., memory_injection_enabled=..., auto_compaction=..., compaction_reserve_tokens=..., approval_in_chat=..., approval_in_tasks=..., user_id=..., metadata=..., mcp_connection_ids=...)` | `Agent` |
+| `create(*, name, provider_id=..., model=..., workspace_id=..., workspace_tier=..., thinking_level=..., tools=..., instructions=..., memory_injection_enabled=..., auto_compaction=..., compaction_reserve_tokens=..., approval_in_chat=..., approval_in_tasks=..., user_id=..., metadata=..., mcp_connection_ids=...)` | `Agent` |
 | `list(*, cursor=..., limit=..., user_id=..., workspace_id=...)` | `AgentsPage` (`.data`, `.next_cursor`) |
 | `get(agent_id)` | `Agent` |
-| `update(agent_id, *, <create fields except user_id>)` | `Agent` |
+| `update(agent_id, *, <create fields except user_id and workspace_tier>)` | `Agent` |
 | `delete(agent_id, *, include_artifacts: bool)` | `None` |
 | `disable(agent_id)` / `enable(agent_id)` | `Agent` |
 | `upload_avatar(agent_id, file, *, filename=None, content_type=None)` | `Agent` |
@@ -280,9 +280,13 @@ While a Turn runs, `chat()` raises `session_busy`; steer with `submit_input()` o
 
 ### `client.workspaces`
 
+Workspace responses carry required `tier`, either `core` or `plus`. Create with `tier` to choose Plus; omission defaults to Core. Tier cannot change through updates. Create and attach another Workspace to change it, without automatic file copying. Core files are temporary. Plus resumes a native whole-root snapshot after controlled preserving shutdown, normally idle; processes and memory do not resume.
+
+Agent creation accepts `workspaceTier` in TypeScript or `workspace_tier` in Python only when creating a new Workspace. It defaults to Core and cannot combine with `workspaceId` or `workspace_id`, including an explicit Core request. An existing Workspace keeps its tier.
+
 | Method | Returns |
 | --- | --- |
-| `create(*, name=..., user_id=..., metadata=..., network_policy=...)` | `Workspace` |
+| `create(*, tier=..., name=..., user_id=..., metadata=..., network_policy=...)` | `Workspace` |
 | `list(*, cursor=..., limit=..., user_id=...)` | `WorkspacesPage` |
 | `iter(*, cursor=..., limit=..., user_id=...)` | `Iterator[Workspace]` |
 | `get(*, workspace_id)` | `Workspace` |
