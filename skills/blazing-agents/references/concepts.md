@@ -88,7 +88,11 @@ Not the same as: session history, a knowledge base, or files. Memory is small fa
 
 ### Workspace
 
-A private, persistent file system and shell (`/workspace`) attached to an agent. Files survive between turns and sessions, and several agents can share one workspace. Creating an agent without `workspaceId` gives it a new one. It costs nothing until the agent first reads, writes, or runs something, and it needs the `workspace` tool group to be usable.
+A private file system and shell (`/workspace`) attached to an agent. Core is the default, with 1 GiB memory · Temporary workspace files. Plus provides 4 GiB memory · Native snapshot resume. Core loses files on stop. Plus saves the whole root filesystem before controlled preserving shutdown, normally idle. Processes and memory do not resume. Several agents can share one workspace.
+
+Creating an agent without `workspaceId` gives it a new workspace. `workspaceTier` chooses its tier, defaults to `core`, and cannot combine with `workspaceId`. Python uses `workspace_tier` and `workspace_id`. The tier is immutable. Create and attach another workspace to change it; files are not copied. Compute starts on the first file or shell operation. Enable the `workspace` tool group to use it.
+
+Plus keeps one current resume reference and its original image. There are no periodic or per-Turn saves. A failed save clears the reference, so the next start is clean. Physical snapshots expire 30 days after creation or latest restoration. Older snapshots may remain until expiry, including after workspace deletion.
 
 Not the same as: an Artifact. Workspace files are the agent's scratch space; your app cannot fetch them directly.
 
