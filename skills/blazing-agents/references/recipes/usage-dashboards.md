@@ -14,6 +14,27 @@ Billing is off until you turn on the tenant switch `monetizationEnabled`. Once o
 
 The usage report is not an invoice for Blazing Agents infrastructure. Execution and network charges can arrive after a Turn finishes. Charges already sent for billing keep their original records; later decreases create separate corrections. Keep this separate from the model-token billing you configure for your own users below.
 
+## Model spending limits
+
+For dollar allowances, use `tenant.getSpendingLimit` and
+`tenant.updateSpendingLimit` for the account, or the corresponding
+`agents` methods with `agentId`. Python provides `get_spending_limit` and
+`update_spending_limit`. These operations require unscoped Tenant authority.
+
+Set `amountUsd`, `resetStartDate`, and a `resetInterval` of `daily`, `weekly`,
+`biweekly`, or `monthly`. Python inputs use snake_case. Resets are at midnight
+UTC; biweekly means fourteen days. Monthly dates clamp to the month's last day
+without changing the original anchor. Future starts enforce immediately for a
+short first period. Schedule edits wait until the current period ends.
+
+Display the returned next reset, known spend, and reserved funds separately.
+The allowance counts supported model-token prices, excluding BA platform
+charges. It is an estimate, not an invoice ceiling. Missing pricing blocks
+requests under an active limit; unknown usage can retain a reservation. Never
+automatically retry `model_spending_limit_exceeded` or change the user's limits.
+See [the administrative reference](../../../ba-admin/references/typescript.md)
+for configuration and verification.
+
 ## Build it
 
 1. Load the dashboard with `usage.overview()`. Label the tenant-level user `""` and the model remainder bucket, whose `provider` and `model` are both `null`.
