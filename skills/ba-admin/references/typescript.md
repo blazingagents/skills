@@ -6,7 +6,7 @@ and its `ai@^7` peer dependency there. Do not add dependencies to the user's
 application solely for an administrative call.
 
 Agent and Prompt pagination and keyed Task creation require SDK 0.16.0 or
-later; the current release is 0.21.0. Session forking requires 0.21.0 or later. With an older installation, inspect the
+later; the current release is 0.22.0. Session forking requires 0.21.0 or later. With an older installation, inspect the
 installed declarations before using those operations.
 
 Skill file operations (`getFile`, `putFile`, and `deleteFile`) require SDK
@@ -53,8 +53,8 @@ These are the supported administrative methods:
 
 | Area | Read | Mutate |
 | --- | --- | --- |
-| Tenant | `client.tenant.get()` | `client.tenant.patch(body)` |
-| Agents | `list`, `get` | `create`, `update`, `delete` |
+| Tenant | `client.tenant.get()`, `getSpendingLimit()` | `client.tenant.patch(body)`, `updateSpendingLimit({ spendingLimit })` |
+| Agents | `list`, `get`, `getSpendingLimit({ agentId })` | `create`, `update`, `delete`, `updateSpendingLimit({ agentId, spendingLimit })` |
 | Providers | `client.providers.list()`, `get(id)`, `listModels(id)` | — |
 | Workspaces | `list`, `get` | `create`, `update`, `delete` |
 | Skills | `client.agent({ agentId }).skills.list/get/getFile` | `create`, `upload`, `putFile`, `deleteFile`, `copy`, `delete` |
@@ -125,3 +125,31 @@ const agentId = matches[0].id;
 For create and update bodies, import the relevant exported TypeScript type or
 inspect the SDK declaration before writing the object. This prevents the Skill
 from caching schemas that change with the public client.
+
+## Model spending limits
+
+These methods require TypeScript SDK 0.22.0 or later.
+
+Use an unscoped Tenant credential. Set an Agent allowance through
+`agents.updateSpendingLimit` or an account allowance through
+`tenant.updateSpendingLimit`. Read the same resource with `getSpendingLimit`
+before editing and after saving. The installed SDK types define the exact body.
+
+The configuration contains `amountUsd`, `resetStartDate`, and `resetInterval`.
+The interval is `daily`, `weekly`, `biweekly`, or `monthly`. Biweekly means
+fourteen days. Boundaries are midnight UTC. Monthly resets preserve the original
+day and use the last day in shorter months. A future start date applies the
+limit immediately until that date, then begins the regular schedule. A schedule
+change takes effect after the current period ends. Report `nextResetAt` and
+`scheduleChangeAt` from the saved response. Set `spendingLimit: null` only when
+the user requests disabling that scope.
+
+These dollar allowances count model tokens at supported model prices. They
+exclude BA platform charges and can differ from provider invoices. Missing
+pricing prevents admission under an active limit. Unknown dispatched usage or
+a crash can leave reserved funds unavailable. Report known `spentUsd` separately
+from `reservedUsd`; estimates are not an exact ceiling.
+
+If a call returns `model_spending_limit_exceeded`, report its scope, reason, and
+next reset. Do not automatically retry, raise the limit, disable enforcement,
+or replay completed tools. Resolve the user's requested change first.
