@@ -5,13 +5,8 @@ Otherwise create an isolated temporary Node project and install the current SDK
 and its `ai@^7` peer dependency there. Do not add dependencies to the user's
 application solely for an administrative call.
 
-Agent and Prompt pagination and keyed Task creation require SDK 0.16.0 or
-later; the current release is 0.23.0. Session forking requires 0.21.0 or later.
-With an older installation, inspect the installed declarations before using
-those operations.
-
-Skill file operations (`getFile`, `putFile`, and `deleteFile`) require SDK
-version 0.9.3 or later.
+Use SDK 0.23.0 or later. If the existing installation is older, use the
+temporary project with the current SDK instead.
 
 ## Program shape
 
@@ -56,12 +51,12 @@ These are the supported administrative methods:
 | --- | --- | --- |
 | Tenant | `client.tenant.get()`, `getSpendingLimit()` | `client.tenant.patch(body)`, `updateSpendingLimit({ spendingLimit })` |
 | Agents | `list`, `get`, `getSpendingLimit({ agentId })` | `create`, `update`, `delete`, `updateSpendingLimit({ agentId, spendingLimit })` |
-| Providers | `client.providers.list()`, `get(id)`, `listModels(id)` | — |
+| Providers | `client.providers.list()`, `get({ providerId })`, `listModels({ providerId })` | — |
 | Workspaces | `list`, `get` | `create`, `update`, `delete` |
 | Skills | `client.agent({ agentId }).skills.list/get/getFile` | `create`, `upload`, `putFile`, `deleteFile`, `copy`, `delete` |
 | Prompts | `client.prompts.list/get` | `create`, `update`, `delete` |
 | Tasks | `client.tasks.list/get/listRuns/getRun/runMessages` | `create`, `update`, `delete`, `createRun`, `cancelRun` |
-| Usage | `client.usage.overview()`, `get()`, `getForAgent(agentId)` | — |
+| Usage | `client.usage.overview()`, `get()`, `getForAgent({ agentId })` | — |
 | Sessions | `client.sessions.list/listLatest/get/messages/inputs` | `delete`; `fork` when requested |
 | Artifacts | `client.artifacts.list()` | — |
 
@@ -100,17 +95,17 @@ const agentId = matches[0].id;
 - `client.agents.delete({ agentId, includeArtifacts })` requires an explicit
   Artifact choice. Preserve Artifacts when the user explicitly chooses
   preservation; never infer deletion.
-- For a requested fork, resolve the source Session and explicit selected assistant
-  message. Require `branchable: true` from `sessions.messages()`. Call
-  `client.sessions.fork({ agentId, sessionId, messageId, idempotencyKey })` with a
-  key saved before sending; retry the same values after uncertain acknowledgement.
-  Never fork automatically. Verify the child with `sessions.get()` and
-  `sessions.messages()`, report its ID and informational `forkedFrom`, and leave
-  continuation to the user's requested workflow. Forking runs no model or Tool;
-  Workspace files and Memories stay shared/live. A changed message under one key
-  returns `idempotency_conflict`, unavailable selection `session_fork_unavailable`,
-  and replay of a deleted child `session_fork_deleted`.
-
+- Fork a Session only when the user asks. Resolve the source Session and the
+  assistant message the user selected, and require `branchable: true` on it in
+  `sessions.messages()`. Call
+  `client.sessions.fork({ agentId, sessionId, messageId, idempotencyKey })` with
+  a key chosen before sending, and retry the same values after an uncertain
+  response. Verify the child with `sessions.get()` and `sessions.messages()`,
+  then report its ID. Forking runs no model or Tool, and the child shares the
+  Agent's Workspace files and Memories with its source. `idempotency_conflict`
+  means the key was reused with another message, `session_fork_unavailable` means
+  the message is not branchable, and `session_fork_deleted` means the child for
+  that key was deleted.
 - `client.sessions.delete({ agentId, sessionId, deleteArtifacts })` has the same
   explicit Artifact-choice requirement.
 - Workspace deletion may return `"pending"`; report it as accepted cleanup,

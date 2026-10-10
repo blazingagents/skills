@@ -54,12 +54,13 @@ Use `BlazingAgentsError.isInstance(error)` instead of `instanceof`, which fails 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
 | `unauthorized` (401) | Missing, mistyped, revoked, or expired API key, or a dashboard-only call made with an API key. | [Replace the key](#401-unauthorized). |
-| 403 on chat or generation | `merchant_customer_unmapped`: your monetization guard found no customer for the turn's `userId`. | [Link the user](#403-on-a-turn). |
+| 403 | `merchant_customer_unmapped`: your monetization guard found no customer for the turn's `userId`. `forbidden`: a scoped client called a Tenant-only operation. | [Link the user or use an unscoped client](#403-responses). |
 | `not_found` (404) for an ID you just created | The key is for a different Tenant, or the ID is wrong. | [Check the key's Tenant](#404-for-a-resource-you-can-see-in-the-dashboard). |
 | `provider_required` (400) | The saved Agent configuration has no Provider and model. | [Set a Provider and model](#agent-without-a-provider-or-model). |
 | `model_not_found` (400) or `model_validation_unavailable` (503) | The model ID is not in the Provider's list, or the Provider could not be reached or rejected the stored key. | [Fix the model or the Provider](#provider-credential-rejected). |
 | Turn fails right after it starts, no code | The Provider rejected the stored key or the request during the turn. | [Replace the Provider](#provider-credential-rejected). |
 | `quota_exceeded` (429), or a Task run ends `blocked` | Usage in the current window is at or above your tenant quota. | [Wait for reset or raise the quota](#quota-blocked). |
+| `model_spending_limit_exceeded` (429), or a `data-model-spending-limit` part in a chat stream | The Agent's or the account's model spending limit has nothing left this period. | [Wait for the reset or change the limit](#quota-blocked). |
 | `subscription_required` or `usage_credit_required` (402) | No active plan, or no usage credit left. | [Fix billing](#quota-blocked). |
 | `rate_limited` (429) | Too many interactive turns at once, or resources created too fast. | [Back off](#quota-blocked). |
 | `session_busy` (409) | A tool approval is pending, an approval continuation is running, or another turn holds the Session. | [Decide approvals, then resend](#session-busy). |
@@ -87,12 +88,12 @@ The `Authorization` header is missing, or the key in it is revoked, expired, or 
 - Dashboard-only operations, such as creating API keys, starting checkout, or `mcpConnections.connect()`, also return `unauthorized` with an API key. Do those in the dashboard.
 - Retrying unchanged fails the same way.
 
-## 403 on a turn
+## 403 responses
 
-Blazing Agents has no separate "forbidden" code for API keys. A bad key is always `unauthorized` (401). `merchant_customer_unmapped` is a 403 returned when your monetization guard is on and the Turn's `userId` has no linked billing customer. Scoped requests can also return 403 when the operation is outside end-user scope; use an unscoped client only for authorized Tenant administration. Task runs in the same situation end as `blocked`.
+A bad API key is always `unauthorized` (401), never 403. A 403 has one of two codes:
 
-- Link the `userId` to a customer in your billing provider, then start the turn again.
-- If you did not intend to bill per user, turn off the guard.
+- `merchant_customer_unmapped`: your monetization guard is on and the Turn's `userId` has no linked billing customer. Link the `userId` to a customer in your billing provider, then start the turn again. If you did not intend to bill per user, turn off the guard. A Task run in this state ends `blocked`.
+- `forbidden`: a scoped request tried an operation outside end-user scope, such as Tenant settings or spending limits. Make that call from an unscoped client in trusted backend code.
 
 ## 404 for a resource you can see in the dashboard
 
@@ -127,6 +128,7 @@ To fix it:
 ## Quota blocked
 
 - `quota_exceeded` (429): usage in the current window reached the tenant quota you set, so the turn did not start. A Task run in the same situation ends as `blocked`, not `failed`. Wait for the reset day, or raise or remove the quota with `client.tenant.patch()` (`client.tenant.update()` in Python). Retrying before the reset fails the same way.
+- `model_spending_limit_exceeded` (429): a model spending limit stopped the turn. `error.details` holds the `scope` (`agent`, `tenant`, or `both`), the `reason`, and `nextResetAt`. Show those to the user and never retry automatically. Only a person who owns the limit should raise it; see [model spending limits](recipes/usage-dashboards.md#model-spending-limits).
 - `subscription_required` (402): no active paid plan. Choose one in the dashboard.
 - `usage_credit_required` (402): the plan is active but its usage credit is used up. Add credit in the dashboard.
 - `rate_limited` (429): too many interactive turns at once, or resources created faster than the creation rate limit. Wait for `Retry-After` when present, otherwise back off with jitter and cap your concurrency. This one is safe to retry.
@@ -148,7 +150,7 @@ Session inputs are steer attempts on the running turn. Each carries your `reques
 
 - A `requestId` must be 1 to 128 characters and not exactly `.` or `..`, because a URL would collapse those path segments. Generate IDs instead of deriving them from user text.
 - `input_idempotency_conflict` (409): the `requestId` was reused with a changed message, or the message ID was already used under another `requestId`. When an acknowledgement was lost, retry with the original `requestId` and payload, or list the Session's inputs. Never mint a new `requestId` for a message whose outcome you do not know; that can deliver it twice.
-- `steer_not_available` (409): the submit was refused because no turn could take a steer — the Session is idle, stopping, or waiting on a tool approval. Nothing was saved. Keep the message in your client and send it as ordinary chat once activity is `idle`.
+- `steer_not_available` (409): the submit was refused because no turn could take a steer: the Session is idle, stopping, or waiting on a tool approval. Nothing was saved. Keep the message in your client and send it as ordinary chat once activity is `idle`.
 - Read terminal receipts with `inputs({ includeCompleted: true })`. `inputs()` is receipts, not your queue. For receipt states and what to do with each, read [chat in your app](recipes/chat-in-your-app.md#how-it-works).
 - `message_id_conflict` (409) on chat: the submission contains a message ID already in accepted history, so it ran nothing. The message is already saved; reload history instead of resending. Regeneration may reuse IDs.
 

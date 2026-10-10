@@ -12,7 +12,7 @@ Every Turn records input tokens, output tokens, one request, and duration, toget
 
 Billing is off until you turn on the tenant switch `monetizationEnabled`. Once on, each Turn sends one `ba.model_tokens.v1` usage event to your Polar or Dodo account, tagged with the customer you linked to the Turn's `userId`. Your provider sets prices, allowances, and invoices; Blazing Agents never handles your customers' payments. An optional guard checks the user's plan or balance before each Turn starts. Billing setup is available in the TypeScript SDK and the dashboard; the Python SDK does not manage it yet.
 
-The usage report is not an invoice for Blazing Agents infrastructure. Execution and network charges can arrive after a Turn finishes. Charges already sent for billing keep their original records; later decreases create separate corrections. Keep this separate from the model-token billing you configure for your own users below.
+Do not present usage numbers as your Blazing Agents bill. BA charges its own execution and Workspace costs against your plan's usage credit, and those charges can arrive after a Turn finishes.
 
 ## Model spending limits
 
@@ -194,7 +194,7 @@ def customer_usage(signed_in_user_id: str) -> dict[str, object]:
     }
 ```
 
-4. Handle quota and plan outcomes. A chat or generation call that starts over the ceiling throws `quota_exceeded`, and one refused by the billing guard from step 7 throws a `merchant_*` code. A Task run stopped by the quota, your Blazing Agents plan, or the billing guard ends with status `blocked` instead of `failed`.
+4. Handle quota and plan outcomes. A chat or generation call that starts over the ceiling throws `quota_exceeded`, one stopped by a model spending limit throws `model_spending_limit_exceeded`, and one refused by the billing guard from step 7 throws a `merchant_*` code. A Task run stopped by the quota, your Blazing Agents plan, or the billing guard ends with status `blocked` instead of `failed`.
 
 ```ts
 import { BlazingAgents, BlazingAgentsError } from "@blazingagents/sdk";
@@ -216,6 +216,8 @@ export async function ask(prompt: string, userId: string): Promise<string> {
       switch (error.code) {
         case "quota_exceeded":
           return "Monthly limit reached.";
+        case "model_spending_limit_exceeded":
+          return "Spending limit reached. Try again after it resets.";
         case "subscription_required":
         case "usage_credit_required":
           return "Your Blazing Agents plan needs attention.";
@@ -252,6 +254,8 @@ def ask(prompt: str, user_id: str) -> str:
     except APIStatusError as error:
         if error.code == "quota_exceeded":
             return "Monthly limit reached."
+        if error.code == "model_spending_limit_exceeded":
+            return "Spending limit reached. Try again after it resets."
         if error.code in ("subscription_required", "usage_credit_required"):
             return "Your Blazing Agents plan needs attention."
         if error.code in (

@@ -12,8 +12,6 @@ Your backend authenticates the user and selects their scope. TypeScript `client.
 
 The API key still grants Tenant authority. Keep it on the backend. A body or list filter `userId` alone is only Attribution; an unscoped client retains access across the Tenant. Keep Tenant administration on that unscoped client in trusted code.
 
-These examples require the updated API and SDK contracts described in [the TypeScript reference](../sdk-typescript.md) and [the Python reference](../sdk-python.md). Confirm those prerequisites before adopting them.
-
 ## Build it
 
 1. Derive a scoped client from the session your backend verified. Keep that client local to the request.
@@ -97,7 +95,7 @@ const usage = await client.usage.get({ groupBy: "day" });
 console.log(history.data, inbox.data, prompts.data, usage.totals);
 ```
 
-List responses expose `data` and `nextCursor`. Pass the cursor back until it is `null`. Agent and Prompt pages default to 50 items and allow up to 100; the Prompt collection has no fixed 100-item cap. A name lookup must inspect every page and handle multiple matches.
+List responses expose `data` and `nextCursor`. Pass the cursor back until it is `null`. Agent and Prompt pages hold 50 items by default and 100 at most. A name lookup must inspect every page and handle multiple matches.
 
 ## Gotchas
 

@@ -8,7 +8,7 @@ Use a Task when no one is waiting for the answer: a nightly report, a weekly dig
 
 ## How it works
 
-A Task saves an Agent, a fixed `prompt`, and an optional schedule. Each execution is a Task run (`tr_...`) with its own status and a fresh Session, so its transcript holds only that run. You start a run yourself with an idempotency key, or the schedule starts it for you. A run moves `queued` → `running` and ends as `succeeded`, `failed`, `canceled`, or `blocked`. A Task runs one job at a time. No one can approve a tool call during a run, so the Agent's `approvalInTasks` policy decides what tools may do unattended.
+A Task saves an Agent, a fixed `prompt`, and an optional schedule. Each execution is a Task run (`tr_...`) with its own status and a fresh Session, so its transcript holds only that run. You start a run yourself with an idempotency key, or the schedule starts it for you. A run moves from `queued` to `running` and ends as `succeeded`, `failed`, `canceled`, or `blocked`. A Task runs one job at a time. No one can approve a tool call during a run, so the Agent's `approvalInTasks` policy decides what tools may do unattended.
 
 ## Build it
 
@@ -78,8 +78,6 @@ Pick the schedule kind that matches the need:
 | `once` | `{ at: "2026-10-02T09:00:00+01:00" }` (ISO 8601 with offset) | Once at that time |
 | `interval` | `{ everyMs: 900000 }` (Python `every_ms`, minimum 60000) | Every N ms from creation |
 | `cron` | `{ expression, timezone?, staggerMs? }` (five numeric fields, IANA zone, default `UTC`) | On the calendar |
-
-Each run saves the Agent's current configuration when queued. Read it with `getRun()` before the Session exists.
 
 3. Start a run on demand. Build the idempotency key from a stable business fact so a retried request returns the same run.
 
@@ -179,7 +177,7 @@ def wait_for_run(client: BlazingAgents, task_id: str, run_id: str) -> None:
     raise TimeoutError(f"Run {run_id} did not finish in time")
 ```
 
-Handle each final status: `succeeded` means the last assistant message is the result. `failed` carries `error`; redact it before logging. `blocked` means a quota, subscription, or usage credit check stopped the run before it started; it is not a failure and its transcript may be empty. `canceled` means you stopped it.
+Handle each final status: `succeeded` means the last assistant message is the result. `failed` carries `error`; redact it before logging. `blocked` means a quota or billing check stopped the run before it started; it is not a failure and its transcript may be empty. `canceled` means you stopped it.
 
 5. Find runs the schedule started. List a Task's runs, newest first, or list Tasks with each one's `latestRun` embedded.
 
@@ -240,9 +238,8 @@ Cancel asks the run to stop at its next safe point. Keep polling until a final s
 ## Gotchas
 
 - In TypeScript, pass `idempotencyKey` to `tasks.create()`, including when `submit: true`. The same key and original input return the same Task and initial run. Changed input or a deleted Task returns `idempotency_conflict` (409). Without a key, a retry creates another Task. Python currently supports keys on `submit()` only; reconcile Task creation before retrying it.
-- A run keeps the `userId`, `metadata`, and Agent configuration captured when it was queued. Editing the Task changes future runs only. `agentId` and `userId` cannot change; create a new Task instead.
-- A queued run keeps its saved `approvalInTasks` policy. A policy edit applies to future runs.
-- Designing a Task around `manual` approval does not work: the call is denied at once, and a run that still ends up waiting for a person fails. Grant the tools it needs with `full` in `approvalInTasks`, or move the step to chat.
+- A run keeps the `userId`, `metadata`, and Agent configuration (including `approvalInTasks`) captured when it was queued; read it with `getRun()`. Editing the Task or Agent changes later runs only. `agentId` and `userId` cannot change; create a new Task instead.
+- Designing a Task around `manual` approval does not work: the call is denied and the run continues without it. Grant the tools it needs with `full` in `approvalInTasks`, or move the step to chat.
 - Starting a run with a new key while another run is active returns `task_active_run_exists` (HTTP 409). Scheduled times that fall during an active run are skipped, and missed times are not caught up.
 - A run executes at most once. If it ends `failed` partway, tools may already have sent email or written files. Check for those effects before starting it again.
 - For an end-user request, derive a scoped client or header from verified sign-in as shown in [multi-user apps](multi-user-apps.md). An unscoped Tenant key reaches every Task.

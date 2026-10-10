@@ -36,8 +36,6 @@ npm install @blazingagents/sdk ai@^7
 pip install blazing-agents
 ```
 
-Confirm the installed SDK supports paginated Agent lists as described in [the TypeScript reference](sdk-typescript.md) or [Python reference](sdk-python.md).
-
 2. Check the connection. This lists the first page of Agents in your Tenant and changes nothing. A new Tenant already has 1 Agent, its admin Agent.
 
 ```ts
