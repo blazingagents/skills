@@ -51,12 +51,12 @@ These are the supported administrative methods:
 | --- | --- | --- |
 | Tenant | `client.tenant.get()`, `getSpendingLimit()` | `client.tenant.patch(body)`, `updateSpendingLimit({ spendingLimit })` |
 | Agents | `list`, `get`, `getSpendingLimit({ agentId })` | `create`, `update`, `delete`, `updateSpendingLimit({ agentId, spendingLimit })` |
-| Providers | `client.providers.list()`, `get(id)`, `listModels(id)` | — |
+| Providers | `client.providers.list()`, `get({ providerId })`, `listModels({ providerId })` | — |
 | Workspaces | `list`, `get` | `create`, `update`, `delete` |
 | Skills | `client.agent({ agentId }).skills.list/get/getFile` | `create`, `upload`, `putFile`, `deleteFile`, `copy`, `delete` |
 | Prompts | `client.prompts.list/get` | `create`, `update`, `delete` |
 | Tasks | `client.tasks.list/get/listRuns/getRun/runMessages` | `create`, `update`, `delete`, `createRun`, `cancelRun` |
-| Usage | `client.usage.overview()`, `get()`, `getForAgent(agentId)` | — |
+| Usage | `client.usage.overview()`, `get()`, `getForAgent({ agentId })` | — |
 | Sessions | `client.sessions.list/listLatest/get/messages/inputs` | `delete`; `fork` when requested |
 | Artifacts | `client.artifacts.list()` | — |
 

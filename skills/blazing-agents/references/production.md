@@ -169,6 +169,7 @@ A tenant quota sets a monthly token ceiling, a request ceiling, or both, with a 
 - Blazing Agents checks the quota before each turn starts. It does not stop a turn that crosses the ceiling while running, and concurrent turns can overshoot. Leave headroom.
 - A chat or generation call over the ceiling fails with `quota_exceeded` (HTTP 429). Show your user a clear message; retrying before the reset fails the same way.
 - A Task run over the ceiling ends as `blocked`, not `failed`, and never runs. Treat `blocked` as its own outcome in your alerts.
+- A model spending limit returns `model_spending_limit_exceeded` (HTTP 429) before streaming, or a `data-model-spending-limit` part when it stops a chat mid-stream. Show the user when it resets and never retry automatically; see [chat in your app](recipes/chat-in-your-app.md) and [model spending limits](recipes/usage-dashboards.md#model-spending-limits).
 - A missing plan or used-up usage credit returns `subscription_required` or `usage_credit_required` (HTTP 402) for chat and generation, and ends a Task run as `blocked`.
 - Too many interactive turns at once returns `rate_limited` (HTTP 429). Extra Task runs wait as `queued` instead.
 - Failed and cancelled turns are metered too. Keep them in your usage reports.

@@ -60,6 +60,7 @@ Use `BlazingAgentsError.isInstance(error)` instead of `instanceof`, which fails 
 | `model_not_found` (400) or `model_validation_unavailable` (503) | The model ID is not in the Provider's list, or the Provider could not be reached or rejected the stored key. | [Fix the model or the Provider](#provider-credential-rejected). |
 | Turn fails right after it starts, no code | The Provider rejected the stored key or the request during the turn. | [Replace the Provider](#provider-credential-rejected). |
 | `quota_exceeded` (429), or a Task run ends `blocked` | Usage in the current window is at or above your tenant quota. | [Wait for reset or raise the quota](#quota-blocked). |
+| `model_spending_limit_exceeded` (429), or a `data-model-spending-limit` part in a chat stream | The Agent's or the account's model spending limit has nothing left this period. | [Wait for the reset or change the limit](#quota-blocked). |
 | `subscription_required` or `usage_credit_required` (402) | No active plan, or no usage credit left. | [Fix billing](#quota-blocked). |
 | `rate_limited` (429) | Too many interactive turns at once, or resources created too fast. | [Back off](#quota-blocked). |
 | `session_busy` (409) | A tool approval is pending, an approval continuation is running, or another turn holds the Session. | [Decide approvals, then resend](#session-busy). |
@@ -127,6 +128,7 @@ To fix it:
 ## Quota blocked
 
 - `quota_exceeded` (429): usage in the current window reached the tenant quota you set, so the turn did not start. A Task run in the same situation ends as `blocked`, not `failed`. Wait for the reset day, or raise or remove the quota with `client.tenant.patch()` (`client.tenant.update()` in Python). Retrying before the reset fails the same way.
+- `model_spending_limit_exceeded` (429): a model spending limit stopped the turn. `error.details` holds the `scope` (`agent`, `tenant`, or `both`), the `reason`, and `nextResetAt`. Show those to the user and never retry automatically. Only a person who owns the limit should raise it; see [model spending limits](recipes/usage-dashboards.md#model-spending-limits).
 - `subscription_required` (402): no active paid plan. Choose one in the dashboard.
 - `usage_credit_required` (402): the plan is active but its usage credit is used up. Add credit in the dashboard.
 - `rate_limited` (429): too many interactive turns at once, or resources created faster than the creation rate limit. Wait for `Retry-After` when present, otherwise back off with jitter and cap your concurrency. This one is safe to retry.

@@ -284,6 +284,8 @@ means the result is `{ data, nextCursor }` (see [Pagination](#pagination)).
 | `removeAvatar({ agentId })` | `DELETE /v1/agents/{agentId}/avatar` | `Agent` |
 | `listMcpAttachments({ agentId })` | `GET /v1/agents/{agentId}/mcp-attachments` | `McpAttachmentsResponse` |
 | `updateMcpAttachment({ agentId, mcpConnectionId, ...body })` | `PATCH /v1/agents/{agentId}/mcp-attachments/{mcpConnectionId}` | `McpAttachmentResponse` |
+| `getSpendingLimit({ agentId })` | `GET /v1/agents/{agentId}/spending-limit` | `SpendingLimitResponse`. Unscoped client only. |
+| `updateSpendingLimit({ agentId, spendingLimit })` | `PUT /v1/agents/{agentId}/spending-limit` | `SpendingLimitResponse`. `null` disables the limit. See [model spending limits](recipes/usage-dashboards.md#model-spending-limits). |
 
 ### `client.providers`
 
@@ -425,6 +427,8 @@ A `SessionInput` is a steer receipt: `requestId`, `sequence`, `message`, `state`
 | --- | --- | --- |
 | `get()` | `GET /v1/tenant` | `TenantSettingsResponse` |
 | `patch(body)` | `PATCH /v1/tenant` | `TenantSettingsResponse` |
+| `getSpendingLimit()` | `GET /v1/tenant/spending-limit` | `SpendingLimitResponse` |
+| `updateSpendingLimit({ spendingLimit })` | `PUT /v1/tenant/spending-limit` | `SpendingLimitResponse`. `null` disables the account limit. |
 
 ### `client.usage`
 

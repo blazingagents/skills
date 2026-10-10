@@ -177,7 +177,7 @@ Not the same as: your BA bill or plan credit. Usage is what your turns consumed;
 
 An optional monthly ceiling on tokens, requests, or both that you set on your tenant, with a reset day. BA checks it before each turn; over the ceiling, chat and generation calls fail with `quota_exceeded` (HTTP 429) and task runs end as `blocked`. It is a safety valve against runaway loops: with no quota usage is unlimited, and a turn already running may overshoot.
 
-Not the same as: your plan, usage credit, or rate limits. A quota is a limit you choose, not one BA sells you.
+Not the same as: your plan, usage credit, or rate limits. A quota is a limit you choose, not one BA sells you. Also not a model spending limit, which is an estimated dollar allowance per agent or for the whole tenant that resets on its own schedule and fails turns with `model_spending_limit_exceeded`. See [model spending limits](recipes/usage-dashboards.md#model-spending-limits).
 
 ## How they fit together
 

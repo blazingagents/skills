@@ -194,7 +194,7 @@ def customer_usage(signed_in_user_id: str) -> dict[str, object]:
     }
 ```
 
-4. Handle quota and plan outcomes. A chat or generation call that starts over the ceiling throws `quota_exceeded`, and one refused by the billing guard from step 7 throws a `merchant_*` code. A Task run stopped by the quota, your Blazing Agents plan, or the billing guard ends with status `blocked` instead of `failed`.
+4. Handle quota and plan outcomes. A chat or generation call that starts over the ceiling throws `quota_exceeded`, one stopped by a model spending limit throws `model_spending_limit_exceeded`, and one refused by the billing guard from step 7 throws a `merchant_*` code. A Task run stopped by the quota, your Blazing Agents plan, or the billing guard ends with status `blocked` instead of `failed`.
 
 ```ts
 import { BlazingAgents, BlazingAgentsError } from "@blazingagents/sdk";
@@ -216,6 +216,8 @@ export async function ask(prompt: string, userId: string): Promise<string> {
       switch (error.code) {
         case "quota_exceeded":
           return "Monthly limit reached.";
+        case "model_spending_limit_exceeded":
+          return "Spending limit reached. Try again after it resets.";
         case "subscription_required":
         case "usage_credit_required":
           return "Your Blazing Agents plan needs attention.";
@@ -252,6 +254,8 @@ def ask(prompt: str, user_id: str) -> str:
     except APIStatusError as error:
         if error.code == "quota_exceeded":
             return "Monthly limit reached."
+        if error.code == "model_spending_limit_exceeded":
+            return "Spending limit reached. Try again after it resets."
         if error.code in ("subscription_required", "usage_credit_required"):
             return "Your Blazing Agents plan needs attention."
         if error.code in (

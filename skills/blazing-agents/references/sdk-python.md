@@ -219,6 +219,8 @@ Signatures below drop `extra_headers` and `timeout`, which every method accepts.
 | `remove_avatar(agent_id)` | `Agent` |
 | `list_mcp_attachments(agent_id)` | `McpAttachments` (`.mcp_attachments`) |
 | `update_mcp_attachment(agent_id, mcp_connection_id, *, forward_user_id=..., forwarded_metadata_keys=...)` | `McpAttachment` |
+| `get_spending_limit(agent_id)` | `SpendingLimitResponse` |
+| `update_spending_limit(agent_id, *, spending_limit)` | `SpendingLimitResponse`. `None` disables the limit. See [model spending limits](recipes/usage-dashboards.md#model-spending-limits). |
 
 `provider_id` and `model` go together on create. On update, `model` alone changes the model and `provider_id` needs `model`. `tools` is a list of `"workspace"`, `"write_todos"`, `"memory"`.
 
@@ -386,6 +388,7 @@ Failed and ambiguous deliveries across every connection, newest first (an attent
 | `usage.get_for_agent(agent_id, *, from_=..., to=..., session_id=..., user_id=..., group_by=..., limit=...)` | `Usage` |
 | `tenant.get()` | `TenantSettings` |
 | `tenant.update(*, name=..., quota=...)` | `TenantSettings` |
+| `tenant.get_spending_limit()` / `tenant.update_spending_limit(*, spending_limit)` | `SpendingLimitResponse` |
 
 `group_by` is `"day"`, `"agent"`, `"model"`, `"session"`, or `"user"`. `from_` has a trailing underscore because `from` is a Python keyword.
 
