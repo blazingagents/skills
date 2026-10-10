@@ -7,7 +7,7 @@ through lists, handle errors, and connect `useChat` to your own backend.
 The examples for user scope, paginated Agents and Prompts, session usage, and
 backend functions require TypeScript SDK 0.16.0 or newer. Session inputs
 (steering and Stop), multi-message chat, and approval continuations require
-0.20.0 or newer. Session forking requires 0.21.0 or newer. Check the installed package's types before using these APIs.
+0.20.0 or newer. Session forking requires 0.21.0 or newer, and model spending limits 0.23.0 or newer. Check the installed package's types before using these APIs.
 
 For the same surface in Python, read [Python SDK reference](sdk-python.md). For
 end-to-end builds, start from a recipe such as
@@ -346,10 +346,7 @@ A `SessionInput` is a steer receipt: `requestId`, `sequence`, `message`, `state`
 
 ### `client.workspaces`
 
-Workspace responses carry required `tier`, either `core` or `plus`. Create with `tier` to choose Plus; omission defaults to Core. Tier cannot change through updates. Create and attach another Workspace to change it, without automatic file copying. Core files are temporary. Plus resumes a native whole-root snapshot after controlled preserving shutdown, normally idle; processes and memory do not resume.
-
-Agent creation accepts `workspaceTier` in TypeScript or `workspace_tier` in Python only when creating a new Workspace. It defaults to Core and cannot combine with `workspaceId` or `workspace_id`, including an explicit Core request. An existing Workspace keeps its tier.
-
+`create({ tier })` takes `"core"` (default) or `"plus"`; `update` cannot change it. `agents.create({ workspaceTier })` sets the tier of the new Workspace it creates and is rejected together with `workspaceId`, even as `"core"`. See [Workspace](concepts.md#workspace) for choosing a tier.
 
 | Method | HTTP | Returns / notes |
 | --- | --- | --- |

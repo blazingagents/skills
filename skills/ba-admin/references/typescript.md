@@ -6,8 +6,9 @@ and its `ai@^7` peer dependency there. Do not add dependencies to the user's
 application solely for an administrative call.
 
 Agent and Prompt pagination and keyed Task creation require SDK 0.16.0 or
-later; the current release is 0.22.0. Session forking requires 0.21.0 or later. With an older installation, inspect the
-installed declarations before using those operations.
+later; the current release is 0.23.0. Session forking requires 0.21.0 or later.
+With an older installation, inspect the installed declarations before using
+those operations.
 
 Skill file operations (`getFile`, `putFile`, and `deleteFile`) require SDK
 version 0.9.3 or later.
@@ -128,31 +129,25 @@ from caching schemas that change with the public client.
 
 ## Model spending limits
 
-These methods require TypeScript SDK 0.22.0 or later.
+These methods require TypeScript SDK 0.23.0 or later.
 
 Use an unscoped Tenant credential. Set an Agent allowance through
 `agents.updateSpendingLimit` or an account allowance through
 `tenant.updateSpendingLimit`. Read the same resource with `getSpendingLimit`
 before editing and after saving. The installed SDK types define the exact body.
 
-The configuration contains `amountUsd`, `resetStartDate`, and `resetInterval`.
-The interval is `daily`, `weekly`, `biweekly`, or `monthly`. Biweekly means
-fourteen days. Boundaries are midnight UTC. Monthly resets preserve the original
-day and use the last day in shorter months. A future start date applies the
-limit immediately until that date, then begins the regular schedule. Saving a
-new schedule immediately recalculates `nextResetAt` from the new schedule and
-current server time. The current period keeps its start, `spentUsd`, and
-`reservedUsd`. Changing only `amountUsd` keeps the reset time and counters.
-Disabling and re-enabling within the same period also preserves the counters.
-Admitted work stays in the period that funded it. Report `nextResetAt` from the
-saved response. `scheduleChangeAt` is always `null`. Set `spendingLimit: null`
-only when the user requests disabling that scope.
+The configuration contains `amountUsd`, `resetStartDate` (a UTC date), and
+`resetInterval` (`daily`, `weekly`, `biweekly` for every fourteen days, or
+`monthly`). Resets happen at midnight UTC. Saving takes effect immediately and
+never clears money already spent or reserved in the current period. Set
+`spendingLimit: null` only when the user asks to disable that scope; the agent
+and account limits are independent.
 
-These dollar allowances count model tokens at supported model prices. They
-exclude BA platform charges and can differ from provider invoices. Missing
-pricing prevents admission under an active limit. Unknown dispatched usage or
-a crash can leave reserved funds unavailable. Report known `spentUsd` separately
-from `reservedUsd`; estimates are not an exact ceiling.
+After saving, report `amountUsd`, `nextResetAt`, and the period's `spentUsd`,
+`reservedUsd`, and `availableUsd` from the response. Tell the user the allowance
+is an estimate of model-token cost only: it excludes BA platform charges, and a
+request that costs more than estimated can exceed it. A non-zero `reservedUsd`
+with nothing running is released at the next reset.
 
 If a call returns `model_spending_limit_exceeded`, report its scope, reason, and
 next reset. Do not automatically retry, raise the limit, disable enforcement,

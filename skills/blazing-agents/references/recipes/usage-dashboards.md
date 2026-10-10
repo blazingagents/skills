@@ -21,24 +21,17 @@ For dollar allowances, use `tenant.getSpendingLimit` and
 `agents` methods with `agentId`. Python provides `get_spending_limit` and
 `update_spending_limit`. These operations require unscoped Tenant authority.
 
-Set `amountUsd`, `resetStartDate`, and a `resetInterval` of `daily`, `weekly`,
-`biweekly`, or `monthly`. Python inputs use snake_case. Resets are at midnight
-UTC; biweekly means fourteen days. Monthly dates clamp to the month's last day
-without changing the original anchor. Future starts enforce immediately until
-the start date. Saving a new schedule immediately recalculates `nextResetAt`
-from that schedule and current server time. It preserves the current period's
-start, known spend, and reserved funds. Changing only the amount keeps the reset
-time and counters. Disabling and re-enabling within the same period preserves
-the counters. Admitted work stays in the period that funded it.
-`scheduleChangeAt` is always `null`.
+A settings form needs `amountUsd`, `resetStartDate`, and a `resetInterval` of
+`daily`, `weekly`, `biweekly`, or `monthly` (snake_case in Python). Saving
+applies immediately and keeps the current period's spend.
 
-Display the returned next reset, known spend, and reserved funds separately.
-The allowance counts supported model-token prices, excluding BA platform
-charges. It is an estimate, not an invoice ceiling. Missing pricing blocks
-requests under an active limit; unknown usage can retain a reservation. Never
-automatically retry `model_spending_limit_exceeded` or change the user's limits.
-See [the administrative reference](../../../ba-admin/references/typescript.md)
-for configuration and verification.
+Render `period.spentUsd`, `period.reservedUsd`, `period.availableUsd`, and
+`nextResetAt` as separate values, and label the amount as an estimated
+model-token allowance, not an invoice total. Reserved money belongs to running
+or unresolved work and is released by the next reset at the latest. In chat,
+handle stops as described in [chat in your app](chat-in-your-app.md). Never
+automatically retry `model_spending_limit_exceeded` or change a limit the user
+did not ask to change.
 
 ## Build it
 

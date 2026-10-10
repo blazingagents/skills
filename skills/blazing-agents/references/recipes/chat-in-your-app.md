@@ -489,6 +489,7 @@ async def stop(body: StopBody, user_id: str = Depends(current_user)):
 ```tsx
 import { useChat } from "@ai-sdk/react";
 import { BlazingAgentsChatTransport, type SessionActivity, type SessionInput } from "@blazingagents/sdk";
+import { type SpendingLimitStopDetails, spendingLimitStopEventSchema } from "@blazingagents/sdk/contracts";
 import { type ChatTransport, DefaultChatTransport, generateId, type UIMessage } from "ai";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
@@ -573,6 +574,8 @@ function Chat({
   const [steered, setSteered] = useState<Steer[]>([]);
   const [activity, setActivity] = useState<SessionActivity>(idle);
   const [queueError, setQueueError] = useState<string>();
+  const [spendingStop, setSpendingStop] = useState<SpendingLimitStopDetails>();
+  const spendingStopped = useRef(false);
   const saved = useRef(conversation.messages);
   const sending = useRef(false);
   const sent = useRef("");
@@ -605,10 +608,22 @@ function Chat({
   const chat = useChat({
     transport,
     messages: conversation.messages,
+    onData(part) {
+      if (part.type !== "data-model-spending-limit") return;
+      const { code: _code, ...details } = spendingLimitStopEventSchema.parse(part).data;
+      spendingStopped.current = true;
+      setSpendingStop(details);
+    },
     onError(error) {
       sending.current = false;
       const unsent = pendingBatch.current;
       pendingBatch.current = [];
+      if (spendingStopped.current) {
+        // A mid-stream spending stop saves the completed output: show history, keep the draft empty.
+        reloadAfterTurn.current = true;
+        setReloads((count) => count + 1);
+        return;
+      }
       chat.setMessages(saved.current);
       if (error.message.includes("message_id_conflict")) {
         // Part of the batch is already saved: reload history, then requeue the rest.
@@ -622,6 +637,7 @@ function Chat({
     },
     onFinish({ messages, finishReason, isAbort, isError, isDisconnect }) {
       sending.current = false;
+      if (spendingStopped.current) return;
       if (isAbort || isError || isDisconnect || !finishReason || finishReason === "error") {
         const unsent = pendingBatch.current;
         pendingBatch.current = [];
@@ -695,6 +711,7 @@ function Chat({
         if (!response.ok) return;
         const body: { messages: UIMessage[] } = await response.json();
         reloadAfterTurn.current = false;
+        spendingStopped.current = false;
         saved.current = body.messages;
         setMessages(body.messages);
         const savedIds = new Set(body.messages.map((message) => message.id));
@@ -788,6 +805,7 @@ function Chat({
     sending.current = true;
     sent.current = text;
     setInput("");
+    setSpendingStop(undefined);
     chat.clearError();
     void chat.sendMessage({ id: generateId(), role: "user", parts: [{ type: "text", text }] });
   }
@@ -911,6 +929,12 @@ function Chat({
         <button type="button" onClick={regenerate} disabled={occupied || !hasAnswer}>Regenerate</button>
         <button type="button" onClick={onNewConversation} disabled={occupied}>New conversation</button>
       </form>
+      {spendingStop && (
+        <p role="alert">
+          The {spendingStop.scope === "agent" ? "agent's" : "account"} spending limit stopped this answer.{" "}
+          {spendingStop.nextResetAt && `It resets ${new Date(spendingStop.nextResetAt).toLocaleString()}.`}
+        </p>
+      )}
       {(queueError ?? chat.error) && <p role="alert">{queueError ?? chat.error?.message}</p>}
     </main>
   );
@@ -943,6 +967,7 @@ Creation returns 201. After a lost acknowledgement, reuse the exact key and sele
 - **Derive scope from verified sign-in.** BA enforces ownership when you use `forUser()`. A body `userId` alone grants no access.
 - **Save the Session ID.** The transport receives it before the answer streams. Keep it even when the first Turn fails or is stopped; the Session exists and is simply empty.
 - **Keep one transport per conversation.** `useChat` ignores a new transport after mount. To switch Session or user, remount `Chat` with a new `key`, as `ChatPage` does. Clear persisted user data on sign-out and abort requests from the old account.
+- **A spending stop keeps what finished.** A Turn stopped mid-stream by a model spending limit sends a `data-model-spending-limit` part (scope, reason, balances, `nextResetAt`) before the error. Messages and Tool results completed before the stop are saved, so `Chat` reloads history instead of restoring the draft. Never resend automatically: the user waits for the reset or a tenant admin changes the limit ([usage dashboards](usage-dashboards.md)). A stop before streaming starts is an ordinary HTTP 429 `model_spending_limit_exceeded` that saved nothing.
 - **Resend is a new attempt.** A failed or stopped Turn adds nothing to history, so the edited or unchanged text is simply sent again with a fresh message ID. Message IDs are not idempotency keys, but BA refuses one it has already saved.
 - **Tool effects can repeat.** Stop cancels the Turn but cannot undo a Tool call that already ran, and a resend can run it again (for example, a second email). Make side-effecting Tools safe to repeat or gate them with [human approval](human-approval.md).
 - **A lost response may already be saved.** A dropped connection is not proof of failure. Reload history before telling the user their message was lost.
