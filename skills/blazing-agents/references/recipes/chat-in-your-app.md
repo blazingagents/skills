@@ -931,7 +931,8 @@ function Chat({
       </form>
       {spendingStop && (
         <p role="alert">
-          The {spendingStop.scope === "agent" ? "agent's" : "account"} spending limit stopped this answer.{" "}
+          {{ agent: "The agent's spending limit", tenant: "The account spending limit", both: "The agent and account spending limits" }[spendingStop.scope]}{" "}
+          stopped this answer.{" "}
           {spendingStop.nextResetAt && `It resets ${new Date(spendingStop.nextResetAt).toLocaleString()}.`}
         </p>
       )}
