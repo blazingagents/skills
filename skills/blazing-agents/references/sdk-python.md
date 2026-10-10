@@ -1,6 +1,6 @@
 # Python SDK reference
 
-Use this page to call Blazing Agents from a Python backend: install the package, pick a client, run Turns, and find the method for every operation. Paginated Agent and Prompt lists and backend functions need 0.13.0 or newer; Session inputs (steering and Stop), multi-message chat, and approval continuations need 0.14.0 or newer. Session forking requires 0.15.0 or newer, the floor the install command below pins. Check the installed package before using them.
+Use this page to call Blazing Agents from a Python backend: install the package, pick a client, run Turns, and find the method for every operation. Paginated Agent and Prompt lists and backend functions need 0.13.0 or newer; Session inputs (steering and Stop), multi-message chat, and approval continuations need 0.14.0 or newer. Session forking requires 0.15.0 or newer, and model spending limits 0.17.0 or newer, the floor the install command below pins. Check the installed package before using them.
 
 For the same surface in TypeScript, read [TypeScript SDK reference](sdk-typescript.md). For end-to-end builds, start from a recipe such as [Add chat to your app](recipes/chat-in-your-app.md).
 
@@ -9,9 +9,9 @@ For the same surface in TypeScript, read [TypeScript SDK reference](sdk-typescri
 The PyPI package is `blazing-agents`. The import name is `blazing_agents`. It needs Python 3.11 or newer.
 
 ```bash
-pip install "blazing-agents>=0.15.0"
+pip install "blazing-agents>=0.17.0"
 # or
-uv add "blazing-agents>=0.15.0"
+uv add "blazing-agents>=0.17.0"
 ```
 
 Keep the Tenant API key in `BLAZING_AGENTS_API_KEY` on your backend. It can reach everything in your Tenant, so it never goes to a browser or mobile app.
@@ -280,9 +280,7 @@ While a Turn runs, `chat()` raises `session_busy`; steer with `submit_input()` o
 
 ### `client.workspaces`
 
-Workspace responses carry required `tier`, either `core` or `plus`. Create with `tier` to choose Plus; omission defaults to Core. Tier cannot change through updates. Create and attach another Workspace to change it, without automatic file copying. Core files are temporary. Plus resumes a native whole-root snapshot after controlled preserving shutdown, normally idle; processes and memory do not resume.
-
-Agent creation accepts `workspaceTier` in TypeScript or `workspace_tier` in Python only when creating a new Workspace. It defaults to Core and cannot combine with `workspaceId` or `workspace_id`, including an explicit Core request. An existing Workspace keeps its tier.
+`create(tier=...)` takes `"core"` (default) or `"plus"`; `update` cannot change it. `agents.create(workspace_tier=...)` sets the tier of the new Workspace it creates and is rejected together with `workspace_id`, even as `"core"`. See [Workspace](concepts.md#workspace) for choosing a tier.
 
 | Method | Returns |
 | --- | --- |

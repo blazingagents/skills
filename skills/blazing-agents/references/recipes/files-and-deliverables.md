@@ -8,7 +8,7 @@ The Agent's job produces a file: a report, a CSV export, a generated document, o
 
 ## How it works
 
-Every Agent has a Workspace: a private file system with a shell, rooted at `/workspace`. Core files last until the Workspace stops. Choose Plus for snapshot resume after controlled shutdown when files must survive between conversations. The Agent touches the Workspace only through Workspace Tools (`read`, `write`, `edit`, `grep`, `glob`, `bash`, `publish_artifacts`), which you switch on with the `workspace` tool group. Workspace files are private. To hand one to your app, the Agent calls `publish_artifacts`, which makes a fixed copy called an Artifact, attached to the Session that published it. Your backend lists Artifacts by Agent or Session and creates short-lived download URLs.
+Every Agent has a Workspace: a private file system with a shell, rooted at `/workspace`. Core files are lost when the Workspace stops after about 10 idle minutes; Plus keeps them across idle stops, which is why the examples below create Plus. The Agent touches the Workspace only through Workspace Tools (`read`, `write`, `edit`, `grep`, `glob`, `bash`, `publish_artifacts`), which you switch on with the `workspace` tool group. Workspace files are private. To hand one to your app, the Agent calls `publish_artifacts`, which makes a fixed copy called an Artifact, attached to the Session that published it. Your backend lists Artifacts by Agent or Session and creates short-lived download URLs.
 
 ## Build it
 
