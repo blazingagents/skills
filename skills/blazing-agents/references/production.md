@@ -11,7 +11,7 @@ Work through this checklist before real users reach your agent. Each item links 
 - [ ] [Retries are bounded and only repeat calls that are safe to repeat.](#retry-only-what-is-safe)
 - [ ] [Every Task run submission carries an idempotency key.](#submit-task-runs-with-an-idempotency-key)
 - [ ] [You log request IDs, error codes, and resource IDs, and nothing secret.](#log-request-ids-for-support)
-- [ ] [Read the saved configuration of each Session and Task run.](#inspect-agent-configuration)
+- [ ] [Your rollout plan accounts for Agent edits reaching only new work.](#agent-edits-reach-new-work-only)
 - [ ] [A tenant quota is set with headroom, and your code handles quota outcomes.](#set-quotas-and-handle-quota-outcomes)
 - [ ] [Your code handles Stop and Task run cancellation, including side effects that already happened.](#handle-cancellation)
 - [ ] [Your code reads limits from the docs instead of hard-coding them.](#respect-limits)
@@ -98,7 +98,7 @@ The SDKs never retry for you, except backend-function claim and result submissio
 | Operation | Safe to repeat? |
 | --- | --- |
 | Reads (`get`, `list`, `messages`, `usage`) | Yes. |
-| Creating a Task with the same idempotency key and unchanged input | Yes, including the original initial run when `submit: true`. This create option is available in TypeScript. |
+| Creating a Task with the same idempotency key and unchanged input | Yes, including the original initial run when `submit: true`. TypeScript only; the Python SDK takes no key on create. |
 | Starting a Task run with the same idempotency key | Yes. You get the same run back. |
 | Cancelling a Task run | Yes. Cancelling a finished run does nothing and returns no error. |
 | Continuing an approval round with the same decisions | Yes. Identical decisions are idempotent; the first `reason` wins. A changed decision returns `tool_approval_decision_conflict`, a running round returns `session_busy`, and a settled round returns `tool_approval_continuation_settled` without running again. |
@@ -156,13 +156,11 @@ Every response carries an `X-Request-Id` header. It is not in the JSON body. Rea
 - A request ID identifies one attempt. Each retry gets a new one. It is never an idempotency key.
 - Use `clientRequestId` to tie Blazing Agents requests to your own trace or order ID.
 
-## Inspect Agent configuration
+## Agent edits reach new work only
 
-A chat-created Session saves Agent configuration on its first Turn. A fork inherits the source's saved configuration at creation. Later Turns in that Session use those settings after Agent edits. Read them with `(await client.sessions.get({ agentId, sessionId })).agentConfig` (`client.sessions.get(agent_id=..., session_id=...).agent_config` in Python). Session lists and message pages stay compact.
+An edit to an Agent's model, instructions, tools, approval policies, or compaction settings applies to new Sessions, Task runs queued after the edit, and stateless calls. An existing Session keeps the configuration from its first Turn, and a queued Task run keeps the one from when it was queued. To roll a change out to users mid-conversation, start them a new Session.
 
-Each Task run saves the Agent configuration when queued. Read `(await client.tasks.getRun({ taskId, runId })).agentConfig` (`client.tasks.get_run(task_id, run_id).agent_config` in Python), even before the run starts a Session. The run's Session uses that same configuration. Stateless calls use the current Agent configuration at each invocation.
-
-Snapshots include model, instructions, tools, approval policies, and compaction settings. They hold Provider and MCP connection IDs, while keys and connection details remain current. Workspace attachment, Skills, and Memories also remain current. Local SDK callback functions are supplied per request, including on the approval continuation call.
+When a Session or run behaves as if an edit never happened, read the configuration it used: `(await client.sessions.get({ agentId, sessionId })).agentConfig` or `(await client.tasks.getRun({ taskId, runId })).agentConfig` (`agent_config` from `sessions.get()` or `tasks.get_run()` in Python). Provider keys, MCP credentials, Skills, Memories, and the Workspace are always current.
 
 ## Set quotas and handle quota outcomes
 
@@ -171,6 +169,7 @@ A tenant quota sets a monthly token ceiling, a request ceiling, or both, with a 
 - Blazing Agents checks the quota before each turn starts. It does not stop a turn that crosses the ceiling while running, and concurrent turns can overshoot. Leave headroom.
 - A chat or generation call over the ceiling fails with `quota_exceeded` (HTTP 429). Show your user a clear message; retrying before the reset fails the same way.
 - A Task run over the ceiling ends as `blocked`, not `failed`, and never runs. Treat `blocked` as its own outcome in your alerts.
+- A model spending limit returns `model_spending_limit_exceeded` (HTTP 429) before streaming, or a `data-model-spending-limit` part when it stops a chat mid-stream. Show the user when it resets and never retry automatically; see [chat in your app](recipes/chat-in-your-app.md) and [model spending limits](recipes/usage-dashboards.md#model-spending-limits).
 - A missing plan or used-up usage credit returns `subscription_required` or `usage_credit_required` (HTTP 402) for chat and generation, and ends a Task run as `blocked`.
 - Too many interactive turns at once returns `rate_limited` (HTTP 429). Extra Task runs wait as `queued` instead.
 - Failed and cancelled turns are metered too. Keep them in your usage reports.
@@ -182,11 +181,11 @@ For per-user usage reporting, read [usage dashboards](recipes/usage-dashboards.m
 Cancellation asks work to stop. It never undoes what already happened.
 
 - **Chat Stop:** pass your incoming request's `abortSignal` to `client.chat()` so a user's Stop ends the stream and asks Blazing Agents to cancel the turn. A cancelled turn adds nothing to the Session history, but the exchange may already have been saved before the Stop arrived, so reload history instead of guessing. Keep the user's draft so they can resend.
-- **Stop by Turn ID:** `sessions.stop()` (`client.sessions.stop()` in Python) records cancellation for the named Turn and returns `{ stoppedTurnId, activity }` immediately — keep reading the existing stream until the Turn settles. Messages waiting in your client's own queue still need a send. A steered message the agent already read may have had effects even though the stopped Turn is not saved; its receipt ends `not_placed` (safe to resend as chat) or `uncertain` (never resend automatically). Stop never decides a pending tool approval.
+- **Stop by Turn ID:** `sessions.stop()` (`client.sessions.stop()` in Python) records cancellation for the named Turn and returns `{ stoppedTurnId, activity }` immediately. Keep reading the existing stream until the Turn settles. Messages waiting in your client's own queue still need a send. A steered message the agent already read may have had effects even though the stopped Turn is not saved; its receipt ends `not_placed` (safe to resend as chat) or `uncertain` (never resend automatically). Stop never decides a pending tool approval.
 - **Task runs:** `client.tasks.cancelRun({ taskId, runId })` (`cancel_run` in Python) asks the run to stop at its next safe point. Keep polling until it reaches a final status. It may finish first, so handle `succeeded` as well as `canceled`.
 - **Time limits:** a run that hits its time limit stops and ends as `failed`.
 - **Side effects:** a Workspace command or file operation that already started may finish after cancellation. Files it changed and effects on remote systems stay. Plan to clean up or reverse them yourself.
-- **Disconnects:** closing a chat or continuation stream does not prove the turn stopped. Repeat `continueChat`/`continue_chat` with the same decisions to recover a dropped continuation — a running round returns `session_busy` and a settled one returns `tool_approval_continuation_settled` — then reload history. For an ordinary turn, pass the request's `abortSignal`, expect a disconnect to cancel the turn, and reload history, because the stream cannot be reconnected.
+- **Disconnects:** closing a chat or continuation stream does not prove the turn stopped. Repeat `continueChat`/`continue_chat` with the same decisions to recover a dropped continuation, then reload history. A running round returns `session_busy` and a settled one returns `tool_approval_continuation_settled`. For an ordinary turn, pass the request's `abortSignal`, expect a disconnect to cancel the turn, and reload history, because the stream cannot be reconnected.
 
 ## Respect limits
 

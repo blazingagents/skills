@@ -38,7 +38,7 @@ Not the same as a copy of every dependency. Provider keys, MCP credentials and c
 
 ### Admin Agent
 
-A BA-managed agent that every tenant gets automatically. It powers BA's built-in assistant for managing your tenant, and the dashboard marks it **Powers BA Assist for this tenant**. You choose its Provider, model, and thinking level; BA controls everything else, so you cannot rename, disable, or delete it, change its instructions or tools, or give it tasks (`admin_agent_managed`). It shows up in `agents.list()` next to your own agents, so keep your own record of the agent IDs your app created instead of treating every listed agent as yours.
+A BA-managed agent that every tenant gets automatically. It powers BA's built-in assistant for managing your tenant. You choose its Provider, model, and thinking level; BA controls everything else, so you cannot rename, disable, or delete it, change its instructions or tools, or give it tasks (`admin_agent_managed`). It shows up in `agents.list()` next to your own agents, so keep your own record of the agent IDs your app created instead of treating every listed agent as yours.
 
 Not the same as: an agent for your product. Build your own agents for your users.
 
@@ -46,19 +46,19 @@ Not the same as: an agent for your product. Build your own agents for your users
 
 ### Turn
 
-One run of an agent, whatever started it: a chat message, a one-off completion or structured-output call, a task run, a chat bot message, or a continuation after a tool approval. Every turn is checked against your quota before it runs and metered after, even if it fails or is stopped. A chat turn saves the user and assistant messages together only when it finishes successfully, so read the whole stream.
+One run of an agent, whatever started it: a chat message, a one-off completion or structured-output call, a task run, a chat bot message, or a continuation after a tool approval. Every turn is checked against your quota before it runs and metered after, even if it fails or is stopped. A chat turn saves its messages only when it finishes. A failed or stopped turn saves nothing, except that a model spending limit stop keeps the output completed before it. Read the whole stream.
 
 Not the same as: a Session. A session holds many turns; one-off generation runs a turn with no session at all.
 
 ### Session
 
-One stored conversation with one agent, identified by `ss_...`. BA returns the ID on the first chat call; pass it on the next call and the agent continues with the saved conversation context, so your backend never stores or replays messages. You need sessions for chat. A chat-created Session saves Agent configuration on its first Turn; a fork inherits the source snapshot at creation. Later Turns use those saved settings. When you delete a session you choose whether its Artifacts go too (`deleteArtifacts`, `delete_artifacts` in Python).
+One stored conversation with one agent, identified by `ss_...`. BA returns the ID on the first chat call; pass it on the next call and the agent continues with the saved conversation context, so your backend never stores or replays messages. You need sessions for chat. A session keeps the [Agent configuration](#agent-configuration-snapshot) from its first Turn. When you delete a session you choose whether its Artifacts go too (`deleteArtifacts`, `delete_artifacts` in Python).
 
 Not the same as: Memory. A session is one conversation; memories carry facts across conversations.
 
 ### Session fork
 
-A new idle Session copied through a selected accepted assistant reply (`branchable: true`). Continue with the child Session ID. See [Add a requested fork](recipes/chat-in-your-app.md#add-a-requested-fork).
+A new idle Session copied through a selected accepted assistant reply (`branchable: true`). It keeps the source's saved Agent configuration. Continue with the child Session ID. See [Add a requested fork](recipes/chat-in-your-app.md#add-a-requested-fork).
 
 ### Session input (steer)
 
@@ -141,7 +141,7 @@ Not the same as: a Turn or a Session. A task is a definition you run many times.
 
 ### Task run
 
-One background execution of a task (`tr_...`), started on demand or by its schedule. It moves through `queued`, `running`, then `succeeded`, `failed`, `canceled`, or `blocked`, and gets a fresh session holding its transcript. Its saved `agentConfig` is readable before the session exists. `blocked` means a quota, subscription, or credit check stopped it before running; it is not a failure. A task has at most one active run, and you pass an idempotency key so retries do not start duplicates.
+One background execution of a task (`tr_...`), started on demand or by its schedule. It moves through `queued`, `running`, then `succeeded`, `failed`, `canceled`, or `blocked`, and gets a fresh session holding its transcript. `blocked` means a quota or billing check stopped it before running; it is not a failure. A task has at most one active run, and you pass an idempotency key so retries do not start duplicates.
 
 Not the same as: a chat session. You poll or read a run later instead of streaming it to a user.
 
@@ -177,7 +177,7 @@ Not the same as: your BA bill or plan credit. Usage is what your turns consumed;
 
 An optional monthly ceiling on tokens, requests, or both that you set on your tenant, with a reset day. BA checks it before each turn; over the ceiling, chat and generation calls fail with `quota_exceeded` (HTTP 429) and task runs end as `blocked`. It is a safety valve against runaway loops: with no quota usage is unlimited, and a turn already running may overshoot.
 
-Not the same as: your plan, usage credit, or rate limits. A quota is a limit you choose, not one BA sells you.
+Not the same as: your plan, usage credit, or rate limits. A quota is a limit you choose, not one BA sells you. Also not a model spending limit, which is an estimated dollar allowance per agent or for the whole tenant that resets on its own schedule and fails turns with `model_spending_limit_exceeded`. See [model spending limits](recipes/usage-dashboards.md#model-spending-limits).
 
 ## How they fit together
 

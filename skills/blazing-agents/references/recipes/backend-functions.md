@@ -188,7 +188,6 @@ async def continue_after_decisions(
 - Never trust a user ID the model supplies as an argument; build handlers after authenticating and query with the verified ID.
 - Backend functions follow `approvalInChat.default`; per-tool `overrides` name built-in and MCP tools only.
 - Messages that waited while the Session was busy go out through your own `chat()` calls, so attach the same `functions` map to each one, including a multi-message `chat({ messages: [...] })`. See [chat in your app](chat-in-your-app.md).
-- An approval pause continues through `continueChat`/`continue_chat`, which records the complete round's decisions and streams the Turn. Without the `functions` map, approved function calls cannot run.
 - The saved schema wins on the continuation. A missing handler or invalid input reaches the agent as a tool error, so keep the continued handlers compatible with what chat advertised.
 - Each call has a 60-second deadline, including claim time. Cancellation is cooperative (pass `signal`, or check `cancelled` in a synchronous Python handler) and cannot undo a side effect that already happened.
 - The idempotency key marks one execution. A user resend gets a fresh key, so payments and other business operations need your own stable transaction ID.

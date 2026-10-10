@@ -4,10 +4,9 @@ Use this page to write backend TypeScript that calls Blazing Agents: install the
 client, run chat, text, and structured output, call every resource method, page
 through lists, handle errors, and connect `useChat` to your own backend.
 
-The examples for user scope, paginated Agents and Prompts, session usage, and
-backend functions require TypeScript SDK 0.16.0 or newer. Session inputs
-(steering and Stop), multi-message chat, and approval continuations require
-0.20.0 or newer. Session forking requires 0.21.0 or newer, and model spending limits 0.23.0 or newer. Check the installed package's types before using these APIs.
+This page matches `@blazingagents/sdk` 0.23.0. If the project pins an older
+version, upgrade it or check the installed types before using a method from
+this page.
 
 For the same surface in Python, read [Python SDK reference](sdk-python.md). For
 end-to-end builds, start from a recipe such as
@@ -285,6 +284,8 @@ means the result is `{ data, nextCursor }` (see [Pagination](#pagination)).
 | `removeAvatar({ agentId })` | `DELETE /v1/agents/{agentId}/avatar` | `Agent` |
 | `listMcpAttachments({ agentId })` | `GET /v1/agents/{agentId}/mcp-attachments` | `McpAttachmentsResponse` |
 | `updateMcpAttachment({ agentId, mcpConnectionId, ...body })` | `PATCH /v1/agents/{agentId}/mcp-attachments/{mcpConnectionId}` | `McpAttachmentResponse` |
+| `getSpendingLimit({ agentId })` | `GET /v1/agents/{agentId}/spending-limit` | `SpendingLimitResponse`. Unscoped client only. |
+| `updateSpendingLimit({ agentId, spendingLimit })` | `PUT /v1/agents/{agentId}/spending-limit` | `SpendingLimitResponse`. `null` disables the limit. See [model spending limits](recipes/usage-dashboards.md#model-spending-limits). |
 
 ### `client.providers`
 
@@ -310,19 +311,17 @@ means the result is `{ data, nextCursor }` (see [Pagination](#pagination)).
 
 ### `client.sessions`
 
-A chat-created Session saves Agent configuration on its first Turn; a fork inherits the source snapshot at creation. Read it with `(await client.sessions.get({ agentId, sessionId })).agentConfig`; message pages contain only transcript messages.
-
 | Method | HTTP | Returns / notes |
 | --- | --- | --- |
 | `list({ agentId, cursor?, limit?, userId? })` | `GET /v1/agents/{agentId}/sessions` | Page of Sessions (`id`, `userId`, `messageCount`, `lastMessagePreview`, `metadata`, timestamps). |
 | `listLatest({ byAgent?, userId?, cursor?, limit? })` | `GET /v1/sessions/latest` | Page of the Tenant's most recently updated Sessions, newest first. `byAgent: true` returns at most one per Agent. Items add `agentId`, `model`, `thinkingLevel`, `status`. |
 | `get({ agentId, sessionId })` | `GET /v1/agents/{agentId}/sessions/{sessionId}` | `SessionResponse` with `agentConfig` |
-| `fork({ agentId, sessionId, messageId, idempotencyKey, abortSignal? })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/fork` | `SessionResponse` with saved `agentConfig` and required nullable `forkedFrom` |
+| `fork({ agentId, sessionId, messageId, idempotencyKey, abortSignal? })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/fork` | `SessionResponse` for the child. `forkedFrom` names the source Session and message. |
 | `messages({ agentId, sessionId, cursor?, after?, limit? })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/messages` | `{ data: SessionMessage[], nextCursor, latestCursor }`; each message has required top-level `branchable`. `cursor` walks older pages; `after` walks forward. Not both. |
 | `delete({ agentId, sessionId, deleteArtifacts })` | `DELETE /v1/agents/{agentId}/sessions/{sessionId}` | `void`. `deleteArtifacts` is required. `session_busy` while any Turn runs. |
 | `toolApprovals({ agentId, sessionId })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/tool-approvals` | `{ data, continuation }`. Each item has `approvalId`, `toolName`, `input`, `decision` (`pending`, `approved`, `denied`). `continuation` is `{ id, state }` with state `waiting`, `running`, `succeeded`, or `failed`, or `null`. |
-| `submitInput({ agentId, sessionId, requestId, message })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/inputs` | `{ data: SessionInput, activity }`. Steers the running Turn; `steer_not_available` (409) when no Turn can take a steer (idle, stopping, or an approval wait) — keep the message in your own queue and send it as ordinary chat later. `requestId` is 1 to 128 characters and not `.` or `..`. Retrying with the same `requestId` and payload returns the same receipt; a changed payload returns `input_idempotency_conflict`. |
-| `inputs({ agentId, sessionId, includeCompleted?, limit?, cursor? })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/inputs` | `{ data, nextCursor, activity }` — steer receipts in submission order plus the Session's `activity`. Without `includeCompleted`, `data` lists only pending and `uncertain` receipts. Poll without `cursor` to see changes; `cursor` only pages. |
+| `submitInput({ agentId, sessionId, requestId, message })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/inputs` | `{ data: SessionInput, activity }`. Steers the running Turn; `steer_not_available` (409) when no Turn can take a steer (idle, stopping, or an approval wait); keep the message in your own queue and send it as ordinary chat later. `requestId` is 1 to 128 characters and not `.` or `..`. Retrying with the same `requestId` and payload returns the same receipt; a changed payload returns `input_idempotency_conflict`. |
+| `inputs({ agentId, sessionId, includeCompleted?, limit?, cursor? })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/inputs` | `{ data, nextCursor, activity }`: steer receipts in submission order plus the Session's `activity`. Without `includeCompleted`, `data` lists only pending and `uncertain` receipts. Poll without `cursor` to see changes; `cursor` only pages. |
 | `stop({ agentId, sessionId, turnId })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/stop` | `{ stoppedTurnId, activity }` as soon as the stop is recorded, not after the Turn ends. Keep reading the existing stream until it settles. An unknown `turnId` returns `not_found`; a settled Turn's ID never stops a later Turn. |
 
 Fork eligibility, retries, child contents, and error codes are in [Add a requested fork](recipes/chat-in-your-app.md#add-a-requested-fork).
@@ -428,6 +427,8 @@ A `SessionInput` is a steer receipt: `requestId`, `sequence`, `message`, `state`
 | --- | --- | --- |
 | `get()` | `GET /v1/tenant` | `TenantSettingsResponse` |
 | `patch(body)` | `PATCH /v1/tenant` | `TenantSettingsResponse` |
+| `getSpendingLimit()` | `GET /v1/tenant/spending-limit` | `SpendingLimitResponse` |
+| `updateSpendingLimit({ spendingLimit })` | `PUT /v1/tenant/spending-limit` | `SpendingLimitResponse`. `null` disables the account limit. |
 
 ### `client.usage`
 
@@ -653,8 +654,8 @@ For a native app that holds its own server-issued credentials and calls the SDK
 directly, `BlazingAgentsDirectChatTransport({ getClient, agentId, sessionId?,
 onSessionId?, functions? })` drives `useChat` through `client.chat()` without a
 relay. It also has `sendUserMessages({ messages, abortSignal? })`, which sends
-an explicit ordered batch as one ordinary Turn on the transport's Session —
-use it for the messages your client held while the Session was busy.
+an explicit ordered batch as one ordinary Turn on the transport's Session. Use
+it for the messages your client held while the Session was busy.
 
 ## Gotchas
 
@@ -662,8 +663,6 @@ use it for the messages your client held while the Session was busy.
   `client.agent({ agentId })`.
 - Calling `toResponse()` after `toStream()` (or twice) throws `stream_error`.
   Pick one accessor per result.
-- A Session saves its Agent configuration at the first Turn. Read it with
-  `client.sessions.get({ agentId, sessionId })`.
 - `agents.delete` requires `includeArtifacts` and `sessions.delete` requires
   `deleteArtifacts`. Decide explicitly whether published files go too.
 - Forgetting `userId` records every Turn at Tenant level, so per-user usage is

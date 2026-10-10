@@ -19,8 +19,8 @@ account so they can bill their customers.
 The developer's backend is the only thing that calls BA. It signs in its users,
 decides what each may access, and calls BA with the Tenant API key through the
 TypeScript SDK (`@blazingagents/sdk`) or the Python SDK (`blazing-agents`).
-Check the SDK references below for feature availability and release prerequisites. Chat streams use the Vercel AI SDK UI message
-format, so `useChat` renders them directly.
+Chat streams use the Vercel AI SDK UI message format, so `useChat` renders them
+directly.
 
 BA does not fit when the app must call it from the browser with no server, when
 every Turn must run inside the developer's own infrastructure, or when the
@@ -68,25 +68,26 @@ developer wants to write the agent loop step by step.
 - The API key selects the Tenant. Never accept a Tenant from a request.
 - Derive the user ID from verified sign-in. For user-owned resources, use
   TypeScript `client.forUser(userId)` so BA enforces ownership. Python can send
-  `X-BA-User-Id` through `extra_headers`. A body or filter `userId` alone is
-  Attribution. Keep unscoped clients for trusted Tenant operations. Read
+  `X-BA-User-Id` through `extra_headers`. A body or filter `userId` alone only
+  labels work and grants no access. Keep unscoped clients for trusted Tenant
+  operations. Read
   [Multi-user apps](references/recipes/multi-user-apps.md) for the boundary.
 - Relay BA's stream as it is. Return `toResponse()` in TypeScript or forward the
   raw bytes in Python, and let `useChat` render it. Never parse the stream by hand.
 - A chat Session ID arrives with the response. Save it and pass it back to
   continue the conversation. Load history from BA instead of storing your own copy.
 - A resend or retry is a new attempt, and tool side effects can happen again.
-  Use a stable idempotency key for Task creation with its initial run and for
-  later run submissions. Check SDK support before choosing the create path.
+  Use a stable idempotency key for every Task run submission, and for Task
+  creation with `submit: true` in TypeScript (Python has no key on create).
 - BA holds no message queue; waiting messages live in the client. While a Turn
-  runs, a new chat call fails with `session_busy` — either steer the Turn with
-  `sessions.submitInput()` / `submit_input()` or hold the message until the
-  Session is idle, then send it as ordinary chat (one per Turn, or several with
+  runs, a new chat call fails with `session_busy`. Either steer the Turn with
+  `sessions.submitInput()` / `submit_input()`, or hold the message until the
+  Session is idle and send it as ordinary chat (one per Turn, or several with
   `messages`). Take a message out of the local queue before sending it, keep
   each input's `requestId` until its receipt arrives, and never rebuild the
   queue from receipts or history.
-- Changing an Agent's Provider requires `model` in the same update. A Session
-  saves Agent configuration at its first Turn; a Task run saves it when queued.
-  Read `agentConfig` with `sessions.get()` or `tasks.getRun()`. Skills, Memory,
-  and Workspace attachment use their current state. Stateless generation calls
-  use current Agent settings for each request.
+- Changing an Agent's Provider requires `model` in the same update. Agent edits
+  reach new Sessions, Task runs queued afterwards, and stateless calls. An
+  existing Session keeps the settings from its first Turn, so start a new
+  Session to apply an edit. Read what a Session or run used as `agentConfig`
+  from `sessions.get()` or `tasks.getRun()`.
