@@ -1,6 +1,6 @@
 # Python SDK reference
 
-Use this page to call Blazing Agents from a Python backend: install the package, pick a client, run Turns, and find the method for every operation. It matches `blazing-agents` 0.17.0, the floor the install command below pins. If the project pins an older version, upgrade it or check the installed package before using a method from this page.
+Use this page to call Blazing Agents from a Python backend: install the package, pick a client, run Turns, and find the method for every operation. It matches `blazing-agents` 0.18.0, the floor the install command below pins. If the project pins an older version, upgrade it or check the installed package before using a method from this page.
 
 For the same surface in TypeScript, read [TypeScript SDK reference](sdk-typescript.md). For end-to-end builds, start from a recipe such as [Add chat to your app](recipes/chat-in-your-app.md).
 
@@ -9,9 +9,9 @@ For the same surface in TypeScript, read [TypeScript SDK reference](sdk-typescri
 The PyPI package is `blazing-agents`. The import name is `blazing_agents`. It needs Python 3.11 or newer.
 
 ```bash
-pip install "blazing-agents>=0.17.0"
+pip install "blazing-agents>=0.18.0"
 # or
-uv add "blazing-agents>=0.17.0"
+uv add "blazing-agents>=0.18.0"
 ```
 
 Keep the Tenant API key in `BLAZING_AGENTS_API_KEY` on your backend. It can reach everything in your Tenant, so it never goes to a browser or mobile app.
@@ -85,7 +85,7 @@ The client itself has five generation methods. Each call runs one metered Turn. 
 
 `chat()` returns a `ChatStream`. Iterating it yields the server's AI SDK UI message stream as raw SSE `bytes`, exactly as sent. The SDK does not decode it. Relay those bytes to your frontend, where `useChat` from `@ai-sdk/react` reads them.
 
-`stream.session_id` holds the `ss_...` ID before you read the body. Omit `session_id` to start a new Session. Store the returned ID with your user, send it to your frontend, and pass it back as `session_id` to continue that conversation.
+`stream.session_id` holds the `ss_...` ID before you read the body, and `stream.turn_id` holds the running `turn_...` ID for `sessions.stop()`. Omit `session_id` to start a new Session. Store the returned ID with your user, send it to your frontend, and pass it back as `session_id` to continue that conversation.
 
 ```python
 from blazing_agents import AsyncBlazingAgents, AsyncChatStream
@@ -259,7 +259,7 @@ Signatures below drop `extra_headers` and `timeout`, which every method accepts.
 
 `fork()` requires `message_id` and `idempotency_key`. `forked_from` is a `SessionForkedFrom` with `session_id` and `message_id`, or `None` for an ordinary Session. Fork eligibility, retries, child contents, and error codes are in [Add a requested fork](recipes/chat-in-your-app.md#add-a-requested-fork).
 
-While a Turn runs, `chat()` raises `session_busy`; steer with `submit_input()` or hold the message in your own client. `submit_input()` saves a steer receipt under your `request_id` (1 to 128 characters, not `.` or `..`) before returning. Retry with the same `request_id` and message; a changed payload raises `input_idempotency_conflict`. A receipt's `state` is `accepted`, `delivered`, `committed`, `not_placed`, or `uncertain`. Poll `inputs()` without `cursor` for changes; pass `include_completed=True` to see terminal receipts. `stop()` takes the `turn_id` from `activity`; an unknown `turn_id` raises `not_found`. All methods accept `extra_headers` for user scope. What each receipt state means and how the client-held queue works are in [Add chat to your app](recipes/chat-in-your-app.md#how-it-works).
+While a Turn runs, `chat()` raises `session_busy`; steer with `submit_input()` or hold the message in your own client. `submit_input()` saves a steer receipt under your `request_id` (1 to 128 characters, not `.` or `..`) before returning. Retry with the same `request_id` and message; a changed payload raises `input_idempotency_conflict`. A receipt's `state` is `accepted`, `delivered`, `committed`, `not_placed`, or `uncertain`. Poll `inputs()` without `cursor` for changes; pass `include_completed=True` to see terminal receipts. `stop()` takes `stream.turn_id` in the client that started the Turn, or the `turn_id` from `activity` anywhere else; an unknown `turn_id` raises `not_found`. All methods accept `extra_headers` for user scope. What each receipt state means and how the client-held queue works are in [Add chat to your app](recipes/chat-in-your-app.md#how-it-works).
 
 ### `client.tasks`
 

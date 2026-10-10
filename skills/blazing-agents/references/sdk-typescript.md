@@ -4,7 +4,7 @@ Use this page to write backend TypeScript that calls Blazing Agents: install the
 client, run chat, text, and structured output, call every resource method, page
 through lists, handle errors, and connect `useChat` to your own backend.
 
-This page matches `@blazingagents/sdk` 0.23.0. If the project pins an older
+This page matches `@blazingagents/sdk` 0.24.0. If the project pins an older
 version, upgrade it or check the installed types before using a method from
 this page.
 
@@ -128,6 +128,7 @@ the Turn as `userId`; omitting it records the Turn at Tenant level with no user.
 | Accessor | Returns | Notes |
 | --- | --- | --- |
 | `sessionId` | `Promise<string>` | The new server-minted `ss_` ID on create, or the ID you passed on resume. Store it to resume later. |
+| `turnId` | `Promise<string>` | The running `turn_` ID from the `X-BA-Turn-Id` header. Pass it to `sessions.stop()`. Rejects with `stream_error` when the header is missing or malformed. |
 | `toResponse()` | `Response` | An AI SDK UI message stream (SSE) you can return from a handler as-is. |
 | `toStream()` | `ReadableStream<Uint8Array>` | The same SSE bytes without building a `Response`. For runtimes whose `Response` cannot stream. |
 | `requestId` | `string \| undefined` | BA's `x-request-id`. Quote it in support requests. |
@@ -322,7 +323,7 @@ means the result is `{ data, nextCursor }` (see [Pagination](#pagination)).
 | `toolApprovals({ agentId, sessionId })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/tool-approvals` | `{ data, continuation }`. Each item has `approvalId`, `toolName`, `input`, `decision` (`pending`, `approved`, `denied`). `continuation` is `{ id, state }` with state `waiting`, `running`, `succeeded`, or `failed`, or `null`. |
 | `submitInput({ agentId, sessionId, requestId, message })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/inputs` | `{ data: SessionInput, activity }`. Steers the running Turn; `steer_not_available` (409) when no Turn can take a steer (idle, stopping, or an approval wait); keep the message in your own queue and send it as ordinary chat later. `requestId` is 1 to 128 characters and not `.` or `..`. Retrying with the same `requestId` and payload returns the same receipt; a changed payload returns `input_idempotency_conflict`. |
 | `inputs({ agentId, sessionId, includeCompleted?, limit?, cursor? })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/inputs` | `{ data, nextCursor, activity }`: steer receipts in submission order plus the Session's `activity`. Without `includeCompleted`, `data` lists only pending and `uncertain` receipts. Poll without `cursor` to see changes; `cursor` only pages. |
-| `stop({ agentId, sessionId, turnId })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/stop` | `{ stoppedTurnId, activity }` as soon as the stop is recorded, not after the Turn ends. Keep reading the existing stream until it settles. An unknown `turnId` returns `not_found`; a settled Turn's ID never stops a later Turn. |
+| `stop({ agentId, sessionId, turnId })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/stop` | `{ stoppedTurnId, activity }` as soon as the stop is recorded, not after the Turn ends. Keep reading the existing stream until it settles. An unknown `turnId` returns `not_found`; a settled Turn's ID never stops a later Turn. Take `turnId` from `ChatResult.turnId` or `onTurnId` in the client that started the Turn, or from `activity` anywhere else. |
 
 Fork eligibility, retries, child contents, and error codes are in [Add a requested fork](recipes/chat-in-your-app.md#add-a-requested-fork).
 
@@ -575,6 +576,7 @@ Options are AI SDK `HttpChatTransportInitOptions` (`api`, `headers`,
 
 - `sessionId`: an existing `ss_` ID to resume after a reload.
 - `onSessionId(id)`: called once when a new Session is created. Persist the ID.
+- `onTurnId(id)`: called with each response's running Turn ID. Keep it for `sessions.stop()`.
 
 ```tsx
 "use client";
@@ -652,7 +654,7 @@ database.
 
 For a native app that holds its own server-issued credentials and calls the SDK
 directly, `BlazingAgentsDirectChatTransport({ getClient, agentId, sessionId?,
-onSessionId?, functions? })` drives `useChat` through `client.chat()` without a
+onSessionId?, onTurnId?, functions? })` drives `useChat` through `client.chat()` without a
 relay. It also has `sendUserMessages({ messages, abortSignal? })`, which sends
 an explicit ordered batch as one ordinary Turn on the transport's Session. Use
 it for the messages your client held while the Session was busy.
