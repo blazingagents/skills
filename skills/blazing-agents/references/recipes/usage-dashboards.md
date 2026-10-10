@@ -24,8 +24,13 @@ For dollar allowances, use `tenant.getSpendingLimit` and
 Set `amountUsd`, `resetStartDate`, and a `resetInterval` of `daily`, `weekly`,
 `biweekly`, or `monthly`. Python inputs use snake_case. Resets are at midnight
 UTC; biweekly means fourteen days. Monthly dates clamp to the month's last day
-without changing the original anchor. Future starts enforce immediately for a
-short first period. Schedule edits wait until the current period ends.
+without changing the original anchor. Future starts enforce immediately until
+the start date. Saving a new schedule immediately recalculates `nextResetAt`
+from that schedule and current server time. It preserves the current period's
+start, known spend, and reserved funds. Changing only the amount keeps the reset
+time and counters. Disabling and re-enabling within the same period preserves
+the counters. Admitted work stays in the period that funded it.
+`scheduleChangeAt` is always `null`.
 
 Display the returned next reset, known spend, and reserved funds separately.
 The allowance counts supported model-token prices, excluding BA platform

@@ -139,10 +139,14 @@ The configuration contains `amountUsd`, `resetStartDate`, and `resetInterval`.
 The interval is `daily`, `weekly`, `biweekly`, or `monthly`. Biweekly means
 fourteen days. Boundaries are midnight UTC. Monthly resets preserve the original
 day and use the last day in shorter months. A future start date applies the
-limit immediately until that date, then begins the regular schedule. A schedule
-change takes effect after the current period ends. Report `nextResetAt` and
-`scheduleChangeAt` from the saved response. Set `spendingLimit: null` only when
-the user requests disabling that scope.
+limit immediately until that date, then begins the regular schedule. Saving a
+new schedule immediately recalculates `nextResetAt` from the new schedule and
+current server time. The current period keeps its start, `spentUsd`, and
+`reservedUsd`. Changing only `amountUsd` keeps the reset time and counters.
+Disabling and re-enabling within the same period also preserves the counters.
+Admitted work stays in the period that funded it. Report `nextResetAt` from the
+saved response. `scheduleChangeAt` is always `null`. Set `spendingLimit: null`
+only when the user requests disabling that scope.
 
 These dollar allowances count model tokens at supported model prices. They
 exclude BA platform charges and can differ from provider invoices. Missing
