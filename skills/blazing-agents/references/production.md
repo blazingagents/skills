@@ -98,7 +98,7 @@ The SDKs never retry for you, except backend-function claim and result submissio
 | Operation | Safe to repeat? |
 | --- | --- |
 | Reads (`get`, `list`, `messages`, `usage`) | Yes. |
-| Creating a Task with the same idempotency key and unchanged input | Yes, including the original initial run when `submit: true`. This create option is available in TypeScript. |
+| Creating a Task with the same idempotency key and unchanged input | Yes, including the original initial run when `submit: true`. TypeScript only; the Python SDK takes no key on create. |
 | Starting a Task run with the same idempotency key | Yes. You get the same run back. |
 | Cancelling a Task run | Yes. Cancelling a finished run does nothing and returns no error. |
 | Continuing an approval round with the same decisions | Yes. Identical decisions are idempotent; the first `reason` wins. A changed decision returns `tool_approval_decision_conflict`, a running round returns `session_busy`, and a settled round returns `tool_approval_continuation_settled` without running again. |
@@ -181,11 +181,11 @@ For per-user usage reporting, read [usage dashboards](recipes/usage-dashboards.m
 Cancellation asks work to stop. It never undoes what already happened.
 
 - **Chat Stop:** pass your incoming request's `abortSignal` to `client.chat()` so a user's Stop ends the stream and asks Blazing Agents to cancel the turn. A cancelled turn adds nothing to the Session history, but the exchange may already have been saved before the Stop arrived, so reload history instead of guessing. Keep the user's draft so they can resend.
-- **Stop by Turn ID:** `sessions.stop()` (`client.sessions.stop()` in Python) records cancellation for the named Turn and returns `{ stoppedTurnId, activity }` immediately — keep reading the existing stream until the Turn settles. Messages waiting in your client's own queue still need a send. A steered message the agent already read may have had effects even though the stopped Turn is not saved; its receipt ends `not_placed` (safe to resend as chat) or `uncertain` (never resend automatically). Stop never decides a pending tool approval.
+- **Stop by Turn ID:** `sessions.stop()` (`client.sessions.stop()` in Python) records cancellation for the named Turn and returns `{ stoppedTurnId, activity }` immediately. Keep reading the existing stream until the Turn settles. Messages waiting in your client's own queue still need a send. A steered message the agent already read may have had effects even though the stopped Turn is not saved; its receipt ends `not_placed` (safe to resend as chat) or `uncertain` (never resend automatically). Stop never decides a pending tool approval.
 - **Task runs:** `client.tasks.cancelRun({ taskId, runId })` (`cancel_run` in Python) asks the run to stop at its next safe point. Keep polling until it reaches a final status. It may finish first, so handle `succeeded` as well as `canceled`.
 - **Time limits:** a run that hits its time limit stops and ends as `failed`.
 - **Side effects:** a Workspace command or file operation that already started may finish after cancellation. Files it changed and effects on remote systems stay. Plan to clean up or reverse them yourself.
-- **Disconnects:** closing a chat or continuation stream does not prove the turn stopped. Repeat `continueChat`/`continue_chat` with the same decisions to recover a dropped continuation — a running round returns `session_busy` and a settled one returns `tool_approval_continuation_settled` — then reload history. For an ordinary turn, pass the request's `abortSignal`, expect a disconnect to cancel the turn, and reload history, because the stream cannot be reconnected.
+- **Disconnects:** closing a chat or continuation stream does not prove the turn stopped. Repeat `continueChat`/`continue_chat` with the same decisions to recover a dropped continuation, then reload history. A running round returns `session_busy` and a settled one returns `tool_approval_continuation_settled`. For an ordinary turn, pass the request's `abortSignal`, expect a disconnect to cancel the turn, and reload history, because the stream cannot be reconnected.
 
 ## Respect limits
 

@@ -69,7 +69,7 @@ Constructor options (all keyword-only):
 
 ## Run Turns: root generation methods
 
-The client itself has five generation methods. Each call runs one metered Turn. Give each call exactly one input: a literal `message` or `prompt`, or a saved Prompt through `prompt_id` with optional `variables`. `chat()` alone also takes `messages`, a list of user messages run in one Turn in order — use it for messages your client held while the Session was busy. Every method also accepts `user_id` plus `metadata` for Attribution to your end user.
+The client itself has five generation methods. Each call runs one metered Turn. Give each call exactly one input: a literal `message` or `prompt`, or a saved Prompt through `prompt_id` with optional `variables`. `chat()` alone also takes `messages`, a list of user messages run in one Turn in order. Use it for messages your client held while the Session was busy. Every method also accepts `user_id` plus `metadata` for Attribution to your end user.
 
 | Method | Returns | Use it for |
 | --- | --- | --- |
@@ -247,17 +247,17 @@ Signatures below drop `extra_headers` and `timeout`, which every method accepts.
 | `iter(*, agent_id, user_id=..., cursor=..., limit=...)` | `Iterator[Session]` |
 | `list_latest(*, user_id=..., cursor=..., limit=..., by_agent=None)` | `LatestSessionsPage` |
 | `get(agent_id, session_id)` | `SessionResponse` with `agent_config` |
-| `fork(agent_id, session_id, *, message_id, idempotency_key)` | `SessionResponse` with saved `agent_config` and required nullable `forked_from`; sync and async clients |
+| `fork(agent_id, session_id, *, message_id, idempotency_key)` | `SessionResponse` for the child. `forked_from` names the source Session and message. |
 | `messages(*, agent_id, session_id, cursor=..., after=..., limit=...)` | `SessionMessagesPage` |
 | `tool_approvals(*, agent_id, session_id)` | `ToolApprovals` (`.data`, `.continuation`) |
 | `submit_input(*, agent_id, session_id, request_id, message)` | `SessionInputResponse` (`.data`, `.activity`). Steers the running Turn; raises `steer_not_available` when no Turn can take it. |
-| `inputs(*, agent_id, session_id, include_completed=..., cursor=..., limit=...)` | `SessionInputsPage` (`.data`, `.next_cursor`, `.activity`) — steer receipts plus Session activity |
+| `inputs(*, agent_id, session_id, include_completed=..., cursor=..., limit=...)` | `SessionInputsPage` (`.data`, `.next_cursor`, `.activity`): steer receipts plus Session activity |
 | `stop(*, agent_id, session_id, turn_id)` | `SessionStopResponse` (`.stopped_turn_id`, `.activity`) as soon as the stop is recorded; keep reading the existing stream until the Turn settles |
 | `delete(*, agent_id, session_id, delete_artifacts: bool)` | `None` |
 
 `after=` returns only messages added later. A tool approval decision and its continuation update the assistant message in place, at the same position, possibly over several rounds. While any loaded message has a tool part in state `approval-requested` or `approval-responded`, poll the newest page without `after` and replace messages by ID; go back to `after` once none remain. Start an empty Session with `client.chat()` or copy an accepted conversation with `sessions.fork()`. `list_latest(by_agent=True)` returns at most one Session per Agent, which suits an inbox view.
 
-`fork()` requires `message_id` and `idempotency_key`. The explicit key overrides any case variant of `Idempotency-Key` in `extra_headers`. Other resource options, including `timeout`, remain available. The child's `forked_from` is a `SessionForkedFrom` with `session_id` and `message_id`, or `None` for an ordinary Session. Fork eligibility, retries, child contents, and error codes are in [Add a requested fork](recipes/chat-in-your-app.md#add-a-requested-fork).
+`fork()` requires `message_id` and `idempotency_key`. `forked_from` is a `SessionForkedFrom` with `session_id` and `message_id`, or `None` for an ordinary Session. Fork eligibility, retries, child contents, and error codes are in [Add a requested fork](recipes/chat-in-your-app.md#add-a-requested-fork).
 
 While a Turn runs, `chat()` raises `session_busy`; steer with `submit_input()` or hold the message in your own client. `submit_input()` saves a steer receipt under your `request_id` (1 to 128 characters, not `.` or `..`) before returning. Retry with the same `request_id` and message; a changed payload raises `input_idempotency_conflict`. A receipt's `state` is `accepted`, `delivered`, `committed`, `not_placed`, or `uncertain`. Poll `inputs()` without `cursor` for changes; pass `include_completed=True` to see terminal receipts. `stop()` takes the `turn_id` from `activity`; an unknown `turn_id` raises `not_found`. All methods accept `extra_headers` for user scope. What each receipt state means and how the client-held queue works are in [Add chat to your app](recipes/chat-in-your-app.md#how-it-works).
 

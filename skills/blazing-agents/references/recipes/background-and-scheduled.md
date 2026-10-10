@@ -8,7 +8,7 @@ Use a Task when no one is waiting for the answer: a nightly report, a weekly dig
 
 ## How it works
 
-A Task saves an Agent, a fixed `prompt`, and an optional schedule. Each execution is a Task run (`tr_...`) with its own status and a fresh Session, so its transcript holds only that run. You start a run yourself with an idempotency key, or the schedule starts it for you. A run moves `queued` → `running` and ends as `succeeded`, `failed`, `canceled`, or `blocked`. A Task runs one job at a time. No one can approve a tool call during a run, so the Agent's `approvalInTasks` policy decides what tools may do unattended.
+A Task saves an Agent, a fixed `prompt`, and an optional schedule. Each execution is a Task run (`tr_...`) with its own status and a fresh Session, so its transcript holds only that run. You start a run yourself with an idempotency key, or the schedule starts it for you. A run moves from `queued` to `running` and ends as `succeeded`, `failed`, `canceled`, or `blocked`. A Task runs one job at a time. No one can approve a tool call during a run, so the Agent's `approvalInTasks` policy decides what tools may do unattended.
 
 ## Build it
 
@@ -177,7 +177,7 @@ def wait_for_run(client: BlazingAgents, task_id: str, run_id: str) -> None:
     raise TimeoutError(f"Run {run_id} did not finish in time")
 ```
 
-Handle each final status: `succeeded` means the last assistant message is the result. `failed` carries `error`; redact it before logging. `blocked` means a quota, subscription, or usage credit check stopped the run before it started; it is not a failure and its transcript may be empty. `canceled` means you stopped it.
+Handle each final status: `succeeded` means the last assistant message is the result. `failed` carries `error`; redact it before logging. `blocked` means a quota or billing check stopped the run before it started; it is not a failure and its transcript may be empty. `canceled` means you stopped it.
 
 5. Find runs the schedule started. List a Task's runs, newest first, or list Tasks with each one's `latestRun` embedded.
 

@@ -12,7 +12,7 @@ Every Turn records input tokens, output tokens, one request, and duration, toget
 
 Billing is off until you turn on the tenant switch `monetizationEnabled`. Once on, each Turn sends one `ba.model_tokens.v1` usage event to your Polar or Dodo account, tagged with the customer you linked to the Turn's `userId`. Your provider sets prices, allowances, and invoices; Blazing Agents never handles your customers' payments. An optional guard checks the user's plan or balance before each Turn starts. Billing setup is available in the TypeScript SDK and the dashboard; the Python SDK does not manage it yet.
 
-The usage report is not an invoice for Blazing Agents infrastructure. Execution and network charges can arrive after a Turn finishes. Charges already sent for billing keep their original records; later decreases create separate corrections. Keep this separate from the model-token billing you configure for your own users below.
+Do not present usage numbers as your Blazing Agents bill. BA charges its own execution and Workspace costs against your plan's usage credit, and those charges can arrive after a Turn finishes.
 
 ## Model spending limits
 

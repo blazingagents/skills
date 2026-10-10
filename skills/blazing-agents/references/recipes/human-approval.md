@@ -8,7 +8,7 @@ Your agent can run shell commands, send email, change records, or call any tool 
 
 ## How it works
 
-Each Agent has two approval policies: `approvalInChat` for chat and stateless generation, and `approvalInTasks` for Tasks. Each policy has a `default` mode plus exact per-tool `overrides`; a matching override wins. When a chat Turn proposes a call that needs a person, the Turn pauses and Blazing Agents saves a pending approval on the Session. Your backend lists pending approvals, shows them to a reviewer, then sends the complete round of decisions in one call that records them and streams the continuing Turn — nothing runs until a client makes that call. You never run a built-in or MCP tool yourself; backend functions are the exception: their handlers run in your backend (see [backend functions](backend-functions.md)).
+Each Agent has two approval policies: `approvalInChat` for chat and stateless generation, and `approvalInTasks` for Tasks. Each policy has a `default` mode plus exact per-tool `overrides`; a matching override wins. When a chat Turn proposes a call that needs a person, the Turn pauses and Blazing Agents saves a pending approval on the Session. Your backend lists pending approvals, shows them to a reviewer, then sends the complete round of decisions in one call that records them and streams the continuing Turn. Nothing runs until a client makes that call. You never run a built-in or MCP tool yourself; backend functions are the exception: their handlers run in your backend (see [backend functions](backend-functions.md)).
 
 | Mode | What happens to a call |
 | --- | --- |
@@ -139,7 +139,7 @@ async def list_pending(
     return {"pending": pending}
 ```
 
-3. Send the complete round of decisions in one call — every pending approval from the same round needs an entry, and an incomplete, duplicate, or mixed set fails `validation_failed`. `continueChat` records the round and streams the rest of the Turn, so relay the response to the browser like a chat Turn. When the chat attached backend functions, pass the same `functions` map or the approved calls cannot run; see [backend functions](backend-functions.md). Identical retries are safe: the same decisions return the running or settled outcome without recording twice.
+3. Send the complete round of decisions in one call. Every pending approval from the same round needs an entry, and an incomplete, duplicate, or mixed set fails `validation_failed`. `continueChat` records the round and streams the rest of the Turn, so relay the response to the browser like a chat Turn. When the chat attached backend functions, pass the same `functions` map or the approved calls cannot run; see [backend functions](backend-functions.md). Identical retries are safe: the same decisions return the running or settled outcome without recording twice.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
@@ -266,10 +266,8 @@ In a `useChat` UI, `BlazingAgentsChatTransport` and `BlazingAgentsDirectChatTran
 - An override must name a tool the Agent has, once per policy. Removing a tool group or detaching a Connection makes a policy that names its tools invalid, so update the policy in the same change.
 - MCP overrides use the original tool name, not the generated name you see in saved messages. For display, prefer the approval's `tool` field, which has the MCP `connectionId` and original `name`; `toolName` is the generated name.
 - Send decisions through your backend with `continueChat`/`continue_chat`. Answering only in the browser with AI SDK `addToolApprovalResponse` does not resume the agent unless your chat path relays it, as described above.
-- While approvals are pending or a continuation runs, new chat messages and regeneration fail with `session_busy`, and a Session input fails with `steer_not_available` — an approval wait refuses steering, so a message sent then waits in your client's queue, as in [chat in your app](chat-in-your-app.md).
-- A dropped stream does not prove the continuation stopped. Retry `continueChat`/`continue_chat` with the same decisions: identical decisions are idempotent and the first recorded `reason` stays authoritative; a running round returns `session_busy` and a settled one returns `tool_approval_continuation_settled` without running again. `toolApprovals()` also returns the Session's current `continuation` with its `id` and `state` (`waiting`, `running`, `succeeded`, `failed`).
-- The continuation has no saved function definitions. If the chat attached backend functions, pass the same `functions` map on `continueChat`/`continue_chat` or the approved calls cannot run; see [backend functions](backend-functions.md).
-- The same decision sent twice is safe. Reversing a decision returns `tool_approval_decision_conflict` (409).
+- While approvals are pending or a continuation runs, new chat messages and regeneration fail with `session_busy`, and a Session input fails with `steer_not_available`. An approval wait refuses steering, so a message sent then waits in your client's queue, as in [chat in your app](chat-in-your-app.md).
+- A dropped stream does not prove the continuation stopped. Retry `continueChat`/`continue_chat` with the same decisions: identical decisions are idempotent and the first recorded `reason` stays authoritative, while reversing a decision returns `tool_approval_decision_conflict` (409). A running round returns `session_busy` and a settled one returns `tool_approval_continuation_settled` without running again. `toolApprovals()` also returns the Session's current `continuation` with its `id` and `state` (`waiting`, `running`, `succeeded`, `failed`).
 - Authenticate the reviewer and use the verified user scope from [multi-user apps](multi-user-apps.md) for approval reads, decisions, and continuation. Keep additional reviewer roles in your backend. The decision cannot change the saved call's arguments.
 - `auto` review runs on the Agent's model and counts toward the Turn's usage.
 

@@ -95,7 +95,7 @@ const usage = await client.usage.get({ groupBy: "day" });
 console.log(history.data, inbox.data, prompts.data, usage.totals);
 ```
 
-List responses expose `data` and `nextCursor`. Pass the cursor back until it is `null`. Agent and Prompt pages default to 50 items and allow up to 100; the Prompt collection has no fixed 100-item cap. A name lookup must inspect every page and handle multiple matches.
+List responses expose `data` and `nextCursor`. Pass the cursor back until it is `null`. Agent and Prompt pages hold 50 items by default and 100 at most. A name lookup must inspect every page and handle multiple matches.
 
 ## Gotchas
 
