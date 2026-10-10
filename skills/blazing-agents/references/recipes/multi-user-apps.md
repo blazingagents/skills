@@ -12,8 +12,6 @@ Your backend authenticates the user and selects their scope. TypeScript `client.
 
 The API key still grants Tenant authority. Keep it on the backend. A body or list filter `userId` alone is only Attribution; an unscoped client retains access across the Tenant. Keep Tenant administration on that unscoped client in trusted code.
 
-These examples require the updated API and SDK contracts described in [the TypeScript reference](../sdk-typescript.md) and [the Python reference](../sdk-python.md). Confirm those prerequisites before adopting them.
-
 ## Build it
 
 1. Derive a scoped client from the session your backend verified. Keep that client local to the request.

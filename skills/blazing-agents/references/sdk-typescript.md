@@ -4,10 +4,9 @@ Use this page to write backend TypeScript that calls Blazing Agents: install the
 client, run chat, text, and structured output, call every resource method, page
 through lists, handle errors, and connect `useChat` to your own backend.
 
-The examples for user scope, paginated Agents and Prompts, session usage, and
-backend functions require TypeScript SDK 0.16.0 or newer. Session inputs
-(steering and Stop), multi-message chat, and approval continuations require
-0.20.0 or newer. Session forking requires 0.21.0 or newer, and model spending limits 0.23.0 or newer. Check the installed package's types before using these APIs.
+This page matches `@blazingagents/sdk` 0.23.0. If the project pins an older
+version, upgrade it or check the installed types before using a method from
+this page.
 
 For the same surface in Python, read [Python SDK reference](sdk-python.md). For
 end-to-end builds, start from a recipe such as

@@ -19,8 +19,8 @@ account so they can bill their customers.
 The developer's backend is the only thing that calls BA. It signs in its users,
 decides what each may access, and calls BA with the Tenant API key through the
 TypeScript SDK (`@blazingagents/sdk`) or the Python SDK (`blazing-agents`).
-Check the SDK references below for feature availability and release prerequisites. Chat streams use the Vercel AI SDK UI message
-format, so `useChat` renders them directly.
+Chat streams use the Vercel AI SDK UI message format, so `useChat` renders them
+directly.
 
 BA does not fit when the app must call it from the browser with no server, when
 every Turn must run inside the developer's own infrastructure, or when the

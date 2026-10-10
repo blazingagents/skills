@@ -19,10 +19,10 @@ BA holds no queue. A message sent while the Session is busy either steers the ru
 ```bash
 npm install @blazingagents/sdk ai@^7 @ai-sdk/react zod
 # Python backend instead:
-pip install "blazing-agents>=0.15.0" fastapi uvicorn
+pip install "blazing-agents>=0.17.0" fastapi uvicorn
 ```
 
-These APIs need `@blazingagents/sdk` 0.20.0 or `blazing-agents` 0.14.0 or newer. [Forks](#add-a-requested-fork) need 0.21.0 or 0.15.0.
+This recipe needs `@blazingagents/sdk` 0.23.0 or `blazing-agents` 0.17.0 or newer.
 
 2. Add the backend. `chat` relays one Turn and `history` returns a Session's saved messages. Mount them as `POST /api/chat` and `GET /api/chat/history` in your framework. In the Next.js App Router, export them as `POST` and `GET` handlers. In Hono, call `chat(c.req.raw)`. Authenticate the user, select their Agent in backend code, validate the request body, then call the scoped client. `sessions.messages()` returns the native UIMessage page. Return its cursors with the messages for older-history controls.
 
@@ -942,8 +942,6 @@ function Chat({
 ```
 
 ## Add a requested fork
-
-Session forking requires `@blazingagents/sdk` 0.21.0 or `blazing-agents` 0.15.0 or newer.
 
 The chat example above does not ship a fork control. Fork only when the user asks for another conversation from a selected reply. Have your backend read the Session transcript under the signed-in user's scope and select the exact assistant message the user chose. Offer the action only for a message whose required top-level `branchable` is `true`; never infer eligibility from rendered parts, a completed-looking Tool part, or a closed stream. Eligibility comes from persisted transcript messages, and live stream chunks need not carry `branchable`. Earlier accepted replies stay eligible while the source runs. Streaming replies, pending approvals, and missing or not-yet-persisted replies are ineligible.
 

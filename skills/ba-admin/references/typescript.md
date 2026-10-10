@@ -5,13 +5,8 @@ Otherwise create an isolated temporary Node project and install the current SDK
 and its `ai@^7` peer dependency there. Do not add dependencies to the user's
 application solely for an administrative call.
 
-Agent and Prompt pagination and keyed Task creation require SDK 0.16.0 or
-later; the current release is 0.23.0. Session forking requires 0.21.0 or later.
-With an older installation, inspect the installed declarations before using
-those operations.
-
-Skill file operations (`getFile`, `putFile`, and `deleteFile`) require SDK
-version 0.9.3 or later.
+Use SDK 0.23.0 or later. If the existing installation is older, use the
+temporary project with the current SDK instead.
 
 ## Program shape
 
