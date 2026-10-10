@@ -309,8 +309,6 @@ means the result is `{ data, nextCursor }` (see [Pagination](#pagination)).
 
 ### `client.sessions`
 
-A chat-created Session saves Agent configuration on its first Turn; a fork inherits the source snapshot at creation. Read it with `(await client.sessions.get({ agentId, sessionId })).agentConfig`; message pages contain only transcript messages.
-
 | Method | HTTP | Returns / notes |
 | --- | --- | --- |
 | `list({ agentId, cursor?, limit?, userId? })` | `GET /v1/agents/{agentId}/sessions` | Page of Sessions (`id`, `userId`, `messageCount`, `lastMessagePreview`, `metadata`, timestamps). |
@@ -661,8 +659,6 @@ use it for the messages your client held while the Session was busy.
   `client.agent({ agentId })`.
 - Calling `toResponse()` after `toStream()` (or twice) throws `stream_error`.
   Pick one accessor per result.
-- A Session saves its Agent configuration at the first Turn. Read it with
-  `client.sessions.get({ agentId, sessionId })`.
 - `agents.delete` requires `includeArtifacts` and `sessions.delete` requires
   `deleteArtifacts`. Decide explicitly whether published files go too.
 - Forgetting `userId` records every Turn at Tenant level, so per-user usage is

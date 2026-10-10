@@ -9,7 +9,7 @@ If you instead want the Agent to take actions against outside systems, read [Con
 
 ## How it works
 
-An Agent holds configuration: Provider and model, thinking level, instructions, Tool groups, approval policies, Memory injection, and compaction settings. A Session saves the configuration at its first Turn; a Task run saves it when queued. Stateless calls use the current Agent configuration. Three things live beside the Agent and always use their current state: Prompts (saved input templates with `{{variables}}`), runtime Skills (instruction packages the Agent loads on demand), and Memory (short notes scoped to the Agent and optionally to one `userId`). Instructions shape every Turn; a Prompt is the input for one Turn.
+An Agent holds configuration: Provider and model, thinking level, instructions, Tool groups, approval policies, Memory injection, and compaction settings. Edits reach new Sessions, Task runs queued afterwards, and stateless calls; an existing Session keeps the configuration from its first Turn. Three things live beside the Agent and always use their current state: Prompts (saved input templates with `{{variables}}`), runtime Skills (instruction packages the Agent loads on demand), and Memory (short notes scoped to the Agent and optionally to one `userId`). Instructions shape every Turn; a Prompt is the input for one Turn.
 
 ## Build it
 
@@ -230,7 +230,6 @@ client.agents.enable(agent_id)
 - Skills and Memory use their current content; the saved Agent configuration holds neither file contents nor notes.
 - Memory `userId` labels notes. Use the verified user scope from [multi-user apps](multi-user-apps.md) for user-owned Memory and Turns. A scoped Turn sees that user's notes. An unscoped Turn retains the Tenant's general Memory behavior.
 - Memory search matches words, not meaning. Each Agent keeps up to 500 notes and evicts the least recently used one when full.
-- An existing Session keeps its saved configuration. Start a new Session to use Agent edits.
 - A disabled Agent rejects new Turns with `agent_disabled`, and scheduled Task runs are skipped, not queued.
 
 ## Check it works

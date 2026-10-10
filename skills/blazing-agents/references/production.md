@@ -11,7 +11,7 @@ Work through this checklist before real users reach your agent. Each item links 
 - [ ] [Retries are bounded and only repeat calls that are safe to repeat.](#retry-only-what-is-safe)
 - [ ] [Every Task run submission carries an idempotency key.](#submit-task-runs-with-an-idempotency-key)
 - [ ] [You log request IDs, error codes, and resource IDs, and nothing secret.](#log-request-ids-for-support)
-- [ ] [Read the saved configuration of each Session and Task run.](#inspect-agent-configuration)
+- [ ] [Your rollout plan accounts for Agent edits reaching only new work.](#agent-edits-reach-new-work-only)
 - [ ] [A tenant quota is set with headroom, and your code handles quota outcomes.](#set-quotas-and-handle-quota-outcomes)
 - [ ] [Your code handles Stop and Task run cancellation, including side effects that already happened.](#handle-cancellation)
 - [ ] [Your code reads limits from the docs instead of hard-coding them.](#respect-limits)
@@ -156,13 +156,11 @@ Every response carries an `X-Request-Id` header. It is not in the JSON body. Rea
 - A request ID identifies one attempt. Each retry gets a new one. It is never an idempotency key.
 - Use `clientRequestId` to tie Blazing Agents requests to your own trace or order ID.
 
-## Inspect Agent configuration
+## Agent edits reach new work only
 
-A chat-created Session saves Agent configuration on its first Turn. A fork inherits the source's saved configuration at creation. Later Turns in that Session use those settings after Agent edits. Read them with `(await client.sessions.get({ agentId, sessionId })).agentConfig` (`client.sessions.get(agent_id=..., session_id=...).agent_config` in Python). Session lists and message pages stay compact.
+An edit to an Agent's model, instructions, tools, approval policies, or compaction settings applies to new Sessions, Task runs queued after the edit, and stateless calls. An existing Session keeps the configuration from its first Turn, and a queued Task run keeps the one from when it was queued. To roll a change out to users mid-conversation, start them a new Session.
 
-Each Task run saves the Agent configuration when queued. Read `(await client.tasks.getRun({ taskId, runId })).agentConfig` (`client.tasks.get_run(task_id, run_id).agent_config` in Python), even before the run starts a Session. The run's Session uses that same configuration. Stateless calls use the current Agent configuration at each invocation.
-
-Snapshots include model, instructions, tools, approval policies, and compaction settings. They hold Provider and MCP connection IDs, while keys and connection details remain current. Workspace attachment, Skills, and Memories also remain current. Local SDK callback functions are supplied per request, including on the approval continuation call.
+When a Session or run behaves as if an edit never happened, read the configuration it used: `(await client.sessions.get({ agentId, sessionId })).agentConfig` or `(await client.tasks.getRun({ taskId, runId })).agentConfig` (`agent_config` from `sessions.get()` or `tasks.get_run()` in Python). Provider keys, MCP credentials, Skills, Memories, and the Workspace are always current.
 
 ## Set quotas and handle quota outcomes
 

@@ -85,8 +85,8 @@ developer wants to write the agent loop step by step.
   `messages`). Take a message out of the local queue before sending it, keep
   each input's `requestId` until its receipt arrives, and never rebuild the
   queue from receipts or history.
-- Changing an Agent's Provider requires `model` in the same update. A Session
-  saves Agent configuration at its first Turn; a Task run saves it when queued.
-  Read `agentConfig` with `sessions.get()` or `tasks.getRun()`. Skills, Memory,
-  and Workspace attachment use their current state. Stateless generation calls
-  use current Agent settings for each request.
+- Changing an Agent's Provider requires `model` in the same update. Agent edits
+  reach new Sessions, Task runs queued afterwards, and stateless calls. An
+  existing Session keeps the settings from its first Turn, so start a new
+  Session to apply an edit. Read what a Session or run used as `agentConfig`
+  from `sessions.get()` or `tasks.getRun()`.

@@ -52,13 +52,13 @@ Not the same as: a Session. A session holds many turns; one-off generation runs 
 
 ### Session
 
-One stored conversation with one agent, identified by `ss_...`. BA returns the ID on the first chat call; pass it on the next call and the agent continues with the saved conversation context, so your backend never stores or replays messages. You need sessions for chat. A chat-created Session saves Agent configuration on its first Turn; a fork inherits the source snapshot at creation. Later Turns use those saved settings. When you delete a session you choose whether its Artifacts go too (`deleteArtifacts`, `delete_artifacts` in Python).
+One stored conversation with one agent, identified by `ss_...`. BA returns the ID on the first chat call; pass it on the next call and the agent continues with the saved conversation context, so your backend never stores or replays messages. You need sessions for chat. A session keeps the [Agent configuration](#agent-configuration-snapshot) from its first Turn. When you delete a session you choose whether its Artifacts go too (`deleteArtifacts`, `delete_artifacts` in Python).
 
 Not the same as: Memory. A session is one conversation; memories carry facts across conversations.
 
 ### Session fork
 
-A new idle Session copied through a selected accepted assistant reply (`branchable: true`). Continue with the child Session ID. See [Add a requested fork](recipes/chat-in-your-app.md#add-a-requested-fork).
+A new idle Session copied through a selected accepted assistant reply (`branchable: true`). It keeps the source's saved Agent configuration. Continue with the child Session ID. See [Add a requested fork](recipes/chat-in-your-app.md#add-a-requested-fork).
 
 ### Session input (steer)
 
@@ -141,7 +141,7 @@ Not the same as: a Turn or a Session. A task is a definition you run many times.
 
 ### Task run
 
-One background execution of a task (`tr_...`), started on demand or by its schedule. It moves through `queued`, `running`, then `succeeded`, `failed`, `canceled`, or `blocked`, and gets a fresh session holding its transcript. Its saved `agentConfig` is readable before the session exists. `blocked` means a quota, subscription, or credit check stopped it before running; it is not a failure. A task has at most one active run, and you pass an idempotency key so retries do not start duplicates.
+One background execution of a task (`tr_...`), started on demand or by its schedule. It moves through `queued`, `running`, then `succeeded`, `failed`, `canceled`, or `blocked`, and gets a fresh session holding its transcript. `blocked` means a quota or billing check stopped it before running; it is not a failure. A task has at most one active run, and you pass an idempotency key so retries do not start duplicates.
 
 Not the same as: a chat session. You poll or read a run later instead of streaming it to a user.
 
