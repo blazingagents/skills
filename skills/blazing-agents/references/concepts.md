@@ -88,11 +88,14 @@ Not the same as: session history, a knowledge base, or files. Memory is small fa
 
 ### Workspace
 
-A private file system and shell (`/workspace`) attached to an agent. Core is the default, with 1 GiB memory · Temporary workspace files. Plus provides 4 GiB memory · Native snapshot resume. Core loses files on stop. Plus saves the whole root filesystem before controlled preserving shutdown, normally idle. Processes and memory do not resume. Several agents can share one workspace.
+A private file system and shell (`/workspace`) attached to an agent. Several agents can share one. The agent needs the `workspace` tool group to use it. Compute starts on the first file or shell operation, and the workspace stops after about 10 minutes without one.
 
-Creating an agent without `workspaceId` gives it a new workspace. `workspaceTier` chooses its tier, defaults to `core`, and cannot combine with `workspaceId`. Python uses `workspace_tier` and `workspace_id`. The tier is immutable. Create and attach another workspace to change it; files are not copied. Compute starts on the first file or shell operation. Enable the `workspace` tool group to use it.
+Pick the tier when the workspace is created; it never changes:
 
-Plus keeps one current resume reference and its original image. There are no periodic or per-Turn saves. A failed save clears the reference, so the next start is clean. After 29 days without saving or restoring a snapshot, the next start is clean. Physical snapshots expire 30 days after creation or latest restoration. Older snapshots may remain until expiry, including after workspace deletion.
+- **Core** (default, 1 GiB memory). Files are lost when the workspace stops. Use it for scratch work inside one conversation.
+- **Plus** (4 GiB memory). Files are saved when the workspace stops while idle and come back on the next start. Use it when a later Session or Task run must find the files. Running processes do not come back, and a crash loses changes since the last idle stop. Saved files are discarded after 29 days without use.
+
+Creating an agent without `workspaceId` gives it a new Core workspace. Pass `workspaceTier: "plus"` (`workspace_tier` in Python) to get Plus; it cannot be combined with `workspaceId`. To change tier, create a new workspace and attach it; files are not copied. Plus is a convenience, not storage: a failed save also starts the next run empty. Anything your app or users must keep belongs in an Artifact.
 
 Not the same as: an Artifact. Workspace files are the agent's scratch space; your app cannot fetch them directly.
 
