@@ -8,7 +8,7 @@ Your product has signed-in users who need their own Agents, chat history, Tasks,
 
 ## How it works
 
-Your backend authenticates the user and selects their scope. TypeScript `client.forUser(userId)` sends `X-BA-User-Id` on every request. BA fills in missing Attribution, rejects a conflicting `userId`, and checks resource ownership. A different user's resource returns `not_found` (404). The Agent and related resources must belong to the scoped user.
+Your backend authenticates the user and selects their scope. `client.forUser(userId)` (`client.for_user(user_id)` in Python) sends `X-BA-User-Id` on every request. BA fills in missing Attribution, rejects a conflicting `userId`, and checks resource ownership. A different user's resource returns `not_found` (404). The Agent and related resources must belong to the scoped user.
 
 The API key still grants Tenant authority. Keep it on the backend. A body or list filter `userId` alone is only Attribution; an unscoped client retains access across the Tenant. Keep Tenant administration on that unscoped client in trusted code.
 
@@ -32,18 +32,17 @@ export async function GET(request: Request): Promise<Response> {
 }
 ```
 
-Python has no `for_user()` helper. Pass the header on each end-user call, including subsequent pages. The ID must come from verified sign-in.
+Python `for_user()` does the same. The ID must come from verified sign-in.
 
 ```python
 from blazing_agents import BlazingAgents
 
-client = BlazingAgents()
+tenant = BlazingAgents()
 
 
 def list_my_agents(verified_user_id: str):
-    return client.agents.list(
-        limit=50, extra_headers={"X-BA-User-Id": f"app:{verified_user_id}"}
-    )
+    client = tenant.for_user(f"app:{verified_user_id}")
+    return client.agents.list(limit=50)
 ```
 
 2. Create user-owned resources through that scope. Select the Provider and model in trusted backend configuration. Agent and Prompt names can repeat; store the returned IDs.

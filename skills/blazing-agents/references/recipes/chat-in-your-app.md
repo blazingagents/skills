@@ -228,8 +228,8 @@ async def chat(body: ChatBody, user_id: str = Depends(current_user)):
     if not raw or (not approval and any(m.get("role") != "user" for m in raw)):
         raise HTTPException(400, "Invalid message.")
     headers = {"cache-control": "no-cache", "x-vercel-ai-ui-message-stream": "v1"}
-    scope = {"X-BA-User-Id": user_id}
-    extra: dict[str, Any] = {"extra_headers": scope}
+    scoped = client.for_user(user_id)
+    extra: dict[str, Any] = {}
     if body.messageId:
         extra["message_id"] = body.messageId
     try:
@@ -237,16 +237,15 @@ async def chat(body: ChatBody, user_id: str = Depends(current_user)):
             decisions = approval_decisions(raw[0])
             if body.sessionId is None or not decisions:
                 raise HTTPException(400, "Invalid approval.")
-            stream = await client.continue_chat(
+            stream = await scoped.continue_chat(
                 agent_id=agent_for_user(user_id),
                 session_id=body.sessionId,
                 decisions=decisions,
-                extra_headers=scope,
             )
         elif body.messages is not None:
             if body.sessionId is None:
                 raise HTTPException(400, "A batch needs a Session.")
-            stream = await client.chat(
+            stream = await scoped.chat(
                 agent_id=agent_for_user(user_id),
                 session_id=body.sessionId,
                 messages=raw,
@@ -254,12 +253,12 @@ async def chat(body: ChatBody, user_id: str = Depends(current_user)):
                 **extra,
             )
         elif body.sessionId is None:
-            stream = await client.chat(
+            stream = await scoped.chat(
                 agent_id=agent_for_user(user_id), message=raw[0], user_id=user_id, **extra
             )
             headers["location"] = stream.headers["location"]
         else:
-            stream = await client.chat(
+            stream = await scoped.chat(
                 agent_id=agent_for_user(user_id),
                 session_id=body.sessionId,
                 message=raw[0],
@@ -289,9 +288,8 @@ async def history(
 ):
     pagination: HistoryPagination = {"cursor": cursor} if cursor is not None else {}
     try:
-        page = await client.sessions.messages(
+        page = await client.for_user(user_id).sessions.messages(
             agent_id=agent_for_user(user_id), session_id=session_id, limit=200,
-            extra_headers={"X-BA-User-Id": user_id},
             **pagination,
         )
     except APIStatusError as exc:
@@ -434,7 +432,6 @@ def scope(user_id: str, session_id: str) -> dict[str, Any]:
     return {
         "agent_id": agent_for_user(user_id),
         "session_id": session_id,
-        "extra_headers": {"X-BA-User-Id": user_id},
     }
 
 
@@ -444,7 +441,7 @@ async def session(
     user_id: str = Depends(current_user),
 ):
     try:
-        page = await client.sessions.inputs(
+        page = await client.for_user(user_id).sessions.inputs(
             **scope(user_id, session_id), include_completed=True
         )
     except APIStatusError as exc:
@@ -459,7 +456,7 @@ async def steer(body: SteerBody, user_id: str = Depends(current_user)):
     if body.message.get("role") != "user":
         raise HTTPException(400, "Invalid message.")
     try:
-        result = await client.sessions.submit_input(
+        result = await client.for_user(user_id).sessions.submit_input(
             **scope(user_id, body.sessionId),
             request_id=body.requestId,
             message=body.message,
@@ -474,7 +471,7 @@ async def steer(body: SteerBody, user_id: str = Depends(current_user)):
 @app.post("/api/chat/stop")
 async def stop(body: StopBody, user_id: str = Depends(current_user)):
     try:
-        result = await client.sessions.stop(
+        result = await client.for_user(user_id).sessions.stop(
             **scope(user_id, body.sessionId), turn_id=body.turnId
         )
     except APIStatusError as exc:
