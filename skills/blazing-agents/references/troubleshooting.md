@@ -54,7 +54,7 @@ Use `BlazingAgentsError.isInstance(error)` instead of `instanceof`, which fails 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
 | `unauthorized` (401) | Missing, mistyped, revoked, or expired API key, or a dashboard-only call made with an API key. | [Replace the key](#401-unauthorized). |
-| 403 | `merchant_customer_unmapped`: your monetization guard found no customer for the turn's `userId`. `forbidden`: a scoped client called a Tenant-only operation. | [Link the user or use an unscoped client](#403-responses). |
+| 403 | `merchant_customer_unmapped`: your monetization guard found no customer for the turn's `userId`. `forbidden`: a scoped client called a Tenant-only operation. `insufficient_scope`: a read-only key called a write, a turn, a Task run, or anything that spends credit. | [Link the user, use an unscoped client, or use a full key](#403-responses). |
 | `not_found` (404) for an ID you just created | The key is for a different Tenant, or the ID is wrong. | [Check the key's Tenant](#404-for-a-resource-you-can-see-in-the-dashboard). |
 | `provider_required` (400) | The saved Agent configuration has no Provider and model. | [Set a Provider and model](#agent-without-a-provider-or-model). |
 | `model_not_found` (400) or `model_validation_unavailable` (503) | The model ID is not in the Provider's list, or the Provider could not be reached or rejected the stored key. | [Fix the model or the Provider](#provider-credential-rejected). |
@@ -90,10 +90,11 @@ The `Authorization` header is missing, or the key in it is revoked, expired, or 
 
 ## 403 responses
 
-A bad API key is always `unauthorized` (401), never 403. A 403 has one of two codes:
+A bad API key is always `unauthorized` (401), never 403. A 403 has one of three codes:
 
 - `merchant_customer_unmapped`: your monetization guard is on and the Turn's `userId` has no linked billing customer. Link the `userId` to a customer in your billing provider, then start the turn again. If you did not intend to bill per user, turn off the guard. A Task run in this state ends `blocked`.
 - `forbidden`: a scoped request tried an operation outside end-user scope, such as Tenant settings or spending limits. Make that call from an unscoped client in trusted backend code.
+- `insufficient_scope`: the API key is read-only (`ba_read_...`) and the call changes data, starts a turn or Task run, or spends credit. The request was refused before it ran, so nothing changed. Use a full key (`ba_full_...`); a key's level cannot be changed, so create a new full key in the dashboard if you need one.
 
 ## 404 for a resource you can see in the dashboard
 
