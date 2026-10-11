@@ -1,6 +1,6 @@
 # Python SDK reference
 
-Use this page to call Blazing Agents from a Python backend: install the package, pick a client, run Turns, and find the method for every operation. It matches `blazing-agents` 0.18.0, the floor the install command below pins. If the project pins an older version, upgrade it or check the installed package before using a method from this page.
+Use this page to call Blazing Agents from a Python backend: install the package, pick a client, run Turns, and find the method for every operation. It matches `blazing-agents` 0.20.0, the floor the install command below pins. If the project pins an older version, upgrade it or check the installed package before using a method from this page.
 
 For the same surface in TypeScript, read [TypeScript SDK reference](sdk-typescript.md). For end-to-end builds, start from a recipe such as [Add chat to your app](recipes/chat-in-your-app.md).
 
@@ -9,9 +9,9 @@ For the same surface in TypeScript, read [TypeScript SDK reference](sdk-typescri
 The PyPI package is `blazing-agents`. The import name is `blazing_agents`. It needs Python 3.11 or newer.
 
 ```bash
-pip install "blazing-agents>=0.18.0"
+pip install "blazing-agents>=0.20.0"
 # or
-uv add "blazing-agents>=0.18.0"
+uv add "blazing-agents>=0.20.0"
 ```
 
 Keep the Tenant API key in `BLAZING_AGENTS_API_KEY` on your backend. It can reach everything in your Tenant, so it never goes to a browser or mobile app.
@@ -201,6 +201,25 @@ with BlazingAgents() as client:
         print(skill.id, skill.name)
 ```
 
+## End-user scope
+
+`client.for_user(user_id)` returns a `UserClient` (`AsyncUserClient` from the async client) without a network request. Every request it makes sends `X-BA-User-Id`, and the API limits reads and writes to resources that user owns. The header wins over `default_headers` and `extra_headers`.
+
+```python
+from blazing_agents import BlazingAgents
+
+tenant_client = BlazingAgents()
+
+
+def list_my_agents(verified_user_id: str):
+    return tenant_client.for_user(verified_user_id).agents.list(limit=50)
+```
+
+- Take the ID from the session your backend verified, never from a request body or query parameter.
+- The ID is 1 to 256 printable ASCII characters with no leading or trailing space. Anything else raises `ValueError`.
+- A `UserClient` has `agents`, `artifacts`, `memories`, `prompts`, `sessions`, `tasks`, `workspaces`, `agent()`, the generation methods, and `usage` with only `get()` and `sessions()`. Tenant administration (`providers`, `mcp_connections`, `chat_connections`, `chat_deliveries`, `tenant`, the merchant resources) and `usage.overview()` / `usage.get_for_agent()` stay on the tenant client.
+- `with_options()` on a `UserClient` keeps the scope.
+
 ## Operation map
 
 Signatures below drop `extra_headers` and `timeout`, which every method accepts. Arguments are keyword-only except leading IDs shown before `*`. `=...` marks an optional argument. The async client has the same table; `await` each call, and use `async for` on `iter*` methods without awaiting them.
@@ -265,7 +284,7 @@ While a Turn runs, `chat()` raises `session_busy`; steer with `submit_input()` o
 
 | Method | Returns |
 | --- | --- |
-| `create(*, agent_id, name, prompt, schedule=..., enabled=..., submit=..., user_id=..., metadata=...)` | `TaskCreateResponse` |
+| `create(*, agent_id, name, prompt, schedule=..., enabled=..., submit=..., idempotency_key=..., user_id=..., metadata=...)` | `TaskCreateResponse`. A retry with the same `idempotency_key` returns the same Task and initial run. |
 | `list(*, agent_id=..., user_id=..., cursor=..., limit=...)` | `TasksPage` |
 | `iter(*, agent_id=..., user_id=..., cursor=..., limit=...)` | `Iterator[TaskListItem]` |
 | `get(task_id)` | `Task` |
@@ -386,11 +405,32 @@ Failed and ambiguous deliveries across every connection, newest first (an attent
 | `usage.overview(*, from_=..., to=..., limit=...)` | `UsageOverview` (totals, daily rows, top breakdowns; `limit` 1 to 20, default 5) |
 | `usage.get(*, from_=..., to=..., agent_id=..., session_id=..., user_id=..., group_by=..., limit=...)` | `Usage` |
 | `usage.get_for_agent(agent_id, *, from_=..., to=..., session_id=..., user_id=..., group_by=..., limit=...)` | `Usage` |
+| `usage.sessions(session_ids, *, from_=..., to=...)` | `SessionUsageList` (`data`: one `SessionUsage` with `session_id` and `totals` per ID, in request order; 1 to 100 distinct IDs; any missing or out-of-scope Session raises `not_found` for the whole call) |
 | `tenant.get()` | `TenantSettings` |
-| `tenant.update(*, name=..., quota=...)` | `TenantSettings` |
+| `tenant.update(*, name=..., quota=..., monetization_enabled=...)` | `TenantSettings` (`name`, `quota`, `monetization_enabled`, `deletion`). Turning `monetization_enabled` off drops usage events the merchant has not accepted. |
 | `tenant.get_spending_limit()` / `tenant.update_spending_limit(*, spending_limit)` | `SpendingLimitResponse` |
 
 `group_by` is `"day"`, `"agent"`, `"model"`, `"session"`, or `"user"`. `from_` has a trailing underscore because `from` is a Python keyword.
+
+### `client.merchant_connection`, `client.merchant_bindings`, `client.merchant_usage_events`
+
+Monetization: bill your end users through your own Polar or Dodo account. Setup, guard rules, and delivery states are in [Usage dashboards](recipes/usage-dashboards.md).
+
+| Method | Returns |
+| --- | --- |
+| `merchant_connection.get()` | `MerchantConnectionResponse` (`connection` is `None` when none exists) |
+| `merchant_connection.create(*, provider, environment, credential, guard=...)` | `MerchantConnectionResponse`. `provider` is `"polar"` or `"dodo"`; `environment` is `"sandbox"` or `"live"`. |
+| `merchant_connection.update(*, credential=..., status=..., guard=...)` | `MerchantConnectionResponse` |
+| `merchant_connection.retire()` | `None`. Stops deliveries. |
+| `merchant_bindings.list(*, user_id=..., cursor=..., limit=...)` / `iter(...)` | `MerchantBindingsPage` / `Iterator[MerchantCustomerBinding]`. Raises `merchant_connection_not_found` when there is no connection. |
+| `merchant_bindings.put(user_id, *, customer_id)` | `MerchantBindingResponse`. The API checks the customer exists at the provider. |
+| `merchant_bindings.delete(user_id)` | `None` |
+| `merchant_usage_events.list(*, status=..., cursor=..., limit=...)` / `iter(...)` | `MerchantUsageEventsPage` / `Iterator[MerchantUsageEvent]` |
+| `merchant_usage_events.get(event_id)` | `MerchantUsageEventResponse` (`event.next_action` says what to do) |
+| `merchant_usage_events.summary(*, days=...)` | `MerchantUsageSummaryResponse` (status counts and a daily window; `days` 1 to 90, default 14) |
+| `merchant_usage_events.retry(event_id)` / `release(event_id)` / `discard(event_id)` | `MerchantUsageEventResponse` |
+
+`guard` is a dict with exactly `enabled`, `product_ids`, and `meter_id`. Turn billing on with `tenant.update(monetization_enabled=True)` after the connection exists.
 
 ## Partial updates: omit to keep, `None` to clear
 
@@ -450,10 +490,7 @@ async def print_memories(client: AsyncBlazingAgents, user_id: str) -> None:
 `sessions.messages().data` contains Pydantic `SessionMessage` objects with
 AI SDK message fields (`id`, `role`, `parts`, `metadata`).
 
-For server-enforced end-user scope, pass `extra_headers={"X-BA-User-Id": verified_user_id}` on each supported call. A `user_id` argument alone is Attribution. The Python client
-does not expose the TypeScript SDK's `forUser()` or `usage.sessions()` methods,
-or a create-time Task `idempotency_key`. `tasks.submit()` accepts an
-`idempotency_key` for a run of an existing Task.
+For server-enforced end-user scope, use [`client.for_user(verified_user_id)`](#end-user-scope). A `user_id` argument alone is Attribution.
 
 ## Errors
 

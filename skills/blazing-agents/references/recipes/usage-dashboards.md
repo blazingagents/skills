@@ -10,7 +10,7 @@ You want an internal page that shows token and request trends, a per-customer us
 
 Every Turn records input tokens, output tokens, one request, and duration, together with its Agent, model, Session, and Attribution. Failed and canceled Turns are recorded too. `usage.overview()` returns what a dashboard needs in one call: exact totals, one bucket per day, the top Agents, top users, and a model mix. `usage.get()` covers your whole account and `usage.getForAgent()` covers one Agent; both group by one dimension and filter by date, Agent, Session, or `userId`. A quota is an optional monthly ceiling checked before each Turn starts. When it is reached, new chat and generation calls fail with `quota_exceeded` and new Task runs end as `blocked`.
 
-Billing is off until you turn on the tenant switch `monetizationEnabled`. Once on, each Turn sends one `ba.model_tokens.v1` usage event to your Polar or Dodo account, tagged with the customer you linked to the Turn's `userId`. Your provider sets prices, allowances, and invoices; Blazing Agents never handles your customers' payments. An optional guard checks the user's plan or balance before each Turn starts. Billing setup is available in the TypeScript SDK and the dashboard; the Python SDK does not manage it yet.
+Billing is off until you turn on the tenant switch `monetizationEnabled`. Once on, each Turn sends one `ba.model_tokens.v1` usage event to your Polar or Dodo account, tagged with the customer you linked to the Turn's `userId`. Your provider sets prices, allowances, and invoices; Blazing Agents never handles your customers' payments. An optional guard checks the user's plan or balance before each Turn starts. Set billing up from the dashboard or either SDK.
 
 Do not present usage numbers as your Blazing Agents bill. BA charges its own execution and Workspace costs against your plan's usage credit, and those charges can arrive after a Turn finishes.
 
@@ -194,7 +194,7 @@ def customer_usage(signed_in_user_id: str) -> dict[str, object]:
     }
 ```
 
-4. Handle quota and plan outcomes. A chat or generation call that starts over the ceiling throws `quota_exceeded`, one stopped by a model spending limit throws `model_spending_limit_exceeded`, and one refused by the billing guard from step 7 throws a `merchant_*` code. A Task run stopped by the quota, your Blazing Agents plan, or the billing guard ends with status `blocked` instead of `failed`.
+4. Handle quota and plan outcomes. A chat or generation call that starts over the ceiling throws `quota_exceeded`, one stopped by a model spending limit throws `model_spending_limit_exceeded`, and one refused by the billing guard from step 7 throws a `merchant_*` code. A Task run refused before it runs, by the quota, your Blazing Agents plan, the billing guard, or a model spending limit, ends with status `blocked` instead of `failed`. A spending limit that stops a Task run after model work started ends it `failed`.
 
 ```ts
 import { BlazingAgents, BlazingAgentsError } from "@blazingagents/sdk";
@@ -292,6 +292,22 @@ const settings = await client.tenant.patch({ monetizationEnabled: true });
 console.log(settings.monetizationEnabled);
 ```
 
+```python
+import os
+
+from blazing_agents import BlazingAgents
+
+client = BlazingAgents()
+
+client.merchant_connection.create(
+    provider="polar",
+    environment="sandbox",
+    credential=os.environ["POLAR_ACCESS_TOKEN"],
+)
+settings = client.tenant.update(monetization_enabled=True)
+print(settings.monetization_enabled)
+```
+
 Then, in your provider, create a meter for events named `ba.model_tokens.v1` that sums `total_tokens` (or `input_tokens` and `output_tokens` for split prices), and attach it to a price or allowance. Events also carry `model`, `agent_id`, `session_id`, and `status` (`succeeded`, `failed`, or `cancelled`) for meter filters.
 
 6. When a user signs up or starts a paid plan, create the customer in your provider, then link your `userId` to it.
@@ -310,6 +326,18 @@ export async function linkCustomer(appUserId: string, customerId: string) {
   });
   return binding;
 }
+```
+
+```python
+from blazing_agents import BlazingAgents, MerchantCustomerBinding
+
+client = BlazingAgents()
+
+
+def link_customer(app_user_id: str, customer_id: str) -> MerchantCustomerBinding:
+    return client.merchant_bindings.put(
+        f"app:{app_user_id}", customer_id=customer_id
+    ).binding
 ```
 
 Use the exact `userId` you pass on chat, generation, and Task calls. Blazing Agents checks that the customer exists in your provider.
@@ -340,11 +368,31 @@ export async function releaseAfterLinking(eventId: string) {
 }
 ```
 
+```python
+from blazing_agents import BlazingAgents, MerchantUsageEventResponse
+
+client = BlazingAgents()
+
+client.merchant_connection.update(
+    guard={"enabled": True, "product_ids": ["prod_pro_plan"], "meter_id": None},
+)
+
+counts = client.merchant_usage_events.summary(days=7).summary.counts
+print(counts.accepted, counts.unmapped, counts.failed)
+
+for event in client.merchant_usage_events.iter(status="unmapped"):
+    print(event.user_id, event.total_tokens, event.next_action)
+
+
+def release_after_linking(event_id: str) -> MerchantUsageEventResponse:
+    return client.merchant_usage_events.release(event_id)
+```
+
 `productIds` requires an active subscription to one of those products; `meterId` (a Polar meter or a Dodo credit entitlement) requires a balance above zero; set both to require both. Each event has a suggested `nextAction` such as `retry`, `bind_and_release`, or `discard`.
 
 ## Exact usage for a Session list
 
-Use TypeScript `usage.sessions()` when the UI already has Session IDs. `usage.get({ groupBy: "session" })` returns a ranked, limited set, so an omitted Session is not evidence of zero usage.
+Use `usage.sessions()` when the UI already has Session IDs. `usage.get({ groupBy: "session" })` returns a ranked, limited set, so an omitted Session is not evidence of zero usage.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
@@ -362,7 +410,21 @@ if (sessionIds.length > 0) {
 }
 ```
 
-Send 1 to 100 distinct IDs per request. The response preserves their order and returns zero totals for visible Sessions with no usage in the requested period. A missing or inaccessible Session makes the whole request fail with 404. Both dates are optional together; without them the range is the last 30 days. Python has no matching batch helper yet.
+```python
+from blazing_agents import BlazingAgents
+
+tenant = BlazingAgents()
+
+
+def print_session_usage(verified_user_id: str, session_ids: list[str]) -> None:
+    if not session_ids:
+        return
+    usage = tenant.for_user(verified_user_id).usage.sessions(session_ids)
+    for row in usage.data:
+        print(row.session_id, row.totals.input_tokens + row.totals.output_tokens)
+```
+
+Send 1 to 100 distinct IDs per request. The response preserves their order and returns zero totals for visible Sessions with no usage in the requested period. A missing or inaccessible Session makes the whole request fail with 404. Both dates are optional together; without them the range is the last 30 days.
 
 ## Gotchas
 

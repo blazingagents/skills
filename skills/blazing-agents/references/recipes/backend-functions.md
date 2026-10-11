@@ -12,7 +12,7 @@ You pass a map of named functions on a single `chat()` call. Blazing Agents send
 
 ## Build it
 
-1. Add the functions inside your chat route, after authenticating the request, so every handler closes over the verified user. Scope the call with `forUser` (TypeScript) or `X-BA-User-Id` (Python) as in [chat in your app](chat-in-your-app.md). Read the user's Agent ID from trusted backend state, never from the request, and validate the browser's `sessionId` before it reaches the SDK.
+1. Add the functions inside your chat route, after authenticating the request, so every handler closes over the verified user. Scope the call with `forUser` (TypeScript) or `for_user` (Python) as in [chat in your app](chat-in-your-app.md). Read the user's Agent ID from trusted backend state, never from the request, and validate the browser's `sessionId` before it reaches the SDK.
 
 ```ts
 import { BlazingAgents, defineFunction, type ChatFunctions, type UIMessage } from "@blazingagents/sdk";
@@ -113,10 +113,10 @@ async def chat(body: ChatBody, user_id: str = Depends(current_user)):
         ),
     }
 
-    extra: dict[str, Any] = {"extra_headers": {"X-BA-User-Id": user_id}}
+    extra: dict[str, Any] = {}
     if body.sessionId is not None:
         extra["session_id"] = body.sessionId
-    stream = await client.chat(
+    stream = await client.for_user(user_id).chat(
         agent_id=agent_for_user(user_id), message=body.message, functions=functions, **extra
     )
     headers = {"x-vercel-ai-ui-message-stream": "v1"}
@@ -167,12 +167,11 @@ async def continue_after_decisions(
     decisions: list[ToolApprovalDecisionInput],
     session_owner_id: str,
 ) -> StreamingResponse:
-    stream = await client.continue_chat(
+    stream = await client.for_user(session_owner_id).continue_chat(
         agent_id=agent_id,
         session_id=session_id,
         decisions=decisions,
         functions=chat_functions_for(session_owner_id),
-        extra_headers={"X-BA-User-Id": session_owner_id},
     )
     return StreamingResponse(
         stream,
