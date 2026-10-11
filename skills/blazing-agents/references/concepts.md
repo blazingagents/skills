@@ -196,7 +196,7 @@ Tenant ── API key (your backend only)
   │    └─ Chat Connection (Slack/Telegram) ── Sessions ── Turns
   │
   ├─ Prompt (template used on any generation call)
-  ├─ Admin Agent (BA Assist, managed by BA)
+  ├─ Admin Agent (managed by BA)
   └─ Usage (per Turn, by agent/model/session/userId) ── checked against Quota
 
 Attribution (userId, metadata) labels Agents, Workspaces, Prompts, Sessions,
