@@ -83,7 +83,7 @@ To tag one request with your own correlation ID, derive a copy with `client.with
 
 Your API key identifies your Tenant, not your end user. A `userId` and `metadata` you pass on a turn, Session, or Task are Attribution: labels for filtering Sessions and breaking down usage. They grant nothing.
 
-- Authenticate each request and use `client.forUser(verifiedUserId)` for user-owned operations. BA checks ownership on reads and writes. In Python, send `extra_headers={"X-BA-User-Id": verified_user_id}` on each supported call.
+- Authenticate each request and use `client.forUser(verifiedUserId)` for user-owned operations. BA checks ownership on reads and writes. In Python, use `client.for_user(verified_user_id)`.
 - Keep Tenant administration on an unscoped client in trusted backend code. A scoped request rejects unsupported operations.
 - Derive the scope from your verified session. A browser-supplied header or `userId` is not proof of identity.
 - If an integration uses an unscoped client, keep its own resource access checks. A list filter does not restrict later reads by ID.
@@ -98,7 +98,7 @@ The SDKs never retry for you, except backend-function claim and result submissio
 | Operation | Safe to repeat? |
 | --- | --- |
 | Reads (`get`, `list`, `messages`, `usage`) | Yes. |
-| Creating a Task with the same idempotency key and unchanged input | Yes, including the original initial run when `submit: true`. TypeScript only; the Python SDK takes no key on create. |
+| Creating a Task with the same idempotency key and unchanged input | Yes, including the original initial run when `submit: true`. |
 | Starting a Task run with the same idempotency key | Yes. You get the same run back. |
 | Cancelling a Task run | Yes. Cancelling a finished run does nothing and returns no error. |
 | Continuing an approval round with the same decisions | Yes. Identical decisions are idempotent; the first `reason` wins. A changed decision returns `tool_approval_decision_conflict`, a running round returns `session_busy`, and a settled round returns `tool_approval_continuation_settled` without running again. |

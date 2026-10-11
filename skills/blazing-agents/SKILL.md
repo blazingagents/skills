@@ -67,8 +67,8 @@ developer wants to write the agent loop step by step.
   ship it in browser or mobile code, logs, or Workspace files.
 - The API key selects the Tenant. Never accept a Tenant from a request.
 - Derive the user ID from verified sign-in. For user-owned resources, use
-  TypeScript `client.forUser(userId)` so BA enforces ownership. Python can send
-  `X-BA-User-Id` through `extra_headers`. A body or filter `userId` alone only
+  `client.forUser(userId)` (`client.for_user(user_id)` in Python) so BA
+  enforces ownership. A body or filter `userId` alone only
   labels work and grants no access. Keep unscoped clients for trusted Tenant
   operations. Read
   [Multi-user apps](references/recipes/multi-user-apps.md) for the boundary.

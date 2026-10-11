@@ -126,10 +126,9 @@ async def list_pending(
     session_id: str = Query(alias="sessionId", pattern=SESSION_ID),
     user_id: str = Depends(current_user),
 ) -> dict[str, object]:
-    approvals = await client.sessions.tool_approvals(
+    approvals = await client.for_user(user_id).sessions.tool_approvals(
         agent_id=agent_for_user(user_id),
         session_id=session_id,
-        extra_headers={"X-BA-User-Id": user_id},
     )
     pending = [
         {"approvalId": item.approval_id, "tool": item.tool or item.tool_name, "input": item.input}
@@ -212,11 +211,10 @@ async def continue_round(
         if d.reason is not None:
             item["reason"] = d.reason
         decisions.append(item)
-    stream = await client.continue_chat(
+    stream = await client.for_user(user_id).continue_chat(
         agent_id=agent_for_user(user_id),
         session_id=body.sessionId,
         decisions=decisions,
-        extra_headers={"X-BA-User-Id": user_id},
     )
     return StreamingResponse(
         stream,
