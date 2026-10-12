@@ -10,7 +10,7 @@ The Agent must answer questions about things that change: prices, releases, news
 
 `web_search` is off until you add it to the Agent's `tools`. When the model calls it, it sends a `query` (1 to 1,024 characters) and an optional `limit`. It gets back up to 10 results, which is also the default. Each result has a `url`, a `title`, and usually a `description` snippet. The tool returns no full page content, and when the results are too large it returns the ones that fit with `truncated: true`. A failed search returns an error message to the model instead of results. The call and its output are saved in the Session like any other tool call, as a `tool-web_search` part.
 
-Each successful search consumes $0.01 of Usage credit, which is $10 per 1,000 searches. Failed searches are free. BA bills searches itself, so they consume credit even when the Agent runs on the Tenant's own model Provider, and model spending limits do not cap them.
+Each successful search consumes Usage credit. Failed searches are free. BA bills searches itself, so they consume credit even when the Agent runs on the Tenant's own model Provider, and model spending limits do not cap them.
 
 The web search queries, not linked to an individual, might be kept for model training.
 
