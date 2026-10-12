@@ -9,7 +9,7 @@ If you instead want the Agent to take actions against outside systems, read [Con
 
 ## How it works
 
-An Agent holds configuration: Provider and model, thinking level, instructions, Tool groups, approval policies, Memory injection, and compaction settings. Edits reach new Sessions, Task runs queued afterwards, and stateless calls; an existing Session keeps the configuration from its first Turn. Three things live beside the Agent and always use their current state: Prompts (saved input templates with `{{variables}}`), runtime Skills (instruction packages the Agent loads on demand), and Memory (short notes scoped to the Agent and optionally to one `userId`). Instructions shape every Turn; a Prompt is the input for one Turn.
+An Agent holds configuration: Provider and model, thinking level, instructions, built-in tools, approval policies, Memory injection, and compaction settings. Edits reach new Sessions, Task runs queued afterwards, and stateless calls; an existing Session keeps the configuration from its first Turn. Three things live beside the Agent and always use their current state: Prompts (saved input templates with `{{variables}}`), runtime Skills (instruction packages the Agent loads on demand), and Memory (short notes scoped to the Agent and optionally to one `userId`). Instructions shape every Turn; a Prompt is the input for one Turn.
 
 ## Build it
 
@@ -32,7 +32,7 @@ const agent = await client.agents.update({
   providerId,
   model: "openai/gpt-6-luna",
   instructions: "You are the support assistant for Acme. Answer in two short paragraphs.",
-  tools: ["workspace", "memory"],
+  tools: ["read", "grep", "glob", "save_memory", "search_memories"],
   compactionReserveTokens: 32_768,
 });
 console.log(agent.model, agent.instructions);
@@ -52,7 +52,7 @@ def configure(client: BlazingAgents, agent_id: str, provider_id: str) -> None:
         provider_id=provider_id,
         model="openai/gpt-6-luna",
         instructions="You are the support assistant for Acme. Answer in two short paragraphs.",
-        tools=["workspace", "memory"],
+        tools=["read", "grep", "glob", "save_memory", "search_memories"],
         compaction_reserve_tokens=32_768,
     )
     print(agent.model, agent.instructions)
