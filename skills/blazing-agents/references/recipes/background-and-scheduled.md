@@ -12,7 +12,7 @@ A Task saves an Agent, a fixed `prompt`, and an optional schedule. Each executio
 
 ## Build it
 
-1. Decide what tools may do without a person. In a Task, a tool call that would need approval (`manual`, or `auto` that asks a person) is denied immediately and the Agent continues with the work it is allowed to do. This example allows only `read`, so the Agent needs the `workspace` tool group.
+1. Decide what tools may do without a person. In a Task, a tool call that would need approval (`manual`, or `auto` that asks a person) is denied immediately and the Agent continues with the work it is allowed to do. This example allows only `read`, so the Agent needs `read` in its `tools`.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";

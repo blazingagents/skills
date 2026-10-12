@@ -1,6 +1,6 @@
 ---
 name: blazing-agents
-description: Build products on Blazing Agents (BA), the hosted platform that runs production AI agents behind your backend. Use when the user wants to add an agent, chat, background or scheduled agent work, structured output, agent files, backend functions, MCP tools, tool approvals, Slack/Telegram bots, usage dashboards, or token billing to their app with the BA TypeScript or Python SDK, or asks what BA is or can do. Use ba-admin instead for one-off Tenant administration. Do not use for generic AI-agent work without BA.
+description: Build products on Blazing Agents (BA), the hosted platform that runs production AI agents behind your backend. Use when the user wants to add an agent, chat, background or scheduled agent work, structured output, agent files, web search, backend functions, MCP tools, tool approvals, Slack/Telegram bots, usage dashboards, or token billing to their app with the BA TypeScript or Python SDK, or asks what BA is or can do. Use ba-admin instead for one-off Tenant administration. Do not use for generic AI-agent work without BA.
 metadata:
   author: Blazing Agents
   version: "0.5.0"
@@ -38,6 +38,7 @@ developer wants to write the agent loop step by step.
 | An agent that reads and writes files, runs commands, and hands back files | [Files and deliverables](references/recipes/files-and-deliverables.md) |
 | An agent that calls your backend code during chat | [Backend functions](references/recipes/backend-functions.md) |
 | Remote or third-party tools, or tools for Tasks, generation, and bots | [External tools with MCP](references/recipes/external-tools-mcp.md) |
+| Current information from the public web | [Web search](references/recipes/web-search.md) |
 | A person or a reviewing model approving risky tool calls | [Human approval](references/recipes/human-approval.md) |
 | The same agent in Slack or Telegram | [Slack and Telegram](references/recipes/slack-and-telegram.md) |
 | Better instructions, reusable prompts, Skills, Memory, saved configuration snapshots | [Shape agent behavior](references/recipes/shape-agent-behavior.md) |

@@ -8,11 +8,11 @@ The Agent's job produces a file: a report, a CSV export, a generated document, o
 
 ## How it works
 
-Every Agent has a Workspace: a private file system with a shell, rooted at `/workspace`. Core files are lost when the Workspace stops after about 10 idle minutes; Plus keeps them across idle stops, which is why the examples below create Plus. The Agent touches the Workspace only through Workspace Tools (`read`, `write`, `edit`, `grep`, `glob`, `bash`, `publish_artifacts`), which you switch on with the `workspace` tool group. Workspace files are private. To hand one to your app, the Agent calls `publish_artifacts`, which makes a fixed copy called an Artifact, attached to the Session that published it. Your backend lists Artifacts by Agent or Session and creates short-lived download URLs.
+Every Agent has a Workspace: a private file system with a shell, rooted at `/workspace`. Core files are lost when the Workspace stops after about 10 idle minutes; Plus keeps them across idle stops, which is why the examples below create Plus. The Agent touches the Workspace only through the file tools (`read`, `write`, `edit`, `grep`, `glob`, `bash`, `publish_artifacts`), which you switch on one by one in `tools`. Turn on only what the job needs: `read`, `grep`, and `glob` give read-only access. Workspace files are private. To hand one to your app, the Agent calls `publish_artifacts`, which makes a fixed copy called an Artifact, attached to the Session that published it. Your backend lists Artifacts by Agent or Session and creates short-lived download URLs.
 
 ## Build it
 
-1. Create an Agent with the `workspace` tool group. Without it the Agent cannot touch files.
+1. Create an Agent with the file tools the job needs. This one writes reports, so it needs `write` and `publish_artifacts`, plus `read` and `bash` to check its work. Without file tools the Agent cannot touch files.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
@@ -28,7 +28,7 @@ const agent = await client.agents.create({
   instructions:
     "Write reports as Markdown files. When a file is finished, publish it with publish_artifacts.",
   workspaceTier: "plus",
-  tools: ["workspace"],
+  tools: ["read", "write", "bash", "publish_artifacts"],
 });
 console.log(agent.id, agent.workspaceId);
 ```
@@ -47,12 +47,12 @@ agent = client.agents.create(
         "When a file is finished, publish it with publish_artifacts."
     ),
     workspace_tier="plus",
-    tools=["workspace"],
+    tools=["read", "write", "bash", "publish_artifacts"],
 )
 print(agent.id, agent.workspace_id)
 ```
 
-For an existing Agent, read `agent.tools` and send the full list with `"workspace"` added. `tools` replaces the whole list.
+For an existing Agent, read `agent.tools` and send the full list with the new tools added. `tools` replaces the whole list and rejects duplicate names.
 
 2. To let several Agents work on the same files, create a Workspace and attach each Agent to it. Pick the narrowest network policy: `unrestricted` (default), `allowlist`, or `offline`.
 
@@ -214,7 +214,7 @@ def clean_up(client: BlazingAgents, artifact_id: str, workspace_id: str) -> None
 
 ## Gotchas
 
-- The Agent says it wrote a file but nothing happened. It lacks the `workspace` tool group. Add it to `tools`.
+- The Agent says it wrote a file but nothing happened. It lacks `write`. Add it to `tools`. The same goes for `publish_artifacts` when nothing was published.
 - Listing Artifacts before the stream ends. The turn saves its results only when the stream is fully read. Drain or relay it first.
 - Expecting a written file to show up as an Artifact. Only files passed to `publish_artifacts` are published. Tell the Agent to publish in its instructions or prompt.
 - Asking for a file from `client.completion()` or `client.object()`. Stateless calls can use Workspace Tools but cannot publish. Use a chat Session or a Task run.
