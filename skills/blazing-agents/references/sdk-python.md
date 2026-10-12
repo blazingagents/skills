@@ -1,6 +1,6 @@
 # Python SDK reference
 
-Use this page to call Blazing Agents from a Python backend: install the package, pick a client, run Turns, and find the method for every operation. It matches `blazing-agents` 0.20.0, the floor the install command below pins. If the project pins an older version, upgrade it or check the installed package before using a method from this page.
+Use this page to call Blazing Agents from a Python backend: install the package, pick a client, run Turns, and find the method for every operation. It matches `blazing-agents` 0.21.0, the floor the install command below pins. If the project pins an older version, upgrade it or check the installed package before using a method from this page.
 
 For the same surface in TypeScript, read [TypeScript SDK reference](sdk-typescript.md). For end-to-end builds, start from a recipe such as [Add chat to your app](recipes/chat-in-your-app.md).
 
@@ -9,9 +9,9 @@ For the same surface in TypeScript, read [TypeScript SDK reference](sdk-typescri
 The PyPI package is `blazing-agents`. The import name is `blazing_agents`. It needs Python 3.11 or newer.
 
 ```bash
-pip install "blazing-agents>=0.20.0"
+pip install "blazing-agents>=0.21.0"
 # or
-uv add "blazing-agents>=0.20.0"
+uv add "blazing-agents>=0.21.0"
 ```
 
 Keep the Tenant API key in `BLAZING_AGENTS_API_KEY` on your backend. It can reach everything in your Tenant, so it never goes to a browser or mobile app.
@@ -241,7 +241,7 @@ Signatures below drop `extra_headers` and `timeout`, which every method accepts.
 | `get_spending_limit(agent_id)` | `SpendingLimitResponse` |
 | `update_spending_limit(agent_id, *, spending_limit)` | `SpendingLimitResponse`. `None` disables the limit. See [model spending limits](recipes/usage-dashboards.md#model-spending-limits). |
 
-`provider_id` and `model` go together on create. On update, `model` alone changes the model and `provider_id` needs `model`. `tools` is a list of `"workspace"`, `"write_todos"`, `"memory"`.
+`provider_id` and `model` go together on create. On update, `model` alone changes the model and `provider_id` needs `model`. `tools` is a list of built-in tool names (`AgentTool`), each listed once, such as `"read"`, `"write_todos"`, `"save_memory"`, or `"web_search"`. See [Built-in tools](concepts.md#built-in-tools).
 
 ### `client.agent(agent_id).skills`
 

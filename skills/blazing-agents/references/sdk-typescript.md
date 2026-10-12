@@ -4,7 +4,7 @@ Use this page to write backend TypeScript that calls Blazing Agents: install the
 client, run chat, text, and structured output, call every resource method, page
 through lists, handle errors, and connect `useChat` to your own backend.
 
-This page matches `@blazingagents/sdk` 0.24.0. If the project pins an older
+This page matches `@blazingagents/sdk` 0.27.0. If the project pins an older
 version, upgrade it or check the installed types before using a method from
 this page.
 
@@ -287,6 +287,8 @@ means the result is `{ data, nextCursor }` (see [Pagination](#pagination)).
 | `updateMcpAttachment({ agentId, mcpConnectionId, ...body })` | `PATCH /v1/agents/{agentId}/mcp-attachments/{mcpConnectionId}` | `McpAttachmentResponse` |
 | `getSpendingLimit({ agentId })` | `GET /v1/agents/{agentId}/spending-limit` | `SpendingLimitResponse`. Unscoped client only. |
 | `updateSpendingLimit({ agentId, spendingLimit })` | `PUT /v1/agents/{agentId}/spending-limit` | `SpendingLimitResponse`. `null` disables the limit. See [model spending limits](recipes/usage-dashboards.md#model-spending-limits). |
+
+`tools` is an `AgentToolName[]` of built-in tool names, each listed once. To build a tool picker, import `AGENT_TOOLS` (each entry has `name`, `category`, `description`, and `requiresWorkspace`) and `AGENT_TOOL_CATEGORIES` (display name and description per category). Categories only group tools for display; `tools` never accepts one. See [Built-in tools](concepts.md#built-in-tools).
 
 ### `client.providers`
 

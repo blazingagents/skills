@@ -26,7 +26,7 @@ Not the same as: a model. The Provider is the account; the agent picks the model
 
 ### Agent
 
-The reusable setup behind every answer: Provider and model, instructions (system prompt), tool groups, MCP Connections, tool approval policies, Skills, and one attached Workspace. Create it once and call it by ID (`ag_...`) from chat, one-off generation, tasks, and chat bots. An agent with no Provider and model can be saved but cannot answer. You can disable an agent to refuse new turns without deleting it.
+The reusable setup behind every answer: Provider and model, instructions (system prompt), built-in tools, MCP Connections, tool approval policies, Skills, and one attached Workspace. Create it once and call it by ID (`ag_...`) from chat, one-off generation, tasks, and chat bots. An agent with no Provider and model can be saved but cannot answer. You can disable an agent to refuse new turns without deleting it.
 
 Not the same as: a Session. The agent is configuration; a session is one conversation with it.
 
@@ -82,13 +82,13 @@ Not the same as: this coding-agent skill. This document is a skill for your codi
 
 ### Memory
 
-A short text note an agent keeps across sessions, such as "prefers concise status updates". A note can be general to the agent or scoped to one end user by `userId`. The agent saves and searches notes itself with the `memory` tool group, or you turn on `memoryInjectionEnabled` so relevant notes start every turn. Each agent has a capped pool; the least recently used notes are evicted when it is full.
+A short text note an agent keeps across sessions, such as "prefers concise status updates". A note can be general to the agent or scoped to one end user by `userId`. The agent saves and searches notes itself with memory tools such as `save_memory` and `search_memories`, or you turn on `memoryInjectionEnabled` so relevant notes start every turn. Each agent has a capped pool; the least recently used notes are evicted when it is full.
 
 Not the same as: session history, a knowledge base, or files. Memory is small facts, not documents.
 
 ### Workspace
 
-A private file system and shell (`/workspace`) attached to an agent. Several agents can share one. The agent needs the `workspace` tool group to use it. Compute starts on the first file or shell operation, and the workspace stops after about 10 minutes without one.
+A private file system and shell (`/workspace`) attached to an agent. Several agents can share one. The agent uses it only through the file tools you turn on, such as `read`, `write`, and `bash`. Compute starts on the first file or shell operation, and the workspace stops after about 10 minutes without one.
 
 Pick the tier when the workspace is created; it never changes:
 
@@ -109,7 +109,14 @@ Not the same as: any file in the Workspace. Only published files are Artifacts, 
 
 ### Built-in tools
 
-Ready-made abilities you switch on per agent in groups. `workspace` gives files and a shell (`read`, `write`, `edit`, `grep`, `glob`, `bash`, `publish_artifacts`), `write_todos` gives a planning list, and `memory` gives the memory tools. A new agent has no built-in tools; without groups, attached MCP Connections, or backend functions on the chat request, it can only talk. The `tools` list you send replaces the whole selection.
+Ready-made abilities you switch on per agent, one tool at a time, by listing tool names in `tools`. Any subset is valid, such as read-only `read`, `grep`, and `glob`. The tools, by category:
+
+- **Files** (run in the Workspace): `read`, `write`, `edit`, `grep`, `glob`, `bash`, `publish_artifacts`.
+- **Planning**: `write_todos`.
+- **Memory**: `save_memory`, `get_memory`, `search_memories`, `update_memory`, `delete_memory`.
+- **Web**: `web_search`, which costs Usage credit per successful search. See [Search the web](recipes/web-search.md).
+
+A category only groups tools for display; `tools` never accepts a category name. A new agent has no built-in tools; without tools, attached MCP Connections, or backend functions on the chat request, it can only talk. The `tools` list you send replaces the whole selection, and each name can appear once. An agent with Skills also gets `activate_skill` and a `read` that opens Skill files; that `read` opens Workspace files only when `read` is in `tools`.
 
 Not the same as: MCP tools, which come from MCP Connections, or backend functions, which your backend attaches to a chat request.
 
@@ -189,7 +196,7 @@ Tenant ── API key (your backend only)
   ├─ Workspace (/workspace files) ◄──────────┤
   │                                          │
   ├─ Agent (current configuration) ───────────┘
-  │    ├─ Skills, Memory, built-in tool groups, tool approval rules
+  │    ├─ Skills, Memory, built-in tools, tool approval rules
   │    ├─ Session (saved agentConfig) ── Turns ── Artifacts, tool approvals
   │    │    └─ Session inputs (steer receipts) ── the running Turn
   │    ├─ Task (+ Schedule) ── Task runs (saved agentConfig) ── fresh Session ── Turn
