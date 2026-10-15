@@ -36,10 +36,16 @@ approval cards across every connection.
 
 Sender/approver policy is unrestricted. Destination IDs are health probes, not
 allowlists. Any participant with access to a bound approval card can decide.
-Use `/reset` only to replace a deleted Session mapping; active Sessions stay intact.
-Users send it as `/reset` in a Telegram private chat, `/reset@BotName` in a
-Telegram group, or `@bot /reset` in a Slack channel. Other slash commands, such
-as Telegram's `/start`, reach the Agent as ordinary messages.
+Users send `/new` to start a new conversation on purpose, even while the
+current one is answering. They send `/new` in a Telegram private chat,
+`/new@BotName` in a Telegram group, or `@bot /new` in a Slack channel, because
+Slack never delivers a bare `/new` to the bot. The old Session stays in history,
+and the next message begins on a fresh Session without waiting for the old one.
+`/new` followed by other text, and other slash commands such as Telegram's
+`/start`, reach the Agent as ordinary messages. After a Session is deleted, the
+next message that addresses the bot starts a new conversation without `/new`. A
+message that was still queued for the deleted Session is not run; the bot says
+the conversation was deleted and asks the user to send the message again.
 
 Relay these runtime behaviors when a user asks why a bot answered as it did:
 
@@ -52,7 +58,8 @@ Relay these runtime behaviors when a user asks why a bot answered as it did:
   not run the Turn again, because Tools may already have run. An interrupted
   approval round asks the user to ask again.
 - A message sent while a Tool approval waits is not run. The bot asks the user
-  to approve or reject the request first, then send the message again.
+  to approve or reject the request first, then send the message again, or to
+  send `/new` if the request is lost.
 - BA sends a saved reply that it had not yet sent when it was interrupted, with
   no repair needed. Only failed and ambiguous deliveries need attention.
 - A message with no text is ignored. In a channel, a message that does not
