@@ -81,12 +81,13 @@ developer wants to write the agent loop step by step.
   Use a stable idempotency key for every Task run submission, and for Task
   creation with `submit: true` in TypeScript (Python has no key on create).
 - BA holds no message queue; waiting messages live in the client. While a Turn
-  runs, a new chat call fails with `session_busy`. Either steer the Turn with
-  `sessions.submitInput()` / `submit_input()`, or hold the message until the
-  Session is idle and send it as ordinary chat (one per Turn, or several with
-  `messages`). Take a message out of the local queue before sending it, keep
-  each input's `requestId` until its receipt arrives, and never rebuild the
-  queue from receipts or history.
+  runs, a new chat call fails with `session_busy`. A Turn that stopped
+  responding returns `session_turn_unresponsive` with a `Retry-After` header
+  instead. Either steer the Turn with `sessions.submitInput()` /
+  `submit_input()`, or hold the message until the Session is idle and send it
+  as ordinary chat (one per Turn, or several with `messages`). Take a message
+  out of the local queue before sending it, keep each input's `requestId` until
+  its receipt arrives, and never rebuild the queue from receipts or history.
 - Changing an Agent's Provider requires `model` in the same update. Agent edits
   reach new Sessions, Task runs queued afterwards, and stateless calls. An
   existing Session keeps the settings from its first Turn, so start a new
