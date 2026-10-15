@@ -38,7 +38,7 @@ Not the same as a copy of every dependency. Provider keys, MCP credentials and c
 
 ### Admin Agent
 
-A BA-managed agent that every tenant gets automatically. It powers BA's built-in assistant for managing your tenant. You choose its Provider, model, and thinking level; BA controls everything else, so you cannot rename, disable, or delete it, change its instructions or tools, or give it tasks (`admin_agent_managed`). It shows up in `agents.list()` next to your own agents, so keep your own record of the agent IDs your app created instead of treating every listed agent as yours.
+A BA-managed agent that every tenant gets automatically. It powers BA's built-in assistant for managing your tenant. You choose its Provider, model, and thinking level; BA controls everything else, so you cannot rename, disable, or delete it, change its instructions, tools, or avatar, give it tasks, or connect it to Slack or Telegram (`admin_agent_managed`). It shows up in `agents.list()` next to your own agents, so keep your own record of the agent IDs your app created instead of treating every listed agent as yours.
 
 Not the same as: an agent for your product. Build your own agents for your users.
 
@@ -162,7 +162,7 @@ Not the same as: a separate cron job resource. A "cron job" in BA is just a task
 
 ### Chat Connection
 
-A link from one Slack app or Telegram bot to one agent. BA receives the messages, keeps a session per native conversation, posts replies, and shows tool approval buttons in the chat. Use it when your users should talk to the agent inside Slack or Telegram instead of your own UI. You supply your bot's credentials.
+A link from one Slack app or Telegram bot to one of your own agents, never the Admin Agent. BA receives the messages, keeps a session per native conversation, posts replies, and shows tool approval buttons in the chat. Use it when your users should talk to the agent inside Slack or Telegram instead of your own UI. You supply your bot's credentials.
 
 Not the same as: an MCP Connection, which gives an agent tools rather than a place to chat.
 
