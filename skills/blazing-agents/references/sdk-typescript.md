@@ -321,7 +321,7 @@ means the result is `{ data, nextCursor }` (see [Pagination](#pagination)).
 | `get({ agentId, sessionId })` | `GET /v1/agents/{agentId}/sessions/{sessionId}` | `SessionResponse` with `agentConfig` |
 | `fork({ agentId, sessionId, messageId, idempotencyKey, abortSignal? })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/fork` | `SessionResponse` for the child. `forkedFrom` names the source Session and message. |
 | `messages({ agentId, sessionId, cursor?, after?, limit? })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/messages` | `{ data: SessionMessage[], nextCursor, latestCursor }`; each message has required top-level `branchable`. `cursor` walks older pages; `after` walks forward. Not both. |
-| `delete({ agentId, sessionId, deleteArtifacts })` | `DELETE /v1/agents/{agentId}/sessions/{sessionId}` | `void`. `deleteArtifacts` is required. `session_busy` while any Turn runs. |
+| `delete({ agentId, sessionId, deleteArtifacts })` | `DELETE /v1/agents/{agentId}/sessions/{sessionId}` | `void`. `deleteArtifacts` is required. `session_busy` while any Turn runs, or `session_turn_unresponsive` when the last Turn stopped responding. |
 | `toolApprovals({ agentId, sessionId })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/tool-approvals` | `{ data, continuation }`. Each item has `approvalId`, `toolName`, `input`, `decision` (`pending`, `approved`, `denied`). `continuation` is `{ id, state }` with state `waiting`, `running`, `succeeded`, or `failed`, or `null`. |
 | `submitInput({ agentId, sessionId, requestId, message })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/inputs` | `{ data: SessionInput, activity }`. Steers the running Turn; `steer_not_available` (409) when no Turn can take a steer (idle, stopping, or an approval wait); keep the message in your own queue and send it as ordinary chat later. `requestId` is 1 to 128 characters and not `.` or `..`. Retrying with the same `requestId` and payload returns the same receipt; a changed payload returns `input_idempotency_conflict`. |
 | `inputs({ agentId, sessionId, includeCompleted?, limit?, cursor? })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/inputs` | `{ data, nextCursor, activity }`: steer receipts in submission order plus the Session's `activity`. Without `includeCompleted`, `data` lists only pending and `uncertain` receipts. Poll without `cursor` to see changes; `cursor` only pages. |
@@ -524,7 +524,7 @@ package copies, then switch on `code`.
 | `param` | The offending field, when the server names one. |
 | `details` | Extra structured data, for example validation issues. |
 | `requestId` | BA's `x-request-id`. Log it. |
-| `headers` | Response headers. |
+| `headers` | Response headers. Read `Retry-After` here on `session_turn_unresponsive` and `rate_limited`. |
 | `responseBody`, `responseBodyTruncated` | Raw body (up to 64 KiB) when the response was not a valid error envelope. |
 | `cause` | The underlying error, when there is one. |
 
@@ -561,7 +561,9 @@ export async function findAgentName(agentId: string): Promise<string | null> {
 
 Errors before streaming starts reject the `chat`, `completion`, or `object`
 promise. After streaming starts, a failed chat Turn ends its stream with an
-`{ type: "error", errorText }` event, which `useChat` already understands. For
+`{ type: "error", errorText }` event, which `useChat` already understands. A Turn
+cut after it started sends a transient `data-turn-interrupted` part first, with
+`data.code` set to `turn_interrupted`. For
 `completion` and `object`, the stream throws and awaiting `text` or `object`
 rejects with `stream_error`.
 
@@ -676,7 +678,9 @@ it for the messages your client held while the Session was busy.
   returns `null`. Reload history before resending.
 - `chat` on a busy Session fails with `session_busy`. Steer the running Turn
   with `sessions.submitInput()`, or keep the message in your own queue and send
-  it as ordinary chat once the Turn settles.
+  it as ordinary chat once the Turn settles. A Turn that stopped responding fails
+  with `session_turn_unresponsive` and a `Retry-After` header instead. Wait that
+  long, read history, then send again under a new message ID.
 - Agent and Prompt names can repeat. Read every page before resolving a name
   to an ID; reject multiple exact matches.
 
