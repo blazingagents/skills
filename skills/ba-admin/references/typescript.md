@@ -116,7 +116,9 @@ const agentId = matches[0].id;
   idempotencyKey })`, create a stable key for that logical Task and initial run.
   Retry the identical create with the same key after an ambiguous response.
   Use a separate key for a later `createRun` request.
-- The platform-managed Admin Agent cannot be updated or deleted.
+- The platform-managed Admin Agent accepts updates only to its Provider, model, and
+  thinking level. It cannot be renamed, disabled, deleted, given an avatar,
+  assigned a Task, or connected to a Chat Connection (`admin_agent_managed`).
 
 For create and update bodies, import the relevant exported TypeScript type or
 inspect the SDK declaration before writing the object. This prevents the Skill

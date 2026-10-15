@@ -17,7 +17,9 @@ BA generates `webhookUrl`. Changing the Agent or bot requires a new connection.
 `client.chatDeliveries` is an attention feed: failed and ambiguous replies and
 approval cards across every connection.
 
-- Create: resolve the Agent, verify the intended bot/installation, create once
+- Create: resolve the Agent, which must be one of the Tenant's own Agents and
+  never the Admin Agent (`create` fails with `admin_agent_managed`, 409),
+  verify the intended bot/installation, create once
   with `enabled: false`, and read `webhookUrl` from the response. For Slack,
   register that URL as both the Event Subscriptions and Interactivity Request
   URL; for Telegram, enabling registers it. Run health, enable, and test a real
@@ -35,3 +37,25 @@ approval cards across every connection.
 Sender/approver policy is unrestricted. Destination IDs are health probes, not
 allowlists. Any participant with access to a bound approval card can decide.
 Use `/reset` only to replace a deleted Session mapping; active Sessions stay intact.
+Users send it as `/reset` in a Telegram private chat, `/reset@BotName` in a
+Telegram group, or `@bot /reset` in a Slack channel. Other slash commands, such
+as Telegram's `/start`, reach the Agent as ordinary messages.
+
+Relay these runtime behaviors when a user asks why a bot answered as it did:
+
+- A message sent while the Agent is answering waits and is answered in order in
+  the same conversation. Nothing is dropped, and other conversations, including
+  other Telegram forum topics, do not wait. A redelivered platform event is
+  answered once.
+- If a Turn fails or stops before BA saves its reply, the bot posts that the
+  reply was interrupted and asks the user to send the message again. BA does
+  not run the Turn again, because Tools may already have run. An interrupted
+  approval round asks the user to ask again.
+- A message sent while a Tool approval waits is not run. The bot asks the user
+  to approve or reject the request first, then send the message again.
+- BA sends a saved reply that it had not yet sent when it was interrupted, with
+  no repair needed. Only failed and ambiguous deliveries need attention.
+- A message with no text is ignored. In a channel, a message that does not
+  mention the bot is answered only in a thread the bot already joined.
+- In a Telegram private chat the reply appears as a growing draft, then as the
+  final message. Slack and group chats show the final message only.
