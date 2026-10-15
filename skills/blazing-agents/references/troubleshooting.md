@@ -64,6 +64,7 @@ Use `BlazingAgentsError.isInstance(error)` instead of `instanceof`, which fails 
 | `subscription_required` or `usage_credit_required` (402) | No active plan, or no usage credit left. | [Fix billing](#quota-blocked). |
 | `rate_limited` (429) | Too many interactive turns at once, or resources created too fast. | [Back off](#quota-blocked). |
 | `session_busy` (409) | A tool approval is pending, an approval continuation is running, or another turn holds the Session. | [Decide approvals, then resend](#session-busy). |
+| `session_turn_unresponsive` (409) | The Session's previous turn stopped responding and still holds the Session. The Session frees within a minute. | [Wait for `Retry-After`, read the history, then resend under a new message ID](#session-busy). |
 | Chat paused for approval never continues after the decisions | Nothing runs until a client sends the complete round's decisions; a partial set fails `validation_failed`. | Send the whole round in one `continueChat`/`continue_chat` call, with the chat's `functions`; see [backend functions](recipes/backend-functions.md). |
 | `tool_approval_continuation_settled` (409) on a continuation call | The approval round already ran to a terminal state. | Read the Session's messages instead of deciding again. |
 | `session_version_mismatch` (409) | Two turns ran on the same Session at once; this one was not saved. | [Send one turn at a time](#session-busy). |
@@ -74,7 +75,7 @@ Use `BlazingAgentsError.isInstance(error)` instead of `instanceof`, which fails 
 | `invalid_cursor` (400) | The cursor was altered, came from another list, or was reused with different filters. | [Restart pagination](#invalid-cursor). |
 | Tool call never runs; the agent reports it was denied | The approval policy for this surface is `deny`, or `manual`/`auto` in a Task or stateless generation, where no person can approve. | [Change the policy or use chat](#tool-blocked-by-approval-policy). |
 | Turn fails with `mcp_connection_discovery_failed` (502), or the connection shows `needs_auth` | An attached MCP connection needs OAuth sign-in, or its server is down. | [Finish sign-in or detach](#mcp-authorization-missing). |
-| Chat stream ends without a `finish` chunk, or `stream_error` | The stream broke after it started: network drop, server error, or your Stop. | [Reload history and let the user resend](#stream-ended-without-finish). |
+| Chat stream ends without a `finish` chunk, ends with a `data-turn-interrupted` part, or `stream_error` | The stream broke after it started: network drop, server error, a turn the platform cut, or your Stop. | [Reload history and let the user resend](#stream-ended-without-finish). |
 | Slack or Telegram bot stays silent; a health check shows `unknown` | The health check could not verify a setting. | [Check that setting by hand](#chat-connection-health-unknown). |
 
 For any code not listed here, open its entry in the [error catalog](https://docs.blazingagents.com/api-reference/protocols/errors). Each entry says whether retrying the same request can succeed.
@@ -143,7 +144,11 @@ To fix it:
 - Show the error to your user, keep their draft, and let them send again once the work settles.
 - `session_version_mismatch` (409) means two turns ran on the same Session at once and this one was not saved. Read the Session's messages to see what was saved, then resend if needed.
 - To prevent both, steer the running turn with `sessions.submitInput()` or hold new messages in your client until the Session is idle, and send one chat turn at a time per Session.
-- Deleting a Session returns `session_busy` while any turn runs.
+- Deleting a Session returns `session_busy` while any turn runs, or `session_turn_unresponsive` when the last turn stopped responding.
+- `session_turn_unresponsive` (409) means the Session's previous turn stopped responding, for example because the platform restarted, and still holds the Session. The Session frees within a minute. A `session_busy` can come first while the stopped turn still looks busy. New chat, regeneration, approval continuations, and deletes all return the new code.
+  - Wait for the `Retry-After` header (`error.headers` in TypeScript, `error.retry_after` in Python). It holds whole seconds, at most a minute, and `error.details.retryAfterSeconds` repeats the value. Sending earlier fails the same way.
+  - Read the Session's messages before you resend, because the stopped turn may have saved its work.
+  - Send a chat turn again under a new message ID. Repeat an approval continuation with the same decisions, which stay recorded. Repeat a delete as it was.
 
 ## Session input errors
 
@@ -218,8 +223,14 @@ def check_mcp_connection(client: BlazingAgents, mcp_connection_id: str) -> None:
 
 A turn is done only when its stream finishes normally with a `finish` chunk. A `200` status or a closed connection proves nothing. Once a stream has started, its status is already sent, so later failures arrive as an `error` chunk inside the stream, or the stream just stops.
 
+A chat or approval-continuation turn that the platform cuts after it started ends in a fixed order. First comes a transient `data-turn-interrupted` part with `data.code` set to `turn_interrupted`. Then come an `error` chunk and `[DONE]`. The HTTP status stays 200.
+
+- `turn_interrupted` is the code of that stream part only. No HTTP error returns it, and the `error` chunk carries no code.
+- The turn may have saved its work before the cut. Read the Session's messages before you resend.
+- The Session can stay busy for up to a minute. A resend in that time returns `session_busy`, then `session_turn_unresponsive`. See [session busy](#session-busy).
+
 - In a `useChat` frontend, `onFinish` receives `isAbort`, `isError`, `isDisconnect`, and `finishReason`. Treat the turn as failed when any flag is set, `finishReason` is missing, or it equals `"error"`. Restore the last good messages and keep the user's draft.
-- In TypeScript, awaiting `result.text` or `result.object` rejects with `stream_error`. A network failure before any response is `network_error`, and your own abort is `request_aborted`. In Python, these are `StreamError` and `APIConnectionError`.
+- Completion and object streams carry no `data-turn-interrupted` part. A cut one fails the stream. In TypeScript, awaiting `result.text` or `result.object` rejects with `stream_error`. A network failure before any response is `network_error`, and your own abort is `request_aborted`. In Python, these are `StreamError` and `APIConnectionError`.
 - A failed or cancelled turn adds nothing to Session history, but a dropped connection can hide a turn that finished and was saved. Reload the Session's messages before you assume the reply was lost.
 - A resend is an ordinary new message with a fresh message ID. It can repeat tool side effects.
 - Log `requestId` from the result. Relay responses built by the SDK keep the original request ID.
