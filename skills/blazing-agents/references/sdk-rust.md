@@ -395,7 +395,7 @@ A network policy is `NetworkPolicy::Unrestricted`, `NetworkPolicy::allowlist(hos
 | `test(mcp_connection_id)` | `McpConnectionTest` (`Passed { server, tool_names, ... }` or `Failed { error }`) |
 | `reconnect(mcp_connection_id, McpReconnect)` | `McpConnectionReconnectResult` (`status`, `connection`) |
 
-`NewMcpConnection` has one struct variant per auth type (`None`, `Bearer`, `OAuthAuthorizationCode`, `OAuthClientCredentials`) with only the fields that auth type takes; `McpReconnect` is the same set for reconnecting. Attach a connection to an Agent through `agents().create()` / `update()` `.mcp_connection_ids(...)`. An `oauth_authorization_code` connection stays `needs_auth` until an admin signs in through the dashboard.
+`NewMcpConnection` has one struct variant per auth type (`None`, `Bearer`, `OAuthAuthorizationCode`, `OAuthClientCredentials`) with only the fields that auth type takes; `McpReconnect` is the same set for reconnecting. Attach a connection to an Agent through `agents().create()` / `update()` `.mcp_connection_ids(...)`. OAuth sign-in for an `oauth_authorization_code` connection happens in the dashboard: a Tenant administrator opens MCP connections, clicks **Connect**, and signs in to the server. The connection stays `needs_auth` until then, and an API key cannot start this sign-in.
 
 ### `client.memories()`
 
@@ -425,7 +425,7 @@ Run a saved Prompt with `client.chat(agent_id, SavedPrompt::new(prompt_id).var("
 
 | Method | Returns |
 | --- | --- |
-| `list()`, `.agent_id(...)`, `.session_id(...)` | `Page<Artifact>` |
+| `list()`, `.agent_id(...)`, `.session_id(...)` | `Page<Artifact>`. The server returns 50 Artifacts per page; follow `next_cursor` or use `.items()` |
 | `get(artifact_id)` | `Artifact` |
 | `create_download_url(artifact_id)` | `ArtifactDownloadUrl` (`url`, `expires_at`; the link works for five minutes without an API key) |
 | `delete(artifact_id)` | `()` |
