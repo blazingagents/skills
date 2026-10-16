@@ -22,7 +22,7 @@ For dollar allowances, use `tenant.getSpendingLimit` and
 `update_spending_limit`. These operations require unscoped Tenant authority.
 
 A settings form needs `amountUsd`, `resetStartDate`, and a `resetInterval` of
-`daily`, `weekly`, `biweekly`, or `monthly` (snake_case in Python). Saving
+`daily`, `weekly`, `biweekly`, or `monthly` (snake_case in Python, a `ResetInterval` variant in Rust). Saving
 applies immediately and keeps the current period's spend.
 
 Render `period.spentUsd`, `period.reservedUsd`, `period.availableUsd`, and
@@ -94,6 +94,42 @@ for row in overview.by_model:
     print(label, row.input_tokens + row.output_tokens)
 ```
 
+```rust
+let overview = client
+    .usage()
+    .overview()
+    .range("2026-09-01", "2026-09-26")
+    .limit(5)
+    .await?;
+
+println!("Requests {}", overview.totals.request_count);
+println!("Active Agents {}", overview.active_agent_count);
+for day in &overview.daily {
+    println!("{:?} {}", day.day, day.input_tokens + day.output_tokens);
+}
+for row in &overview.by_agent {
+    println!("{:?} {}", row.agent_id, row.input_tokens + row.output_tokens);
+}
+for row in &overview.by_user {
+    println!(
+        "{} {}",
+        row.user_id.as_deref().unwrap_or("No user"),
+        row.input_tokens + row.output_tokens
+    );
+}
+for row in &overview.by_model {
+    let label = match (&row.provider, &row.model) {
+        (None, None) => "Other models".to_owned(),
+        (provider, model) => format!(
+            "{}/{}",
+            provider.as_deref().unwrap_or(""),
+            model.as_deref().unwrap_or("")
+        ),
+    };
+    println!("{label} {}", row.input_tokens + row.output_tokens);
+}
+```
+
 2. Drill in with `usage.get()` or `usage.getForAgent()`. Group by `user`, `agent`, `model`, `day`, or `session`; `limit` (1 to 200, default 50) sets how many top Sessions come back when you group by `session`; other groupings return every group and ignore it.
 
 ```ts
@@ -146,6 +182,42 @@ for bucket in top_sessions.buckets:
     print(bucket.session_id or "Stateless calls", bucket.input_tokens)
 ```
 
+```rust
+use blazing_agents::usage::UsageGroupBy;
+
+let by_user = client.usage().get().group_by(UsageGroupBy::User).await?;
+for bucket in &by_user.buckets {
+    println!(
+        "{} {}",
+        bucket.user_id.as_deref().unwrap_or("No user"),
+        bucket.request_count
+    );
+}
+
+let agent_models = client
+    .usage()
+    .get_for_agent("ag_0123456789abcdef")
+    .group_by(UsageGroupBy::Model)
+    .await?;
+for bucket in &agent_models.buckets {
+    println!("{:?} {:?} {}", bucket.provider, bucket.model, bucket.output_tokens);
+}
+
+let top_sessions = client
+    .usage()
+    .get_for_agent("ag_0123456789abcdef")
+    .group_by(UsageGroupBy::Session)
+    .limit(10)
+    .await?;
+for bucket in &top_sessions.buckets {
+    println!(
+        "{:?} {}",
+        bucket.session_id.as_ref().map(|id| id.as_str()).unwrap_or("Stateless calls"),
+        bucket.input_tokens
+    );
+}
+```
+
 3. Show one customer their own usage. Resolve the customer's `userId` from your sign-in on the backend, then filter by it.
 
 ```ts
@@ -192,6 +264,28 @@ def customer_usage(signed_in_user_id: str) -> dict[str, object]:
         ],
         "total_tokens": usage.totals.input_tokens + usage.totals.output_tokens,
     }
+```
+
+```rust
+use blazing_agents::usage::UsageGroupBy;
+
+let signed_in_user_id = "user_123";
+let usage = client
+    .usage()
+    .get()
+    .user_id(format!("app:{signed_in_user_id}"))
+    .range("2026-09-01", "2026-09-26")
+    .group_by(UsageGroupBy::Day)
+    .await?;
+let days: Vec<_> = usage
+    .buckets
+    .iter()
+    .map(|b| serde_json::json!({"day": b.day, "tokens": b.input_tokens + b.output_tokens}))
+    .collect();
+let body = serde_json::json!({
+    "days": days,
+    "total_tokens": usage.totals.input_tokens + usage.totals.output_tokens,
+});
 ```
 
 4. Handle quota and plan outcomes. A chat or generation call that starts over the ceiling throws `quota_exceeded`, one stopped by a model spending limit throws `model_spending_limit_exceeded`, and one refused by the billing guard from step 7 throws a `merchant_*` code. A Task run refused before it runs, by the quota, your Blazing Agents plan, the billing guard, or a model spending limit, ends with status `blocked` instead of `failed`. A spending limit that stops a Task run after model work started ends it `failed`.
@@ -274,6 +368,44 @@ def run_status(task_id: str, run_id: str) -> str:
     return "Paused by quota or billing" if run.status == "blocked" else run.status
 ```
 
+```rust
+use blazing_agents::error::ErrorCode;
+use blazing_agents::tasks::TaskRunStatus;
+use blazing_agents::Error;
+
+let answer = match client
+    .completion("ag_0123456789abcdef", "Summarize this ticket.")
+    .user_id("app:user-42")
+    .await
+{
+    Ok(text) => text,
+    Err(Error::Api(error)) => match error.code() {
+        ErrorCode::QuotaExceeded => "Monthly limit reached.".to_owned(),
+        ErrorCode::ModelSpendingLimitExceeded => {
+            "Spending limit reached. Try again after it resets.".to_owned()
+        }
+        ErrorCode::SubscriptionRequired | ErrorCode::UsageCreditRequired => {
+            "Your Blazing Agents plan needs attention.".to_owned()
+        }
+        ErrorCode::RateLimited => "Busy, try again shortly.".to_owned(),
+        _ => return Err(Error::Api(error).into()),
+    },
+    Err(error) => return Err(error.into()),
+};
+println!("{answer}");
+
+let run = client
+    .tasks()
+    .get_run("tk_0123456789abcdef", "tr_0123456789abcdef")
+    .await?;
+let status = if run.status == TaskRunStatus::Blocked {
+    "Paused by quota or billing".to_owned()
+} else {
+    run.status.as_str().to_owned()
+};
+println!("{status}");
+```
+
 5. Connect your Polar or Dodo account, then turn on the billing switch. Start in `sandbox`. For Polar, use an Organization Access Token with only `organizations:read`, `customers:read`, and `events:write`; for Dodo, an API key in the matching mode.
 
 ```ts
@@ -308,6 +440,25 @@ settings = client.tenant.update(monetization_enabled=True)
 print(settings.monetization_enabled)
 ```
 
+```rust
+use blazing_agents::merchant::{MerchantEnvironment, MerchantProvider};
+
+client
+    .merchant_connection()
+    .create(
+        MerchantProvider::Polar,
+        MerchantEnvironment::Sandbox,
+        std::env::var("POLAR_ACCESS_TOKEN")?,
+    )
+    .await?;
+let settings = client
+    .tenant()
+    .update()
+    .monetization_enabled(true)
+    .await?;
+println!("{}", settings.monetization_enabled);
+```
+
 Then, in your provider, create a meter for events named `ba.model_tokens.v1` that sums `total_tokens` (or `input_tokens` and `output_tokens` for split prices), and attach it to a price or allowance. Events also carry `model`, `agent_id`, `session_id`, and `status` (`succeeded`, `failed`, or `cancelled`) for meter filters.
 
 6. When a user signs up or starts a paid plan, create the customer in your provider, then link your `userId` to it.
@@ -338,6 +489,14 @@ def link_customer(app_user_id: str, customer_id: str) -> MerchantCustomerBinding
     return client.merchant_bindings.put(
         f"app:{app_user_id}", customer_id=customer_id
     ).binding
+```
+
+```rust
+let binding = client
+    .merchant_bindings()
+    .set("app:user_123", "cus_0123456789")
+    .await?;
+println!("{} {}", binding.user_id, binding.customer_id);
 ```
 
 Use the exact `userId` you pass on chat, generation, and Task calls. Blazing Agents checks that the customer exists in your provider.
@@ -388,6 +547,34 @@ def release_after_linking(event_id: str) -> MerchantUsageEventResponse:
     return client.merchant_usage_events.release(event_id)
 ```
 
+```rust
+use blazing_agents::merchant::{MerchantGuard, MerchantUsageEventStatus};
+use futures_util::TryStreamExt;
+
+client
+    .merchant_connection()
+    .update()
+    .guard(MerchantGuard::new(true).product_ids(["prod_pro_plan"]))
+    .await?;
+
+let counts = client.merchant_usage_events().summary().days(7).await?.counts;
+println!("{} {} {}", counts.accepted, counts.unmapped, counts.failed);
+
+let mut events = client
+    .merchant_usage_events()
+    .list()
+    .status(MerchantUsageEventStatus::Unmapped)
+    .items();
+while let Some(event) = events.try_next().await? {
+    println!("{} {} {:?}", event.user_id, event.total_tokens, event.next_action);
+}
+
+let released = client
+    .merchant_usage_events()
+    .release("mev_0123456789abcdef")
+    .await?;
+```
+
 `productIds` requires an active subscription to one of those products; `meterId` (a Polar meter or a Dodo credit entitlement) requires a balance above zero; set both to require both. Each event has a suggested `nextAction` such as `retry`, `bind_and_release`, or `discard`.
 
 ## Exact usage for a Session list
@@ -422,6 +609,25 @@ def print_session_usage(verified_user_id: str, session_ids: list[str]) -> None:
     usage = tenant.for_user(verified_user_id).usage.sessions(session_ids)
     for row in usage.data:
         print(row.session_id, row.totals.input_tokens + row.totals.output_tokens)
+```
+
+```rust
+let verified_user_id = "user_123";
+let session_ids = ["ss_0123456789abcdef"];
+if !session_ids.is_empty() {
+    let usage = client
+        .for_user(verified_user_id)?
+        .usage()
+        .sessions(session_ids)
+        .await?;
+    for row in &usage.data {
+        println!(
+            "{} {}",
+            row.session_id,
+            row.totals.input_tokens + row.totals.output_tokens
+        );
+    }
+}
 ```
 
 Send 1 to 100 distinct IDs per request. The response preserves their order and returns zero totals for visible Sessions with no usage in the requested period. A missing or inaccessible Session makes the whole request fail with 404. Both dates are optional together; without them the range is the last 30 days.

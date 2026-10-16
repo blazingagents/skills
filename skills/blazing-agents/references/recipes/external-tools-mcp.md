@@ -53,7 +53,21 @@ connection = client.mcp_connections.create(
 print(connection.id, connection.status)
 ```
 
-2. If you chose `oauth_authorization_code`, finish sign-in in the dashboard. The Connection starts as `needs_auth`. A Tenant administrator opens MCP connections in the [dashboard](https://www.blazingagents.com/app), clicks **Connect**, and signs in to the server. If the server's authorization server asks for a redirect URL, register `https://api.blazingagents.com/v1/mcp/oauth/callback`. The SDK `connect()` method needs a signed-in dashboard administrator, so it fails with `unauthorized` when called with an API key.
+```rust
+use blazing_agents::mcp_connections::NewMcpConnection;
+
+let connection = client
+    .mcp_connections()
+    .create(NewMcpConnection::Bearer {
+        name: "Customer tools".to_owned(),
+        url: "https://mcp.example.com/v1".to_owned(),
+        bearer_token: std::env::var("CUSTOMER_MCP_TOKEN")?,
+    })
+    .await?;
+println!("{} {:?}", connection.id, connection.status);
+```
+
+2. If you chose `oauth_authorization_code`, finish sign-in in the dashboard. The Connection starts as `needs_auth`. A Tenant administrator opens MCP connections in the [dashboard](https://www.blazingagents.com/app), clicks **Connect**, and signs in to the server. If the server's authorization server asks for a redirect URL, register `https://api.blazingagents.com/v1/mcp/oauth/callback`. This sign-in needs a signed-in dashboard administrator, so no SDK can start it with an API key: the TypeScript and Python `connect()` method fails with `unauthorized`, and the Rust SDK has no such method.
 
 3. Test the Connection, attach it to the Agent, and choose what end-user context the server receives. `mcpConnectionIds` replaces the Agent's whole list, so add to the current one.
 
@@ -113,6 +127,47 @@ def attach(agent_id: str, mcp_connection_id: str) -> None:
     )
 ```
 
+```rust
+use blazing_agents::mcp_connections::McpConnectionTest;
+
+let agent_id = "ag_0123456789abcdef";
+let mcp_connection_id = "mcp_0123456789abcdef";
+
+let test = client.mcp_connections().test(mcp_connection_id).await?;
+let tool_names = match &test {
+    McpConnectionTest::Passed { tool_names, .. } => tool_names,
+    McpConnectionTest::Failed { error } => {
+        return Err(format!("{}: {}", error.code, error.message).into());
+    }
+    _ => unreachable!(),
+};
+if !tool_names.iter().any(|name| name == "lookup_customer") {
+    return Err(format!("Expected lookup_customer, got {tool_names:?}").into());
+}
+
+let agent = client.agents().get(agent_id).await?;
+if !agent
+    .mcp_connection_ids
+    .iter()
+    .any(|id| id.as_str() == mcp_connection_id)
+{
+    let mut ids = agent.mcp_connection_ids;
+    ids.push(mcp_connection_id.into());
+    client
+        .agents()
+        .update(agent_id)
+        .mcp_connection_ids(ids)
+        .await?;
+}
+
+client
+    .agents()
+    .update_mcp_attachment(agent_id, mcp_connection_id)
+    .forward_user_id(true)
+    .forwarded_metadata_keys(["plan"])
+    .await?;
+```
+
 4. Run a Turn that needs the tool, then read the saved Session to confirm the call. The saved tool part uses a generated name that contains the original tool name.
 
 ```ts
@@ -167,6 +222,38 @@ def check_tool_call(agent_id: str) -> None:
     page = client.sessions.messages(agent_id=agent_id, session_id=session_id)
     called = any("lookup_customer" in part.type for m in page.data for part in m.parts)
     print(session_id, "MCP tool was called" if called else "MCP tool was not called")
+```
+
+```rust
+use blazing_agents::messages::UserMessage;
+use blazing_agents::types::Metadata;
+use futures_util::TryStreamExt;
+
+let mut stream = client
+    .chat(
+        "ag_0123456789abcdef",
+        UserMessage::text("Look up customer 42 and summarize their account."),
+    )
+    .user_id("user_123")
+    .metadata(Metadata::new().insert("plan", "pro"))
+    .await?;
+let session_id = stream.session_id().clone();
+while stream.try_next().await?.is_some() {
+    // Drain the stream; in an app, relay the raw bytes to the browser instead.
+}
+
+let page = client
+    .sessions()
+    .messages("ag_0123456789abcdef", &session_id)
+    .await?;
+let called = page
+    .data
+    .iter()
+    .any(|m| m.parts.iter().any(|part| part.kind.contains("lookup_customer")));
+println!(
+    "{session_id} {}",
+    if called { "MCP tool was called" } else { "MCP tool was not called" }
+);
 ```
 
 ## Gotchas

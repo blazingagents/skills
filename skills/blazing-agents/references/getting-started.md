@@ -8,12 +8,12 @@ Use this page when you have no Blazing Agents (BA) code yet and want to see an A
 
 ## How it works
 
-Your backend talks to BA through the TypeScript or Python SDK, authenticated with a Tenant API key. A Provider stores your model account key (here, OpenRouter) once, so later calls never resend it. An Agent pairs a Provider with a model and is reused on every call. `chat()` sends one user message and streams the reply. With no `sessionId`, BA starts a new Session and keeps its history for you. The stream uses the AI SDK UI message format, so a web app can hand it straight to `useChat`.
+Your backend talks to BA through the TypeScript, Python, or Rust SDK, authenticated with a Tenant API key. A Provider stores your model account key (here, OpenRouter) once, so later calls never resend it. An Agent pairs a Provider with a model and is reused on every call. `chat()` sends one user message and streams the reply. With no `sessionId`, BA starts a new Session and keeps its history for you. The stream uses the AI SDK UI message format, so a web app can hand it straight to `useChat`.
 
 ## What you need
 
 - A BA account and a Tenant API key. Create it in the dashboard at [API keys](https://www.blazingagents.com/app/keys) and copy the full `ba_...` value. It is shown only once.
-- A backend on Node.js 24+ or Python 3.11+. The SDK runs on the server only.
+- A backend on Node.js 24+, Python 3.11+, or Rust 1.85+ with Tokio. The SDK runs on the server only.
 - An OpenRouter API key.
 
 ```bash
@@ -36,6 +36,11 @@ npm install @blazingagents/sdk ai@^7
 pip install blazing-agents
 ```
 
+```bash
+cargo add blazing-agents --git https://github.com/blazingagents/rust-sdk --rev 789a123
+cargo add tokio --features macros,rt-multi-thread
+```
+
 2. Check the connection. This lists the first page of Agents in your Tenant and changes nothing. A new Tenant already has 1 Agent, its admin Agent.
 
 ```ts
@@ -55,6 +60,14 @@ from blazing_agents import BlazingAgents
 client = BlazingAgents()  # reads BLAZING_AGENTS_API_KEY
 page = client.agents.list()
 print(f"Connected. First page has {len(page.data)} agents.")
+```
+
+```rust
+use blazing_agents::Client;
+
+let client = Client::from_env()?; // reads BLAZING_AGENTS_API_KEY
+let page = client.agents().list().await?;
+println!("Connected. First page has {} agents.", page.data.len());
 ```
 
 3. Create the Provider and Agent, then stream a first reply. The program checks every Agent page and rejects duplicate name matches. Run setup once at a time and save the resulting IDs; concurrent setup or a lost create response still requires reconciliation.
@@ -160,15 +173,86 @@ with client.chat(agent_id=agent.id, message=message) as stream:
     # Raw AI SDK UI message stream: relay it, store it, or render it as you like.
 ```
 
-4. Hand off to your app. In a web backend, return `result.toResponse()` (TypeScript) or the stream in a streaming response (Python) instead of printing it, and save the Session ID so the next message continues the conversation. [Add chat to your app](recipes/chat-in-your-app.md) walks through the endpoint, sign-in, user scope, and the `useChat` UI.
+```rust
+use blazing_agents::messages::UserMessage;
+use blazing_agents::providers::ProviderType;
+use blazing_agents::Client;
+use futures_util::TryStreamExt;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let client = Client::from_env()?;
+    let openrouter_key = std::env::var("OPENROUTER_API_KEY")?;
+
+    let provider_name = "Quickstart OpenRouter";
+    let provider_id = match client
+        .providers()
+        .list()
+        .await?
+        .providers
+        .iter()
+        .find(|provider| provider.name == provider_name)
+    {
+        Some(provider) => provider.id.clone(),
+        None => {
+            client
+                .providers()
+                .create(provider_name, ProviderType::OpenRouter, openrouter_key)
+                .await?
+                .id
+        }
+    };
+
+    let agent_name = "Quickstart agent";
+    let mut matches = Vec::new();
+    let mut cursor = None;
+    loop {
+        let mut call = client.agents().list().limit(100);
+        if let Some(cursor) = cursor {
+            call = call.cursor(cursor);
+        }
+        let page = call.await?;
+        matches.extend(page.data.into_iter().filter(|a| a.name == agent_name));
+        match page.next_cursor {
+            Some(next) => cursor = Some(next),
+            None => break,
+        }
+    }
+    if matches.len() > 1 {
+        return Err("Multiple Agents match. Choose an ID.".into());
+    }
+    let agent = match matches.into_iter().next() {
+        Some(agent) => agent,
+        None => {
+            client
+                .agents()
+                .create(agent_name)
+                .model(provider_id, "openai/gpt-6-luna")
+                .await?
+        }
+    };
+
+    let mut stream = client
+        .chat(agent.id, UserMessage::text("Say hello in one short sentence."))
+        .await?;
+    println!("Session: {}", stream.session_id());
+    while let Some(chunk) = stream.try_next().await? {
+        print!("{}", String::from_utf8_lossy(&chunk));
+    }
+    // Raw AI SDK UI message stream: relay it, store it, or render it as you like.
+    Ok(())
+}
+```
+
+4. Hand off to your app. In a web backend, return `result.toResponse()` (TypeScript), the stream in a streaming response (Python), or `Body::from_stream(stream)` in a Rust framework such as axum instead of printing it, and save the Session ID so the next message continues the conversation. [Add chat to your app](recipes/chat-in-your-app.md) walks through the endpoint, sign-in, user scope, and the `useChat` UI.
 
 ## Gotchas
 
 - The Tenant API key reaches every Agent in the Tenant. Keep it in backend configuration. Browser and mobile code call your backend, never BA.
-- `providers.create` stores the OpenRouter key without checking it. A bad key surfaces at `agents.create` as `model_validation_unavailable` (503). The same code can mean OpenRouter was briefly unreachable, so retry once after a short wait. If it persists, fix the key, delete the Provider (`client.providers.delete({ providerId })` or `client.providers.delete(provider_id)`), and run again.
-- `model_not_found` at `agents.create` means the model ID is not offered by that Provider. List valid IDs with `client.providers.listModels({ providerId })` or `client.providers.list_models(provider_id=...)`.
-- Each `chat()` without a Session ID starts a new Session with no memory of earlier calls. Pass `sessionId` (`session_id` in Python) to continue one.
-- In Python, use the stream inside `with` so the connection closes when you are done.
+- `providers.create` stores the OpenRouter key without checking it. A bad key surfaces at `agents.create` as `model_validation_unavailable` (503). The same code can mean OpenRouter was briefly unreachable, so retry once after a short wait. If it persists, fix the key, delete the Provider (`client.providers.delete({ providerId })`, `client.providers.delete(provider_id)` in Python, `client.providers().delete(provider_id)` in Rust), and run again.
+- `model_not_found` at `agents.create` means the model ID is not offered by that Provider. List valid IDs with `client.providers.listModels({ providerId })`, `client.providers.list_models(provider_id=...)` in Python, or `client.providers().list_models(provider_id)` in Rust.
+- Each `chat()` without a Session ID starts a new Session with no memory of earlier calls. Pass `sessionId` (`session_id` in Python, `.session(session_id)` on the call in Rust) to continue one.
+- In Python, use the stream inside `with` so the connection closes when you are done. In Rust, the stream closes when you read it to the end or drop it.
 - The stream is server-sent events. Relay it or pass it to AI SDK tooling rather than splitting frames yourself.
 
 ## Check it works

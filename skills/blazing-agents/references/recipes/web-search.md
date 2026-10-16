@@ -55,6 +55,23 @@ agent = client.agents.create(
 print(agent.id)
 ```
 
+```rust
+use blazing_agents::agents::AgentTool;
+
+let agent = client
+    .agents()
+    .create("Research assistant")
+    .model("prv_0123456789abcdef", "openai/gpt-6-luna")
+    .instructions(
+        "Search the web only for facts that may have changed recently. \
+         Use at most three searches per answer. \
+         List the URLs you relied on at the end.",
+    )
+    .tools([AgentTool::WebSearch])
+    .await?;
+println!("{}", agent.id);
+```
+
 2. To add web search to an existing Agent, read its `tools` and send the whole list back with `web_search` added. `tools` replaces the selection and rejects duplicate names.
 
 ```ts
@@ -76,6 +93,21 @@ def enable_web_search(client: BlazingAgents, agent_id: str) -> None:
     agent = client.agents.get(agent_id)
     if "web_search" not in agent.tools:
         client.agents.update(agent_id, tools=[*agent.tools, "web_search"])
+```
+
+```rust
+use blazing_agents::agents::AgentTool;
+
+let agent = client.agents().get("ag_0123456789abcdef").await?;
+if !agent.tools.contains(&AgentTool::WebSearch) {
+    let mut tools = agent.tools;
+    tools.push(AgentTool::WebSearch);
+    client
+        .agents()
+        .update("ag_0123456789abcdef")
+        .tools(tools)
+        .await?;
+}
 ```
 
 3. Chat with the Agent as usual, following [Add chat to your app](chat-in-your-app.md). Your UI renders the `tool-web_search` parts like any other tool call, so users can see what was searched.
