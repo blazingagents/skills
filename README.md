@@ -14,6 +14,7 @@
 
 - Reusable instructions for coding agents working with Blazing Agents.
 - Tenant administration through the `ba-admin` skill and public SDK.
+- Guidance for the TypeScript, Python, and Rust SDKs.
 - Interactive installation of one or every skill in the repository.
 - Support for Codex and other agents compatible with the `skills` CLI.
 - Simple listing and update commands for installed skills.
@@ -22,7 +23,7 @@
 
 | Skill | Use it to |
 | --- | --- |
-| `blazing-agents` | Build products on Blazing Agents with the TypeScript or Python SDK: chat, background and scheduled work, structured output, web search, backend functions, MCP tools, tool approvals, Slack and Telegram bots, usage dashboards, and token billing. |
+| `blazing-agents` | Build products on Blazing Agents with the TypeScript, Python, or Rust SDK: chat, background and scheduled work, structured output, web search, backend functions, MCP tools, tool approvals, Slack and Telegram bots, usage dashboards, and token billing. |
 | `ba-admin` | Administer a Tenant from a coding agent: Agents, Workspaces, Skills, Prompts, Tasks, Sessions, Chat Connections, and usage. |
 
 ## Install

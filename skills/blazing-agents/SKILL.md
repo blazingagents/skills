@@ -1,9 +1,9 @@
 ---
 name: blazing-agents
-description: Build products on Blazing Agents (BA), the hosted platform that runs production AI agents behind your backend. Use when the user wants to add an agent, chat, background or scheduled agent work, structured output, agent files, web search, backend functions, MCP tools, tool approvals, Slack/Telegram bots, usage dashboards, or token billing to their app with the BA TypeScript or Python SDK, or asks what BA is or can do. Use ba-admin instead for one-off Tenant administration. Do not use for generic AI-agent work without BA.
+description: Build products on Blazing Agents (BA), the hosted platform that runs production AI agents behind your backend. Use when the user wants to add an agent, chat, background or scheduled agent work, structured output, agent files, web search, backend functions, MCP tools, tool approvals, Slack/Telegram bots, usage dashboards, or token billing to their app with the BA TypeScript, Python, or Rust SDK, or asks what BA is or can do. Use ba-admin instead for one-off Tenant administration. Do not use for generic AI-agent work without BA.
 metadata:
   author: Blazing Agents
-  version: "0.5.0"
+  version: "0.6.0"
 ---
 
 # Blazing Agents
@@ -18,7 +18,8 @@ account so they can bill their customers.
 
 The developer's backend is the only thing that calls BA. It signs in its users,
 decides what each may access, and calls BA with the Tenant API key through the
-TypeScript SDK (`@blazingagents/sdk`) or the Python SDK (`blazing-agents`).
+TypeScript SDK (`@blazingagents/sdk`), the Python SDK (`blazing-agents`), or
+the Rust SDK (crate `blazing-agents`, import `blazing_agents`).
 Chat streams use the Vercel AI SDK UI message format, so `useChat` renders them
 directly.
 
@@ -49,8 +50,9 @@ developer wants to write the agent loop step by step.
 1. Map the request to rows in the table above and read those recipes. Read
    [Concepts](references/concepts.md) when a BA term is unclear.
 2. Check the project's stack and the SDK version it has installed. Take method
-   names and fields from [the TypeScript SDK](references/sdk-typescript.md) or
-   [the Python SDK](references/sdk-python.md), and confirm anything not shown
+   names and fields from [the TypeScript SDK](references/sdk-typescript.md),
+   [the Python SDK](references/sdk-python.md), or
+   [the Rust SDK](references/sdk-rust.md), and confirm anything not shown
    there against the installed package's types or the linked docs. Never guess
    a method, field, or limit.
 3. Make sure the Tenant has a Provider and an Agent. Create them in code as in
@@ -68,23 +70,27 @@ developer wants to write the agent loop step by step.
   ship it in browser or mobile code, logs, or Workspace files.
 - The API key selects the Tenant. Never accept a Tenant from a request.
 - Derive the user ID from verified sign-in. For user-owned resources, use
-  `client.forUser(userId)` (`client.for_user(user_id)` in Python) so BA
+  `client.forUser(userId)` (`client.for_user(user_id)` in Python,
+  `client.for_user(user_id)?` in Rust) so BA
   enforces ownership. A body or filter `userId` alone only
   labels work and grants no access. Keep unscoped clients for trusted Tenant
   operations. Read
   [Multi-user apps](references/recipes/multi-user-apps.md) for the boundary.
-- Relay BA's stream as it is. Return `toResponse()` in TypeScript or forward the
-  raw bytes in Python, and let `useChat` render it. Never parse the stream by hand.
+- Relay BA's stream as it is. Return `toResponse()` in TypeScript, forward the
+  raw bytes in Python, or relay the `ChatStream` bytes unchanged in Rust, and
+  let `useChat` render it. Never parse the stream by hand.
 - A chat Session ID arrives with the response. Save it and pass it back to
   continue the conversation. Load history from BA instead of storing your own copy.
 - A resend or retry is a new attempt, and tool side effects can happen again.
   Use a stable idempotency key for every Task run submission, and for Task
-  creation with `submit: true` in TypeScript (Python has no key on create).
+  creation with `submit: true` in TypeScript or `.submit(true)` in Rust
+  (Python has no key on create).
 - BA holds no message queue; waiting messages live in the client. While a Turn
   runs, a new chat call fails with `session_busy`. A Turn that stopped
   responding returns `session_turn_unresponsive` with a `Retry-After` header
   instead. Either steer the Turn with `sessions.submitInput()` /
-  `submit_input()`, or hold the message until the Session is idle and send it
+  `submit_input()` (`sessions().submit_input()` in Rust), or hold the message
+  until the Session is idle and send it
   as ordinary chat (one per Turn, or several with `messages`). Take a message
   out of the local queue before sending it, keep each input's `requestId` until
   its receipt arrives, and never rebuild the queue from receipts or history.
