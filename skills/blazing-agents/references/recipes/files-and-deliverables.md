@@ -52,6 +52,28 @@ agent = client.agents.create(
 print(agent.id, agent.workspace_id)
 ```
 
+```rust
+use blazing_agents::agents::{AgentTool, WorkspaceTier};
+
+let agent = client
+    .agents()
+    .create("Report writer")
+    .model("prv_0123456789abcdef", "openai/gpt-6-luna")
+    .instructions(
+        "Write reports as Markdown files. \
+         When a file is finished, publish it with publish_artifacts.",
+    )
+    .workspace_tier(WorkspaceTier::Plus)
+    .tools([
+        AgentTool::Read,
+        AgentTool::Write,
+        AgentTool::Bash,
+        AgentTool::PublishArtifacts,
+    ])
+    .await?;
+println!("{} {}", agent.id, agent.workspace_id);
+```
+
 For an existing Agent, read `agent.tools` and send the full list with the new tools added. `tools` replaces the whole list and rejects duplicate names.
 
 2. To let several Agents work on the same files, create a Workspace and attach each Agent to it. Pick the narrowest network policy: `unrestricted` (default), `allowlist`, or `offline`.
@@ -87,6 +109,27 @@ def share_workspace(client: BlazingAgents, agent_ids: list[str]) -> str:
     for agent_id in agent_ids:
         client.agents.update(agent_id, workspace_id=workspace.id)
     return workspace.id
+```
+
+```rust
+use blazing_agents::workspaces::{NetworkPolicy, WorkspaceTier};
+
+let agent_ids = ["ag_0123456789abcdef", "ag_abcdef0123456789"];
+let workspace = client
+    .workspaces()
+    .create()
+    .name("Release files")
+    .tier(WorkspaceTier::Plus)
+    .network_policy(NetworkPolicy::allowlist(["registry.npmjs.org"]))
+    .await?;
+for agent_id in agent_ids {
+    client
+        .agents()
+        .update(agent_id)
+        .workspace_id(&workspace.id)
+        .await?;
+}
+println!("{}", workspace.id);
 ```
 
 3. Ask for the file in a chat turn, read the stream to the end, then list the Session's Artifacts. Pass `userId` so each Artifact carries the Session's user ID, which you check before download.
@@ -144,6 +187,30 @@ def write_report(client: BlazingAgents, agent_id: str, user_id: str) -> list[str
     return [artifact.artifact_id for artifact in page.data]
 ```
 
+```rust
+use blazing_agents::messages::UserMessage;
+use futures_util::TryStreamExt;
+
+let mut stream = client
+    .chat(
+        "ag_0123456789abcdef",
+        UserMessage::text("Write a short release summary to release.md, then publish it."),
+    )
+    .user_id("app:user-42")
+    .await?;
+let session_id = stream.session_id().clone();
+while stream.try_next().await?.is_some() {
+    // or forward each chunk to your client
+}
+let page = client
+    .artifacts()
+    .list()
+    .agent_id("ag_0123456789abcdef")
+    .session_id(session_id)
+    .await?;
+let artifact_ids: Vec<_> = page.data.iter().map(|artifact| &artifact.artifact_id).collect();
+```
+
 This recipe uses a Tenant-owned Agent with explicit end-user Attribution. For user-owned Agents, scope Agent creation, chat, and downloads consistently as shown in [multi-user apps](multi-user-apps.md). A scoped download cannot read an Artifact produced by a Tenant-owned Agent.
 
 4. Serve downloads from your backend. Compare the Artifact's `userId` with the `userId` you send for the signed-in user on chat calls, then redirect to a fresh download URL.
@@ -179,6 +246,19 @@ def artifact_download_url(
     return str(client.artifacts.create_download_url(artifact_id=artifact_id).url)
 ```
 
+```rust
+let signed_in_user_id = "app:user-42";
+let artifact = client.artifacts().get("at_0123456789abcdef").await?;
+if artifact.user_id != signed_in_user_id {
+    return Err("not found".into()); // respond 404
+}
+let url = client
+    .artifacts()
+    .create_download_url(artifact.artifact_id)
+    .await?
+    .url;
+```
+
 5. Clean up. Deleting an Artifact is permanent and leaves the Workspace file alone. When you delete a Session, choose whether its Artifacts go too. A Workspace can be deleted only after every Agent has moved off it.
 
 ```ts
@@ -210,6 +290,15 @@ def clean_up(client: BlazingAgents, artifact_id: str, workspace_id: str) -> None
         delete_artifacts=True,
     )
     print(client.workspaces.delete(workspace_id=workspace_id))
+```
+
+```rust
+client.artifacts().delete("at_0123456789abcdef").await?;
+client
+    .sessions()
+    .delete("ag_0123456789abcdef", "ss_0123456789abcdef", true)
+    .await?;
+client.workspaces().delete("ws_0123456789abcdef").await?;
 ```
 
 ## Gotchas

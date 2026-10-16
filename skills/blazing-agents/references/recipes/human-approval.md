@@ -75,6 +75,35 @@ def set_policies(agent_id: str, mcp_connection_id: str) -> None:
     )
 ```
 
+```rust
+use blazing_agents::agents::{AgentTool, ApprovalDecision, ApprovalPolicy, ToolReference};
+
+let mcp_connection_id = "mcp_0123456789abcdef";
+client
+    .agents()
+    .update("ag_0123456789abcdef")
+    .approval_in_chat(
+        ApprovalPolicy::new(ApprovalDecision::Full)
+            .with_override(
+                ToolReference::builtin(AgentTool::Bash),
+                ApprovalDecision::Manual,
+            )
+            .with_override(
+                ToolReference::mcp(mcp_connection_id, "refund_order"),
+                ApprovalDecision::Manual,
+            )
+            .with_override(
+                ToolReference::mcp(mcp_connection_id, "send_email"),
+                ApprovalDecision::Auto,
+            ),
+    )
+    .approval_in_tasks(
+        ApprovalPolicy::new(ApprovalDecision::Deny)
+            .with_override(ToolReference::builtin(AgentTool::Read), ApprovalDecision::Full),
+    )
+    .await?;
+```
+
 2. After a chat stream ends, list the Session's approvals on your backend and send the pending ones to the reviewer. In a `useChat` UI, the paused Turn ends with a tool part in the `approval-requested` state; use that as the cue to fetch this list. Here the signed-in user reviews their own Session: the backend reads the user's Agent ID from trusted state, validates the Session ID, and calls BA under that user's scope, so BA rejects another user's Session. For a separate reviewer role, check it in your backend and scope the calls to the Session's owner.
 
 ```ts
@@ -136,6 +165,88 @@ async def list_pending(
         if item.decision == "pending"
     ]
     return {"pending": pending}
+```
+
+```rust
+use axum::extract::{Json, Query, State};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use axum::routing::get;
+use axum::Router;
+use blazing_agents::sessions::ToolApprovalDecision;
+use blazing_agents::{Client, Error};
+use serde::Deserialize;
+use serde_json::json;
+
+#[derive(Deserialize)]
+struct ApprovalsQuery {
+    #[serde(rename = "sessionId")]
+    session_id: String,
+}
+
+fn current_user() -> String {
+    // Your sign-in check. Return the verified user ID or reject the request.
+    "user_123".to_owned()
+}
+
+fn agent_for_user(_user_id: &str) -> String {
+    // Read this user's Agent ID from trusted backend state.
+    "ag_0123456789abcdef".to_owned()
+}
+
+async fn list_pending(
+    State(client): State<Client>,
+    Query(query): Query<ApprovalsQuery>,
+) -> Response {
+    let user_id = current_user();
+    let Ok(scoped) = client.for_user(&user_id) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    scoped
+        .sessions()
+        .tool_approvals(agent_for_user(&user_id), query.session_id)
+        .await
+        .map(|approvals| {
+            let pending: Vec<_> = approvals
+                .data
+                .iter()
+                .filter(|item| item.decision == ToolApprovalDecision::Pending)
+                .map(|item| {
+                    json!({
+                        "approvalId": item.approval_id,
+                        "tool": item
+                            .tool
+                            .as_ref()
+                            .map_or_else(|| json!(item.tool_name), |tool| json!(tool)),
+                        "input": item.input,
+                    })
+                })
+                .collect();
+            Json(json!({ "pending": pending })).into_response()
+        })
+        .unwrap_or_else(|error| {
+            (
+                match error {
+                    Error::Api(api) => {
+                        StatusCode::from_u16(api.status()).unwrap_or(StatusCode::BAD_GATEWAY)
+                    }
+                    _ => StatusCode::BAD_GATEWAY,
+                },
+                Json(json!({ "error": "upstream" })),
+            )
+                .into_response()
+        })
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let app = Router::new()
+        .route("/api/tool-approvals", get(list_pending))
+        .with_state(Client::from_env()?);
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
+    axum::serve(listener, app).await?;
+    Ok(())
+}
 ```
 
 3. Send the complete round of decisions in one call. Every pending approval from the same round needs an entry, and an incomplete, duplicate, or mixed set fails `validation_failed`. `continueChat` records the round and streams the rest of the Turn, so relay the response to the browser like a chat Turn. When the chat attached backend functions, pass the same `functions` map or the approved calls cannot run; see [backend functions](backend-functions.md). Identical retries are safe: the same decisions return the running or settled outcome without recording twice.
@@ -221,6 +332,84 @@ async def continue_round(
         headers={"x-vercel-ai-ui-message-stream": "v1"},
         media_type="text/event-stream",
     )
+```
+
+```rust
+use axum::body::Body;
+use axum::extract::{Json, State};
+use axum::http::StatusCode;
+use axum::response::Response;
+use axum::routing::post;
+use axum::Router;
+use blazing_agents::chat::ApprovalDecision;
+use blazing_agents::Client;
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+struct Decision {
+    #[serde(rename = "approvalId")]
+    approval_id: String,
+    approved: bool,
+    reason: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ContinueBody {
+    #[serde(rename = "sessionId")]
+    session_id: String,
+    decisions: Vec<Decision>,
+}
+
+fn current_user() -> String {
+    // Your sign-in check; return the verified user ID or reject the request.
+    "user_123".to_owned()
+}
+
+fn agent_for_user(_user_id: &str) -> String {
+    // Read this user's Agent ID from trusted backend state.
+    "ag_0123456789abcdef".to_owned()
+}
+
+async fn continue_round(
+    State(client): State<Client>,
+    Json(body): Json<ContinueBody>,
+) -> Result<Response, StatusCode> {
+    let user_id = current_user();
+    if body.decisions.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let decisions = body.decisions.iter().map(|d| {
+        let decision = if d.approved {
+            ApprovalDecision::approve(&d.approval_id)
+        } else {
+            ApprovalDecision::deny(&d.approval_id)
+        };
+        match &d.reason {
+            Some(reason) => decision.reason(reason.clone()),
+            None => decision,
+        }
+    });
+    let scoped = client.for_user(&user_id).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let stream = scoped
+        .continue_chat(agent_for_user(&user_id), &body.session_id, decisions)
+        .await
+        .map_err(|_| StatusCode::BAD_GATEWAY)?;
+    Response::builder()
+        .header("content-type", "text/event-stream")
+        .header("x-vercel-ai-ui-message-stream", "v1")
+        .body(Body::from_stream(stream))
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let app = Router::new()
+        .route("/api/tool-approvals/continue", post(continue_round))
+        .with_state(Client::from_env()?);
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
+    axum::serve(listener, app).await?;
+    Ok(())
+}
 ```
 
 4. In the browser, collect the round's decisions and render the continued answer with the AI SDK stream helpers. `renderAssistant` is your callback; replace the displayed message by its ID on each update.

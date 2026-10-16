@@ -32,7 +32,7 @@ Not the same as: a Session. The agent is configuration; a session is one convers
 
 ### Agent configuration snapshot
 
-The Agent settings saved with a Session at its first Turn or with a Task run when queued. It includes the model, instructions, tools, approval policies, and compaction settings. Later Agent edits affect new work; existing Sessions and queued runs keep their saved settings. Read `agentConfig` with `sessions.get()` or `tasks.getRun()`, including before a Task run has a Session.
+The Agent settings saved with a Session at its first Turn or with a Task run when queued. It includes the model, instructions, tools, approval policies, and compaction settings. Later Agent edits affect new work; existing Sessions and queued runs keep their saved settings. Read `agentConfig` with `sessions.get()` or `tasks.getRun()` (`sessions().get()` or `tasks().get_run()` in Rust), including before a Task run has a Session.
 
 Not the same as a copy of every dependency. Provider keys, MCP credentials and connection details, Workspace attachment, Skills, and Memories use their current state. Local callback functions come from each SDK request; pass them again on the approval continuation call.
 
@@ -52,7 +52,7 @@ Not the same as: a Session. A session holds many turns; one-off generation runs 
 
 ### Session
 
-One stored conversation with one agent, identified by `ss_...`. BA returns the ID on the first chat call; pass it on the next call and the agent continues with the saved conversation context, so your backend never stores or replays messages. You need sessions for chat. A session keeps the [Agent configuration](#agent-configuration-snapshot) from its first Turn. When you delete a session you choose whether its Artifacts go too (`deleteArtifacts`, `delete_artifacts` in Python).
+One stored conversation with one agent, identified by `ss_...`. BA returns the ID on the first chat call; pass it on the next call and the agent continues with the saved conversation context, so your backend never stores or replays messages. You need sessions for chat. A session keeps the [Agent configuration](#agent-configuration-snapshot) from its first Turn. When you delete a session you choose whether its Artifacts go too (`deleteArtifacts`, `delete_artifacts` in Python, a `delete_artifacts: bool` argument in Rust).
 
 Not the same as: Memory. A session is one conversation; memories carry facts across conversations.
 
@@ -95,7 +95,7 @@ Pick the tier when the workspace is created; it never changes:
 - **Core** (default, 1 GiB memory). Files are lost when the workspace stops. Use it for scratch work inside one conversation.
 - **Plus** (4 GiB memory). Files are saved when the workspace stops while idle and come back on the next start. Use it when a later Session or Task run must find the files. Running processes do not come back, and a crash loses changes since the last idle stop. Saved files are discarded after 29 days without use.
 
-Creating an agent without `workspaceId` gives it a new Core workspace. Pass `workspaceTier: "plus"` (`workspace_tier` in Python) to get Plus; it cannot be combined with `workspaceId`. To change tier, create a new workspace and attach it; files are not copied. Plus is a convenience, not storage: a failed save also starts the next run empty. Anything your app or users must keep belongs in an Artifact.
+Creating an agent without `workspaceId` gives it a new Core workspace. Pass `workspaceTier: "plus"` (`workspace_tier` in Python, `.workspace_tier(WorkspaceTier::Plus)` in Rust) to get Plus; it cannot be combined with `workspaceId`. To change tier, create a new workspace and attach it; files are not copied. Plus is a convenience, not storage: a failed save also starts the next run empty. Anything your app or users must keep belongs in an Artifact.
 
 Not the same as: an Artifact. Workspace files are the agent's scratch space; your app cannot fetch them directly.
 
@@ -128,7 +128,7 @@ Not the same as: a Chat Connection (a Slack or Telegram bot). Attaching a connec
 
 ### Backend function
 
-A function in your own backend that a chat agent can call. You attach a map of them to one `chat()` call (TypeScript `defineFunction`, Python `define_function`); BA shows the model only each name, description, and input schema, and your SDK validates the input, runs the handler, and submits its JSON result. Functions are attached per request, never saved on the Agent, and exist only in interactive chat, including the `continueChat`/`continue_chat` call that continues a Turn after an approval pause.
+A function in your own backend that a chat agent can call. You attach a map of them to one `chat()` call (TypeScript `defineFunction`, Python `define_function`, Rust `Functions::builder().function(...)`); BA shows the model only each name, description, and input schema, and your SDK validates the input, runs the handler, and submits its JSON result. Functions are attached per request, never saved on the Agent, and exist only in interactive chat, including the `continueChat`/`continue_chat` call that continues a Turn after an approval pause.
 
 Not the same as: an MCP Connection, whose tools live on a remote server and also work in Tasks, stateless generation, and Slack or Telegram.
 
@@ -172,7 +172,7 @@ Not the same as: an MCP Connection, which gives an agent tools rather than a pla
 
 A label you stamp on resources and turns to say which of your end users they are for: an opaque `userId` string you choose plus optional `metadata`. Set it when you create an agent, workspace, prompt, task, or memory, or on a turn (a session takes the label of its first turn); a `userId` never changes once set, and you can filter lists and usage by it. An empty `userId` means a tenant-level resource. Use it so you can list one user's sessions and bill or report per user without your own mapping tables.
 
-A body or filter `userId` alone does not change permissions. For user-owned resources, derive the ID from verified sign-in and use `client.forUser(userId)` in TypeScript or `client.for_user(user_id)` in Python. BA enforces that scope on supported reads and writes. An unscoped API key retains Tenant-wide access. See [multi-user apps](recipes/multi-user-apps.md).
+A body or filter `userId` alone does not change permissions. For user-owned resources, derive the ID from verified sign-in and use `client.forUser(userId)` in TypeScript, `client.for_user(user_id)` in Python, or `client.for_user(user_id)?` in Rust. BA enforces that scope on supported reads and writes. An unscoped API key retains Tenant-wide access. See [multi-user apps](recipes/multi-user-apps.md).
 
 ### Usage
 

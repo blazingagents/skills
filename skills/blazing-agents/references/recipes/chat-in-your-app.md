@@ -14,7 +14,7 @@ BA holds no queue. A message sent while the Session is busy either steers the ru
 
 ## Build it
 
-1. Install the packages. Your backend needs `@blazingagents/sdk` (or `blazing-agents` for Python). Your React frontend needs `@blazingagents/sdk`, `ai`, and `@ai-sdk/react`.
+1. Install the packages. Your backend needs `@blazingagents/sdk` (or `blazing-agents`, the Python package or the Rust crate). Your React frontend needs `@blazingagents/sdk`, `ai`, and `@ai-sdk/react`.
 
 ```bash
 npm install @blazingagents/sdk ai@^7 @ai-sdk/react zod
@@ -142,7 +142,7 @@ export async function history(request: Request): Promise<Response> {
 
 The authentication hook returns the verified user's ID and their Agent ID from trusted backend state. Provision that Agent with the same user scope. `createChatRelay` remains an alternative for integrations that maintain their own `SessionOwnershipStore`; it does not select a scoped client automatically.
 
-The Python SDK accepts the verified scope in `extra_headers` on every call. The SDK returns the raw stream bytes; relay them unchanged and copy the `Location` header on the first Turn so the frontend learns the Session ID.
+The Python SDK accepts the verified scope in `extra_headers` on every call; a Rust `UserClient` sends it on every request it makes. The SDK returns the raw stream bytes; relay them unchanged and copy the `Location` header on the first Turn so the frontend learns the Session ID.
 
 ```python
 from typing import Any, Literal, TypedDict
@@ -301,6 +301,218 @@ async def history(
         ],
         "nextCursor": page.next_cursor
     }
+```
+
+```rust
+use axum::body::Body;
+use axum::extract::{Json, Query, State};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use axum::routing::{get, post};
+use axum::Router;
+use blazing_agents::chat::{ApprovalDecision, ChatInput, ChatStream};
+use blazing_agents::messages::UserMessage;
+use blazing_agents::{Client, Error};
+use blazing_agents::pagination::Cursor;
+use serde::Deserialize;
+use serde_json::{json, Value};
+
+#[derive(Deserialize)]
+struct ChatBody {
+    message: Option<Value>,
+    messages: Option<Vec<Value>>,
+    #[serde(rename = "sessionId")]
+    session_id: Option<String>,
+    trigger: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct HistoryQuery {
+    #[serde(rename = "sessionId")]
+    session_id: String,
+    cursor: Option<String>,
+}
+
+fn current_user() -> String {
+    // Your sign-in check. Return the verified user ID or reject the request.
+    "user_123".to_owned()
+}
+
+fn agent_for_user(_user_id: &str) -> String {
+    // Read this user's Agent ID from trusted backend state.
+    "ag_0123456789abcdef".to_owned()
+}
+
+fn approval_decisions(message: &Value) -> Vec<ApprovalDecision> {
+    // The round's decisions: answered tool parts after the last step-start.
+    let Some(parts) = message.get("parts").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    let last_step = parts
+        .iter()
+        .rposition(|part| part.get("type").and_then(Value::as_str) == Some("step-start"))
+        .map(|index| index + 1)
+        .unwrap_or(0);
+    parts[last_step..]
+        .iter()
+        .filter(|part| part.get("state").and_then(Value::as_str) == Some("approval-responded"))
+        .filter_map(|part| {
+            let approval = part.get("approval")?;
+            let id = approval.get("id")?.as_str()?;
+            let decision = match approval.get("approved")?.as_bool()? {
+                true => ApprovalDecision::approve(id),
+                false => ApprovalDecision::deny(id),
+            };
+            Some(match approval.get("reason").and_then(Value::as_str) {
+                Some(reason) => decision.reason(reason),
+                None => decision,
+            })
+        })
+        .collect()
+}
+
+fn relay(stream: ChatStream, new_session: bool) -> Response {
+    let mut response = Response::builder()
+        .header("cache-control", "no-cache")
+        .header("content-type", "text/event-stream")
+        .header("x-vercel-ai-ui-message-stream", "v1");
+    if new_session {
+        if let Some(location) = stream.meta().headers().get("location") {
+            response = response.header("location", location.clone());
+        }
+    }
+    response
+        .body(Body::from_stream(stream))
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
+fn failure(error: Error) -> Response {
+    match error {
+        Error::InvalidArgument(_) => StatusCode::BAD_REQUEST.into_response(),
+        Error::Api(api) => (
+            StatusCode::from_u16(api.status()).unwrap_or(StatusCode::BAD_GATEWAY),
+            Json(json!({ "error": { "code": api.code().as_str() } })),
+        )
+            .into_response(),
+        _ => (
+            StatusCode::BAD_GATEWAY,
+            Json(json!({ "error": { "code": "upstream_error" } })),
+        )
+            .into_response(),
+    }
+}
+
+async fn history(
+    State(client): State<Client>,
+    Query(query): Query<HistoryQuery>,
+) -> Response {
+    let user_id = current_user();
+    let Ok(scoped) = client.for_user(&user_id) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    let mut call = scoped
+        .sessions()
+        .messages(agent_for_user(&user_id), query.session_id)
+        .limit(200);
+    if let Some(cursor) = query.cursor {
+        call = call.cursor(Cursor::from(cursor));
+    }
+    call.await
+        .map(|page| {
+            Json(json!({
+                "messages": page.data,
+                "nextCursor": page.next_cursor,
+            }))
+            .into_response()
+        })
+        .unwrap_or_else(failure)
+}
+
+async fn chat(State(client): State<Client>, Json(body): Json<ChatBody>) -> Response {
+    let user_id = current_user();
+    let Ok(scoped) = client.for_user(&user_id) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    let agent_id = agent_for_user(&user_id);
+
+    let message = body.message.clone().unwrap_or(Value::Null);
+    let is_approval = body.messages.is_none()
+        && message.get("role").and_then(Value::as_str) == Some("assistant");
+
+    let result = if is_approval {
+        // The frontend posts the answered assistant message; its tool parts
+        // after the last step-start carry the round's decisions.
+        let decisions = approval_decisions(&message);
+        match (&body.session_id, decisions.is_empty()) {
+            (Some(session_id), false) => scoped
+                .continue_chat(agent_id, session_id, decisions)
+                .await
+                .map(|stream| relay(stream, false)),
+            _ => Err(Error::InvalidArgument("Invalid approval.".to_owned())),
+        }
+    } else {
+        let raw = match (&body.messages, body.message) {
+            (Some(messages), _) => messages.clone(),
+            (None, Some(message)) => vec![message],
+            _ => vec![],
+        };
+        let parsed: Result<Vec<UserMessage>, _> =
+            raw.iter().cloned().map(serde_json::from_value).collect();
+        match parsed {
+            Err(_) => Err(Error::InvalidArgument("Invalid message.".to_owned())),
+            Ok(messages) if body.messages.is_some() => match &body.session_id {
+                // Waiting messages go out as one batch once the Session is idle.
+                Some(session_id) => match ChatInput::try_from(messages) {
+                    Ok(input) => scoped
+                        .chat(agent_id, input)
+                        .session(session_id)
+                        .user_id(&user_id)
+                        .await
+                        .map(|stream| relay(stream, false)),
+                    Err(_) => Err(Error::InvalidArgument("Invalid message.".to_owned())),
+                },
+                None => Err(Error::InvalidArgument("A batch needs a Session.".to_owned())),
+            },
+            Ok(messages) => {
+                let Some(message) = messages.into_iter().next() else {
+                    return StatusCode::BAD_REQUEST.into_response();
+                };
+                match &body.session_id {
+                    None => scoped
+                        .chat(agent_id, message)
+                        .user_id(&user_id)
+                        .await
+                        .map(|stream| relay(stream, true)),
+                    Some(session_id) if body.trigger.as_deref() == Some("regenerate-message") => {
+                        scoped
+                            .regenerate(agent_id, session_id, message)
+                            .user_id(&user_id)
+                            .await
+                            .map(|stream| relay(stream, false))
+                    }
+                    Some(session_id) => scoped
+                        .chat(agent_id, message)
+                        .session(session_id)
+                        .user_id(&user_id)
+                        .await
+                        .map(|stream| relay(stream, false)),
+                }
+            }
+        }
+    };
+    result.unwrap_or_else(failure)
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let app = Router::new()
+        .route("/api/chat", post(chat))
+        .route("/api/chat/history", get(history))
+        .with_state(Client::from_env()?);
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
+    axum::serve(listener, app).await?;
+    Ok(())
+}
 ```
 
 3. Add the Session endpoints. `GET /api/chat/session` returns the Session's steer receipts and activity. `POST /api/chat/steer` submits one message as a steer to the running Turn. `POST /api/chat/stop` stops the running Turn by its `turnId`. Every call goes through the same verified user scope as `chat`. Deleting a queued message needs no endpoint: the queue lives in the browser, so the client just drops the row.
@@ -479,6 +691,146 @@ async def stop(body: StopBody, user_id: str = Depends(current_user)):
     except BlazingAgentsError:
         return JSONResponse({"error": {"code": "upstream_error"}}, status_code=502)
     return result.model_dump(mode="json", by_alias=True)
+```
+
+```rust
+use axum::extract::{Json, Query, State};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use axum::routing::{get, post};
+use axum::Router;
+use blazing_agents::messages::UserMessage;
+use blazing_agents::{Client, Error};
+use serde::Deserialize;
+use serde_json::json;
+
+#[derive(Deserialize)]
+struct SessionQuery {
+    #[serde(rename = "sessionId")]
+    session_id: String,
+}
+
+#[derive(Deserialize)]
+struct SteerBody {
+    #[serde(rename = "sessionId")]
+    session_id: String,
+    #[serde(rename = "requestId")]
+    request_id: String,
+    message: UserMessage,
+}
+
+#[derive(Deserialize)]
+struct StopBody {
+    #[serde(rename = "sessionId")]
+    session_id: String,
+    #[serde(rename = "turnId")]
+    turn_id: String,
+}
+
+fn current_user() -> String {
+    // Your sign-in check. Return the verified user ID or reject the request.
+    "user_123".to_owned()
+}
+
+fn agent_for_user(_user_id: &str) -> String {
+    // Read this user's Agent ID from trusted backend state.
+    "ag_0123456789abcdef".to_owned()
+}
+
+fn failure(error: Error) -> Response {
+    match error {
+        Error::Api(api) => (
+            StatusCode::from_u16(api.status()).unwrap_or(StatusCode::BAD_GATEWAY),
+            Json(json!({ "error": { "code": api.code().as_str() } })),
+        )
+            .into_response(),
+        _ => (
+            StatusCode::BAD_GATEWAY,
+            Json(json!({ "error": { "code": "upstream_error" } })),
+        )
+            .into_response(),
+    }
+}
+
+async fn history(
+    State(client): State<Client>,
+    Query(query): Query<SessionQuery>,
+) -> Response {
+    let user_id = current_user();
+    let Ok(scoped) = client.for_user(&user_id) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    scoped
+        .sessions()
+        .messages(agent_for_user(&user_id), query.session_id)
+        .limit(200)
+        .await
+        .map(|page| Json(json!({ "messages": page.data })).into_response())
+        .unwrap_or_else(failure)
+}
+
+async fn session(
+    State(client): State<Client>,
+    Query(query): Query<SessionQuery>,
+) -> Response {
+    let user_id = current_user();
+    let Ok(scoped) = client.for_user(&user_id) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    // Terminal receipts too: include_completed returns committed and
+    // not_placed inputs, and activity says what the Session is doing.
+    scoped
+        .sessions()
+        .inputs(agent_for_user(&user_id), query.session_id)
+        .include_completed(true)
+        .await
+        .map(|page| Json(json!(page)).into_response())
+        .unwrap_or_else(failure)
+}
+
+async fn steer(State(client): State<Client>, Json(body): Json<SteerBody>) -> Response {
+    let user_id = current_user();
+    let Ok(scoped) = client.for_user(&user_id) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    scoped
+        .sessions()
+        .submit_input(
+            agent_for_user(&user_id),
+            body.session_id,
+            body.request_id,
+            body.message,
+        )
+        .await
+        .map(|receipt| Json(json!(receipt)).into_response())
+        .unwrap_or_else(failure)
+}
+
+async fn stop(State(client): State<Client>, Json(body): Json<StopBody>) -> Response {
+    let user_id = current_user();
+    let Ok(scoped) = client.for_user(&user_id) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    scoped
+        .sessions()
+        .stop(agent_for_user(&user_id), body.session_id, body.turn_id)
+        .await
+        .map(|result| Json(json!(result)).into_response())
+        .unwrap_or_else(failure)
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let app = Router::new()
+        .route("/api/chat/history", get(history))
+        .route("/api/chat/session", get(session))
+        .route("/api/chat/steer", post(steer))
+        .route("/api/chat/stop", post(stop))
+        .with_state(Client::from_env()?);
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
+    axum::serve(listener, app).await?;
+    Ok(())
+}
 ```
 
 4. Add the React chat. `ChatPage` loads saved history for the stored Session, then mounts `Chat`. `Chat` keeps a copy of the last successful conversation and restores it after an error or Stop, putting the sent text back in the box for an edited or unchanged resend. While the Session is busy, the composer's button reads Stop until the user types, then Send; a send adds the message to the local `queue`. The `queue` block above the composer lists each waiting message on one line with Send (steer the running Turn now) and Delete (drop it; it was never sent). `Chat` polls `GET /api/chat/session` while the Session is busy or a steer is pending. When the Session is idle and messages wait, `Chat` shows that batch of user messages and calls `resumeStream()`, which posts them to `/api/chat` through a second AI SDK transport as a `messages` array and streams the answer; after that Turn ends it reloads saved history. `Chat` sends each set of waiting messages once; after a failed send, it waits for the user. Send again on an `uncertain` steer requeues the same message ID; when it was saved after all, the batch returns `message_id_conflict`, and `Chat` reloads history and requeues only the messages history lacks.
@@ -944,10 +1296,10 @@ function Chat({
 The chat example ships no fork control. Add one only when the user asks to branch a conversation from a reply they chose.
 
 1. Offer the action only on assistant messages that `sessions.messages()` returns with `branchable: true`. Never judge eligibility from the live stream or rendered parts. A reply that is streaming or waiting on an approval is not branchable; earlier replies stay branchable while the source runs.
-2. Save one idempotency key for the user's action, then call `client.sessions.fork({ agentId, sessionId, messageId, idempotencyKey })` (Python: `client.sessions.fork(agent_id, session_id, message_id=..., idempotency_key=...)`) under the signed-in user's scope. After a lost response, retry with the same key and message. A retry returns the same child, even after the source is deleted. Never mint a new key for a retry.
+2. Save one idempotency key for the user's action, then call `client.sessions.fork({ agentId, sessionId, messageId, idempotencyKey })` (Python: `client.sessions.fork(agent_id, session_id, message_id=..., idempotency_key=...)`; Rust: `client.sessions().fork(agent_id, session_id, message_id, idempotency_key)`) under the signed-in user's scope. After a lost response, retry with the same key and message. A retry returns the same child, even after the source is deleted. Never mint a new key for a retry.
 3. Switch the conversation to the returned child Session ID, load its history, and continue it with ordinary `chat()`. Keep the source's and the child's queues separate.
 
-The child is idle and holds history through the selected reply. Forking runs no model or Tool and records no usage. The child keeps the source's saved Agent configuration, `metadata`, and `userId`. It shares the Agent's Workspace files and Memories with the source, so a file change in one conversation shows in the other. Running Turns, pending approvals, and queued inputs are not copied. `forkedFrom` (`forked_from` in Python) on the child names the source Session and message.
+The child is idle and holds history through the selected reply. Forking runs no model or Tool and records no usage. The child keeps the source's saved Agent configuration, `metadata`, and `userId`. It shares the Agent's Workspace files and Memories with the source, so a file change in one conversation shows in the other. Running Turns, pending approvals, and queued inputs are not copied. `forkedFrom` (`forked_from` in Python and Rust) on the child names the source Session and message.
 
 Handle these errors:
 
@@ -961,7 +1313,7 @@ Handle these errors:
 ## Gotchas
 
 - **History lives in BA.** Send only new user messages: one `message`, or a `messages` batch of the ones that waited. A client that posts the whole conversation gets a 400: the handler accepts user messages, or one answered assistant message that carries an approval round.
-- **Validate every ID before it reaches a URL.** The browser sends `sessionId`, `turnId`, and `requestId`, and the SDK places them in request paths. A value such as `../../ag_other/sessions/ss_x` or `..` would make the request reach another route. Check them at your relay as the handlers do: `sessionIdSchema` and `sessionInputRequestIdSchema` from `@blazingagents/sdk/contracts` in TypeScript, and the same patterns in Python. A `requestId` of `.` or `..` is invalid.
+- **Validate every ID before it reaches a URL.** The browser sends `sessionId`, `turnId`, and `requestId`, and the SDK places them in request paths. A value such as `../../ag_other/sessions/ss_x` or `..` would make the request reach another route. Check them at your relay as the handlers do: `sessionIdSchema` and `sessionInputRequestIdSchema` from `@blazingagents/sdk/contracts` in TypeScript, and the same patterns in Python. The Rust SDK percent-encodes every path segment and rejects an empty, `.`, or `..` value client-side as `Error::InvalidArgument`, so `../../ag_other/sessions/ss_x` can never leave its segment. A `requestId` of `.` or `..` is invalid.
 - **Derive scope from verified sign-in.** BA enforces ownership when you use `forUser()`. A body `userId` alone grants no access.
 - **Save the Session ID.** The transport receives it before the answer streams. Keep it even when the first Turn fails or is stopped; the Session exists and is simply empty.
 - **Keep one transport per conversation.** `useChat` ignores a new transport after mount. To switch Session or user, remount `Chat` with a new `key`, as `ChatPage` does. Clear persisted user data on sign-out and abort requests from the old account.
@@ -971,7 +1323,7 @@ Handle these errors:
 - **A lost response may already be saved.** A dropped connection is not proof of failure. Reload history before telling the user their message was lost.
 - **Regenerate only after a successful answer.** A prompt that failed was never saved, so there is nothing to regenerate. If regeneration fails or is stopped, the old answer stays.
 - **`session_busy` (HTTP 409)** from `chat` means a Tool approval is pending, a continuation is running, or another Turn holds the Session, for example one started from another tab. Steer the running Turn, or hold the message in the queue and let the next dispatch send it.
-- **`session_turn_unresponsive` (HTTP 409)** means the Session's previous Turn stopped responding, so the Session is not free yet. It frees within a minute. Keep the message queued, wait the whole seconds in the `Retry-After` header (`error.headers` in TypeScript, `error.retry_after` in Python), and send again under a new message ID.
+- **`session_turn_unresponsive` (HTTP 409)** means the Session's previous Turn stopped responding, so the Session is not free yet. It frees within a minute. Keep the message queued, wait the whole seconds in the `Retry-After` header (`error.headers` in TypeScript, `error.retry_after` in Python, `error.retry_after()` in Rust), and send again under a new message ID.
 - **A cut Turn sends `data-turn-interrupted`.** When the platform cuts a Turn after the stream started, the stream sends a transient `data-turn-interrupted` part (`data.code` is `turn_interrupted`), then an `error` chunk, with status 200. The Turn may have saved its work, so reload history before restoring the draft. The Session can stay busy for up to a minute afterward.
 - **Queue only after the Session exists.** The first message creates the Session through `chat`. Steers and batches need a Session ID, which the transport receives before the answer streams.
 - **The queue is yours.** It lives in client state, such as `useState`, localStorage, or your own store. Take a message out before sending it (a queued row means "not sent"), never auto-retry a send whose outcome is unknown, and never rebuild the queue from receipts or history. A send containing any message ID already in history returns `message_id_conflict` (409) before model or Tool work: the message is already saved, so reload history instead of resending. Regeneration may reuse IDs.

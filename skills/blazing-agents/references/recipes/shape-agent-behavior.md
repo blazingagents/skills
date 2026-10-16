@@ -58,6 +58,34 @@ def configure(client: BlazingAgents, agent_id: str, provider_id: str) -> None:
     print(agent.model, agent.instructions)
 ```
 
+```rust
+use blazing_agents::agents::AgentTool;
+
+let provider_id = "prv_0123456789abcdef";
+let models = client.providers().list_models(provider_id).await?.models;
+if !models.iter().any(|model| model.id == "openai/gpt-6-luna") {
+    return Err("Model not offered by this Provider".into());
+}
+
+let agent = client
+    .agents()
+    .update("ag_0123456789abcdef")
+    .model(provider_id, "openai/gpt-6-luna")
+    .instructions(
+        "You are the support assistant for Acme. Answer in two short paragraphs.",
+    )
+    .tools([
+        AgentTool::Read,
+        AgentTool::Grep,
+        AgentTool::Glob,
+        AgentTool::SaveMemory,
+        AgentTool::SearchMemories,
+    ])
+    .compaction_reserve_tokens(32_768)
+    .await?;
+println!("{:?} {}", agent.model, agent.instructions);
+```
+
 2. Save a Prompt linked to the Agent and run it with exactly its variables. `agentId` groups Prompts for listing. A scoped request requires the Prompt and Agent to belong to the same user.
 
 ```ts
@@ -101,6 +129,31 @@ def run_prompt(client: BlazingAgents, agent_id: str) -> None:
         )
     )
     print([p.name for p in client.prompts.list(agent_id=agent_id).data])
+```
+
+```rust
+use blazing_agents::generation::SavedPrompt;
+
+let prompt = client
+    .prompts()
+    .create("Release summary", "Summarize {{ version }} for {{ audience }}.")
+    .agent_id("ag_0123456789abcdef")
+    .await?;
+let answer = client
+    .completion(
+        "ag_0123456789abcdef",
+        SavedPrompt::new(&prompt.id)
+            .var("version", "2.4")
+            .var("audience", "developers"),
+    )
+    .await?;
+println!("{answer}");
+let page = client
+    .prompts()
+    .list()
+    .agent_id("ag_0123456789abcdef")
+    .await?;
+println!("{:?}", page.data.iter().map(|p| &p.name).collect::<Vec<_>>());
 ```
 
 These list calls show the first page. Follow `nextCursor` or `next_cursor` for the remaining Prompts.
@@ -148,6 +201,26 @@ def add_skill(client: BlazingAgents, agent_id: str) -> None:
     )
 ```
 
+```rust
+use blazing_agents::files::Upload;
+use blazing_agents::skills::ArchiveType;
+
+let agent_handle = client.agent("ag_0123456789abcdef");
+let skills = agent_handle.skills();
+let skill = skills
+    .upload(ArchiveType::Zip, Upload::file("release-notes.zip").await?)
+    .await?;
+println!("{} {:?}", skill.name, skill.files.iter().map(|f| &f.path).collect::<Vec<_>>());
+
+skills
+    .replace_file(
+        &skill.id,
+        "references/style-guide.md",
+        Upload::bytes("Use sentence case headings.\n"),
+    )
+    .await?;
+```
+
 4. Store Memory for one End-user and turn on injection so every Turn with that `userId` starts with the newest notes it can see, general and that user's (up to 4,000 words). Use list with `search`, `update()`, and `delete()` to curate them.
 
 ```ts
@@ -190,6 +263,40 @@ def curate_memory(client: BlazingAgents, agent_id: str, user_id: str) -> None:
     client.memories.delete(agent_id=agent_id, memory_id=memory.id)
 ```
 
+```rust
+client
+    .agents()
+    .update("ag_0123456789abcdef")
+    .memory_injection_enabled(true)
+    .await?;
+let memory = client
+    .memories()
+    .create("ag_0123456789abcdef", "Prefers concise status updates.")
+    .user_id("app:user-42")
+    .await?;
+
+let page = client
+    .memories()
+    .list("ag_0123456789abcdef")
+    .user_id("app:user-42")
+    .search("status")
+    .await?;
+println!("{:?}", page.data.iter().map(|m| &m.text).collect::<Vec<_>>());
+
+client
+    .memories()
+    .update(
+        "ag_0123456789abcdef",
+        &memory.id,
+        "Prefers bullet-point status updates.",
+    )
+    .await?;
+client
+    .memories()
+    .delete("ag_0123456789abcdef", memory.id)
+    .await?;
+```
+
 5. Read saved configuration and pause new work. Edit the Agent for future Sessions and Task runs. The existing Session keeps its saved settings.
 
 ```ts
@@ -218,6 +325,20 @@ print(session.agent_config.model, session.agent_config.instructions)
 
 client.agents.disable(agent_id)
 client.agents.enable(agent_id)
+```
+
+```rust
+let session = client
+    .sessions()
+    .get("ag_0123456789abcdef", "ss_0123456789abcdef")
+    .await?;
+println!("{:?} {}", session.agent_config.model, session.agent_config.instructions);
+
+client
+    .agents()
+    .disable("ag_0123456789abcdef")
+    .await?;
+client.agents().enable("ag_0123456789abcdef").await?;
 ```
 
 ## Gotchas

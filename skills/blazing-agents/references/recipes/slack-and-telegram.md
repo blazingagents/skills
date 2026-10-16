@@ -61,6 +61,27 @@ connection = client.chat_connections.create(
 print(connection.id, connection.webhook_url)
 ```
 
+```rust
+use blazing_agents::chat_connections::{NewSlackConnection, SlackCredentials};
+
+let connection = client
+    .chat_connections()
+    .create(
+        NewSlackConnection::new(
+            "ag_0123456789abcdef",
+            "Support on Slack",
+            SlackCredentials::new(
+                std::env::var("SLACK_BOT_TOKEN")?,
+                std::env::var("SLACK_SIGNING_SECRET")?,
+            ),
+        )
+        .enabled(false)
+        .channel_ids(["C0123456789"]),
+    )
+    .await?;
+println!("{} {}", connection.id, connection.webhook_url);
+```
+
 For Telegram, pass `platform: "telegram"`, `credentials: { botToken }`, and optionally `configuration: { chatIds, businessMode }`. Set `businessMode: true` only for a Telegram Business bot.
 
 2. Register the URL on the platform. This is a separate step from creating the connection.
@@ -116,6 +137,31 @@ def go_live(client: BlazingAgents, chat_connection_id: str) -> None:
         print("Webhook not confirmed", health.checks)
 ```
 
+```rust
+use blazing_agents::chat_connections::ChatHealthCheckStatus;
+
+let chat_connection_id = "cc_0123456789abcdef";
+let before = client
+    .chat_connections()
+    .check_health(chat_connection_id)
+    .await?;
+if !(before.health.token_valid && before.health.identity_verified) {
+    return Err("Bot credentials rejected; fix them before enabling".into());
+}
+
+client.chat_connections().enable(chat_connection_id).await?;
+
+let health = client
+    .chat_connections()
+    .check_health(chat_connection_id)
+    .await?
+    .health;
+let webhook = health.checks.iter().find(|check| check.code == "webhook_url");
+if webhook.is_none_or(|check| check.status != ChatHealthCheckStatus::Pass) {
+    println!("Webhook not confirmed {:?}", health.checks);
+}
+```
+
 4. Rotate credentials by sending the complete set for the same bot or Slack installation. Sessions stay attached.
 
 ```ts
@@ -146,6 +192,17 @@ def rotate(client: BlazingAgents, chat_connection_id: str, new_bot_token: str) -
     print(rotated.credential_version, rotated.credential_fragment)
 ```
 
+```rust
+use blazing_agents::chat_connections::ChatCredentials;
+
+let new_bot_token = "123456:telegram-token";
+let rotated = client
+    .chat_connections()
+    .rotate_credentials("cc_0123456789abcdef", ChatCredentials::telegram(new_bot_token))
+    .await?;
+println!("{} {}", rotated.credential_version, rotated.credential_fragment);
+```
+
 5. Pause or remove the connection. `disable()` stops new messages and approval clicks; work already running may finish, and missed messages are not replayed on `enable()`. `delete()` disconnects the bot and keeps its Sessions readable. BA clears the Telegram webhook it set; uninstall a Slack app yourself.
 
 ```ts
@@ -165,6 +222,18 @@ from blazing_agents import BlazingAgents
 def remove(client: BlazingAgents, chat_connection_id: str) -> None:
     client.chat_connections.disable(chat_connection_id)
     client.chat_connections.delete(chat_connection_id)
+```
+
+```rust
+let chat_connection_id = "cc_0123456789abcdef";
+client
+    .chat_connections()
+    .disable(chat_connection_id)
+    .await?;
+client
+    .chat_connections()
+    .delete(chat_connection_id)
+    .await?;
 ```
 
 ## Gotchas
