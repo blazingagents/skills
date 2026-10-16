@@ -53,7 +53,8 @@ print(agent.id, agent.workspace_id)
 ```
 
 ```rust
-use blazing_agents::agents::{AgentTool, WorkspaceTier};
+use blazing_agents::agents::AgentTool;
+use blazing_agents::workspaces::WorkspaceTier;
 
 let agent = client
     .agents()
@@ -298,7 +299,8 @@ client
     .sessions()
     .delete("ag_0123456789abcdef", "ss_0123456789abcdef", true)
     .await?;
-client.workspaces().delete("ws_0123456789abcdef").await?;
+let outcome = client.workspaces().delete("ws_0123456789abcdef").await?;
+println!("{outcome:?}"); // WorkspaceDeletion::Completed or Pending
 ```
 
 ## Gotchas

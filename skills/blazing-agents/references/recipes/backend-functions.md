@@ -292,7 +292,7 @@ async def continue_after_decisions(
 ```rust
 use axum::body::Body;
 use axum::response::Response;
-use blazing_agents::chat::ApprovalDecision;
+use blazing_agents::chat::ToolApprovalDecision;
 use blazing_agents::functions::{Functions, FunctionsError};
 
 fn chat_functions_for(_user_id: &str) -> Result<Functions, FunctionsError> {
@@ -301,7 +301,7 @@ fn chat_functions_for(_user_id: &str) -> Result<Functions, FunctionsError> {
 }
 
 let session_owner_id = "user_123"; // the Session's owner, from your records
-let decisions = vec![ApprovalDecision::approve("ap_0123456789abcdef")];
+let decisions = vec![ToolApprovalDecision::approve("apr_0123456789abcdef")];
 
 let stream = client
     .for_user(session_owner_id)?

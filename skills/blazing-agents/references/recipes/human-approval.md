@@ -173,7 +173,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
-use blazing_agents::sessions::ToolApprovalDecision;
+use blazing_agents::sessions::ToolApprovalStatus;
 use blazing_agents::{Client, Error};
 use serde::Deserialize;
 use serde_json::json;
@@ -210,7 +210,7 @@ async fn list_pending(
             let pending: Vec<_> = approvals
                 .data
                 .iter()
-                .filter(|item| item.decision == ToolApprovalDecision::Pending)
+                .filter(|item| item.decision == ToolApprovalStatus::Pending)
                 .map(|item| {
                     json!({
                         "approvalId": item.approval_id,
@@ -341,7 +341,7 @@ use axum::http::StatusCode;
 use axum::response::Response;
 use axum::routing::post;
 use axum::Router;
-use blazing_agents::chat::ApprovalDecision;
+use blazing_agents::chat::ToolApprovalDecision;
 use blazing_agents::Client;
 use serde::Deserialize;
 
@@ -380,9 +380,9 @@ async fn continue_round(
     }
     let decisions = body.decisions.iter().map(|d| {
         let decision = if d.approved {
-            ApprovalDecision::approve(&d.approval_id)
+            ToolApprovalDecision::approve(&d.approval_id)
         } else {
-            ApprovalDecision::deny(&d.approval_id)
+            ToolApprovalDecision::deny(&d.approval_id)
         };
         match &d.reason {
             Some(reason) => decision.reason(reason.clone()),

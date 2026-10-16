@@ -7,7 +7,7 @@ publish = false
 [dependencies]
 anyhow = "1"
 axum = "0.8"
-blazing-agents = { git = "https://github.com/blazingagents/rust-sdk", rev = "ecb42d210f85a1a403754a8f1cc1e3a48b2acff6" }
+blazing-agents = { git = "https://github.com/blazingagents/rust-sdk", branch = "main" }
 futures-util = "0.3"
 schemars = "1"
 serde = { version = "1", features = ["derive"] }

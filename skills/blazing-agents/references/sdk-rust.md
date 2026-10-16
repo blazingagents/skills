@@ -1,6 +1,6 @@
 # Rust SDK reference
 
-Use this page to call Blazing Agents from a Rust backend: install the crate, build a client, run Turns, and find the method for every operation. It matches the `blazing-agents` crate at commit `ecb42d2` of the repository's main branch, the revision this skill's snippets compile against. The crate is not on crates.io yet, so install it from the repository.
+Use this page to call Blazing Agents from a Rust backend: install the crate, build a client, run Turns, and find the method for every operation. It matches the `blazing-agents` crate at commit `aa1957f` of the repository's main branch, the revision this skill's snippets compile against. The crate is not on crates.io yet, so install it from the repository.
 
 For the same surface in Python or TypeScript, read [Python SDK reference](sdk-python.md) or [TypeScript SDK reference](sdk-typescript.md). For end-to-end builds, start from a recipe such as [Add chat to your app](recipes/chat-in-your-app.md).
 
@@ -55,7 +55,7 @@ Builder options:
 | `base_url(url)` | `https://api.blazingagents.com` | API origin; trailing slashes are removed |
 | `timeout(Option<Duration>)` | 60 seconds | `None` disables it. A stream's timeout covers only the wait for headers |
 | `connect_timeout(Duration)` | none | TCP connect timeout |
-| `default_header(name, value)` | none | Header sent on every request. `Authorization`, `X-Request-Id` and `X-BA-User-Id` are ignored |
+| `default_header(name, value)` | none | Header sent on every request. `Authorization`, `Content-Type`, `X-Request-Id` and `X-BA-User-Id` are ignored |
 | `on_response(callback)` | none | `Fn(&ResponseObservation)` (`operation_id`, `method`, `path`, `status`, `duration`, `request_id`, `client_request_id`) called per response |
 
 `client.with_client_request_id("checkout-42")` returns a client that tags every request with your correlation ID. Every call also accepts `with_header`, `with_client_request_id`, `with_timeout`, and `without_timeout`, and `send_with_meta()` returns the value plus the response status, headers, and server request ID. The SDK retries transient claim and result submissions for backend functions; other requests do not retry on their own.
@@ -185,9 +185,9 @@ Chat rules the SDK's types enforce before sending:
 
 ### Backend functions
 
-`Functions::builder()` collects function definitions and their handlers, and `.build()` checks them against the platform's limits. `.function(name, description, handler)` derives the input schema from the handler's input type (with the `schemars` feature); `.function_json(name, description, input_schema, handler)` takes a hand-written JSON Schema and passes the handler a `serde_json::Value`. The handler gets the validated input and a `FunctionContext` (`idempotency_key()`, `deadline()`, `is_cancelled()`, `cancelled().await`) and returns `Result<O, E>` where `O: Serialize` and `E` converts into a boxed error. Attach the `Functions` with `.functions(...)` on `chat`, `regenerate`, or `continue_chat`. `Functions` is cheap to clone; attach the same value to every call.
+`Functions::builder()` collects function definitions and their handlers, and `.build()` checks them against the platform's limits. `.function(name, description, handler)` derives the input schema from the handler's input type (with the `schemars` feature); `.function_json(name, description, input_schema, handler)` takes a hand-written JSON Schema and passes the handler a `serde_json::Value`. The handler gets the validated input and a `FunctionContext` (`idempotency_key()`, `deadline()`, `is_cancelled()`, `cancelled().await`) and returns `Result<O, E>` where `O: Serialize` and `E` converts into a boxed error. Attach the `Functions` with `.functions(...)` on `chat`, `regenerate`, or `continue_chat`. `Functions` is cheap to clone; attach the same value to every call. Each function's claim and result requests carry the call's `with_header` values and `with_client_request_id`.
 
-`client.continue_chat(agent_id, session_id, decisions)` records every decision in the round (`ApprovalDecision::approve(id)` or `ApprovalDecision::deny(id).reason("...")`), reattaches your handlers, and streams the continuing Turn. Keep consuming the stream: function calls dispatch as you read their events. For end-to-end setup, including scoping and approval flow, read [backend functions](recipes/backend-functions.md).
+`client.continue_chat(agent_id, session_id, decisions)` records every decision in the round (`ToolApprovalDecision::approve(id)` or `ToolApprovalDecision::deny(id).reason("...")`), reattaches your handlers, and streams the continuing Turn. Keep consuming the stream: function calls dispatch as you read their events. For end-to-end setup, including scoping and approval flow, read [backend functions](recipes/backend-functions.md).
 
 ### Structured output
 
@@ -357,7 +357,7 @@ An `Upload` comes from `Upload::bytes(...)`, `Upload::file(path).await`, or `Upl
 
 ### `client.workspaces()`
 
-`create()` takes `.tier(WorkspaceTier::Core)` (default) or `WorkspaceTier::Plus`; `update` cannot change it. `agents().create().workspace_tier(...)` sets the tier of the new Workspace it creates and is rejected together with `.workspace_id(...)`, even as `Core`. See [Workspace](concepts.md#workspace) for choosing a tier.
+`create()` takes `.tier(workspaces::WorkspaceTier::Core)` (default) or `workspaces::WorkspaceTier::Plus`; `update` cannot change it. `agents().create().workspace_tier(...)` sets the tier of the new Workspace it creates and is rejected together with `.workspace_id(...)`, even as `Core`. See [Workspace](concepts.md#workspace) for choosing a tier.
 
 | Method | Returns |
 | --- | --- |
@@ -365,7 +365,7 @@ An `Upload` comes from `Upload::bytes(...)`, `Upload::file(path).await`, or `Upl
 | `list()`, `.user_id(...)`, `.limit(...)` | `Page<Workspace>` |
 | `get(workspace_id)` | `Workspace` |
 | `update(workspace_id)`, `.name(...)`, `.clear_name()`, `.metadata(...)`, `.network_policy(...)` | `Workspace` |
-| `delete(workspace_id)` | `()` |
+| `delete(workspace_id)` | `WorkspaceDeletion` (`Completed` when it is gone, `Pending` while cleanup continues in the background) |
 
 A network policy is `NetworkPolicy::Unrestricted`, `NetworkPolicy::allowlist(hosts)`, or `NetworkPolicy::Offline`.
 

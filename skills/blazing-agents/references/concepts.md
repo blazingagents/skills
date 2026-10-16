@@ -95,7 +95,7 @@ Pick the tier when the workspace is created; it never changes:
 - **Core** (default, 1 GiB memory). Files are lost when the workspace stops. Use it for scratch work inside one conversation.
 - **Plus** (4 GiB memory). Files are saved when the workspace stops while idle and come back on the next start. Use it when a later Session or Task run must find the files. Running processes do not come back, and a crash loses changes since the last idle stop. Saved files are discarded after 29 days without use.
 
-Creating an agent without `workspaceId` gives it a new Core workspace. Pass `workspaceTier: "plus"` (`workspace_tier` in Python, `.workspace_tier(WorkspaceTier::Plus)` in Rust) to get Plus; it cannot be combined with `workspaceId`. To change tier, create a new workspace and attach it; files are not copied. Plus is a convenience, not storage: a failed save also starts the next run empty. Anything your app or users must keep belongs in an Artifact.
+Creating an agent without `workspaceId` gives it a new Core workspace. Pass `workspaceTier: "plus"` (`workspace_tier` in Python, `.workspace_tier(workspaces::WorkspaceTier::Plus)` in Rust) to get Plus; it cannot be combined with `workspaceId`. To change tier, create a new workspace and attach it; files are not copied. Plus is a convenience, not storage: a failed save also starts the next run empty. Anything your app or users must keep belongs in an Artifact.
 
 Not the same as: an Artifact. Workspace files are the agent's scratch space; your app cannot fetch them directly.
 

@@ -310,7 +310,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::Router;
-use blazing_agents::chat::{ApprovalDecision, ChatInput, ChatStream};
+use blazing_agents::chat::{ChatInput, ChatStream, ToolApprovalDecision};
 use blazing_agents::messages::UserMessage;
 use blazing_agents::{Client, Error};
 use blazing_agents::pagination::Cursor;
@@ -343,7 +343,7 @@ fn agent_for_user(_user_id: &str) -> String {
     "ag_0123456789abcdef".to_owned()
 }
 
-fn approval_decisions(message: &Value) -> Vec<ApprovalDecision> {
+fn approval_decisions(message: &Value) -> Vec<ToolApprovalDecision> {
     // The round's decisions: answered tool parts after the last step-start.
     let Some(parts) = message.get("parts").and_then(Value::as_array) else {
         return Vec::new();
@@ -360,8 +360,8 @@ fn approval_decisions(message: &Value) -> Vec<ApprovalDecision> {
             let approval = part.get("approval")?;
             let id = approval.get("id")?.as_str()?;
             let decision = match approval.get("approved")?.as_bool()? {
-                true => ApprovalDecision::approve(id),
-                false => ApprovalDecision::deny(id),
+                true => ToolApprovalDecision::approve(id),
+                false => ToolApprovalDecision::deny(id),
             };
             Some(match approval.get("reason").and_then(Value::as_str) {
                 Some(reason) => decision.reason(reason),

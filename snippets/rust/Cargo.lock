@@ -110,7 +110,7 @@ checksum = "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
 [[package]]
 name = "blazing-agents"
 version = "0.1.0"
-source = "git+https://github.com/blazingagents/rust-sdk?rev=ecb42d210f85a1a403754a8f1cc1e3a48b2acff6#ecb42d210f85a1a403754a8f1cc1e3a48b2acff6"
+source = "git+https://github.com/blazingagents/rust-sdk?branch=main#aa1957f56a78276689bf75c06cc1611fc46f0ff7"
 dependencies = [
  "bytes",
  "futures-core",
