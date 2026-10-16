@@ -4,7 +4,7 @@ Find the symptom, read the likely cause, and apply the fix. Every failed request
 
 ## Read the error first
 
-Every SDK failure is a `BlazingAgentsError` in TypeScript. In Python, an error response raises `APIStatusError`, a network failure raises `APIConnectionError` (or its subclass `APITimeoutError`), and a failure after a stream starts raises `StreamError`. Log the code, status, and request ID before you decide anything.
+Every SDK failure is a `BlazingAgentsError` in TypeScript. In Python, an error response raises `APIStatusError`, a network failure raises `APIConnectionError` (or its subclass `APITimeoutError`), and a failure after a stream starts raises `StreamError`. In Rust, every failure is one `blazing_agents::Error` variant: `Api` for an error status, `Connection` or `Timeout` before a response, `Stream` after headers arrive. Log the code, status, and request ID before you decide anything.
 
 ```ts
 import { BlazingAgents, BlazingAgentsError } from "@blazingagents/sdk";
@@ -45,6 +45,21 @@ def read_agent(client: BlazingAgents, agent_id: str) -> Agent:
             }
         )
         raise
+```
+
+```rust
+match client.agents().get("ag_0123456789abcdef").await {
+    Ok(agent) => println!("{}", agent.name),
+    Err(error) => {
+        eprintln!(
+            "{:?} {:?} {:?}",
+            error.code(),
+            error.status(),
+            error.request_id()
+        );
+        return Err(error.into());
+    }
+}
 ```
 
 Use `BlazingAgentsError.isInstance(error)` instead of `instanceof`, which fails when two copies of the package are installed. Treat `error.code` as an open string: new codes can appear. The TypeScript SDK adds four codes of its own: `network_error`, `request_aborted`, `stream_error`, and `invalid_response`.
@@ -125,11 +140,11 @@ To fix it:
 
 1. Create a new Provider with a working key.
 2. Update each Agent with the new `providerId` and `model` together.
-3. Delete the old Provider. `provider_in_use` (409) lists Agents still on it in `details.agentIds`. `provider_historical_use` (409) lists saved Sessions and queued or running Task runs in `details.sessionIds` and `details.taskRunIds`. Move those first, or delete with `confirmSnapshotInvalidation: true` (`confirm_snapshot_invalidation=True` in Python) and accept that work needing the deleted Provider then fails with `provider_not_found`.
+3. Delete the old Provider. `provider_in_use` (409) lists Agents still on it in `details.agentIds`. `provider_historical_use` (409) lists saved Sessions and queued or running Task runs in `details.sessionIds` and `details.taskRunIds`. Move those first, or delete with `confirmSnapshotInvalidation: true` (`confirm_snapshot_invalidation=True` in Python, `.confirm_snapshot_invalidation(true)` in Rust) and accept that work needing the deleted Provider then fails with `provider_not_found`.
 
 ## Quota blocked
 
-- `quota_exceeded` (429): usage in the current window reached the tenant quota you set, so the turn did not start. A Task run in the same situation ends as `blocked`, not `failed`. Wait for the reset day, or raise or remove the quota with `client.tenant.patch()` (`client.tenant.update()` in Python). Retrying before the reset fails the same way.
+- `quota_exceeded` (429): usage in the current window reached the tenant quota you set, so the turn did not start. A Task run in the same situation ends as `blocked`, not `failed`. Wait for the reset day, or raise or remove the quota with `client.tenant.patch()` (`client.tenant.update()` in Python, `client.tenant().update()` in Rust). Retrying before the reset fails the same way.
 - `model_spending_limit_exceeded` (429): a model spending limit stopped the turn. `error.details` holds the `scope` (`agent`, `tenant`, or `both`), the `reason`, and `nextResetAt`. Show those to the user and never retry automatically. A Task run refused before any model work ends `blocked`; one stopped after model work started ends `failed`, and the work that finished stays in its transcript. Only a person who owns the limit should raise it; see [model spending limits](recipes/usage-dashboards.md#model-spending-limits).
 - `subscription_required` (402): no active paid plan. Choose one in the dashboard.
 - `usage_credit_required` (402): the plan is active but its usage credit is used up. Add credit in the dashboard.
@@ -146,7 +161,7 @@ To fix it:
 - To prevent both, steer the running turn with `sessions.submitInput()` or hold new messages in your client until the Session is idle, and send one chat turn at a time per Session.
 - Deleting a Session returns `session_busy` while any turn runs, or `session_turn_unresponsive` when the last turn stopped responding.
 - `session_turn_unresponsive` (409) means the Session's previous turn stopped responding, for example because the platform restarted, and still holds the Session. The Session frees within a minute. A `session_busy` can come first while the stopped turn still looks busy. New chat, regeneration, approval continuations, and deletes all return the new code.
-  - Wait for the `Retry-After` header (`error.headers` in TypeScript, `error.retry_after` in Python). It holds whole seconds, at most a minute, and `error.details.retryAfterSeconds` repeats the value. Sending earlier fails the same way.
+  - Wait for the `Retry-After` header (`error.headers` in TypeScript, `error.retry_after` in Python, `error.retry_after()` in Rust). It holds whole seconds, at most a minute, and `error.details.retryAfterSeconds` repeats the value. Sending earlier fails the same way.
   - Read the Session's messages before you resend, because the stopped turn may have saved its work.
   - Send a chat turn again under a new message ID. Repeat an approval continuation with the same decisions, which stay recorded. Repeat a delete as it was.
 
@@ -214,6 +229,23 @@ def check_mcp_connection(client: BlazingAgents, mcp_connection_id: str) -> None:
         print(test.error.code, test.error.message)
 ```
 
+```rust
+use blazing_agents::mcp_connections::McpConnectionTest;
+
+let connection = client
+    .mcp_connections()
+    .get("mcp_0123456789abcdef")
+    .await?;
+println!("{:?} {:?}", connection.status, connection.last_auth_error_code);
+if let McpConnectionTest::Failed { error } = client
+    .mcp_connections()
+    .test("mcp_0123456789abcdef")
+    .await?
+{
+    println!("{} {}", error.code, error.message);
+}
+```
+
 - `needs_auth`: a tenant administrator opens the MCP connections page in the dashboard and clicks **Connect** to sign in. An API key cannot start this sign-in; `connect()` with an API key returns `unauthorized`.
 - `MCP_CONNECTION_AUTHENTICATION_FAILED`: the server rejected the token or client secret. Get a new one and call `reconnect()`.
 - `MCP_CONNECTION_UNREACHABLE` or `MCP_CONNECTION_DISCOVERY_FAILED`: check that the server is up, reachable from the public internet, and implements tool listing.
@@ -230,7 +262,7 @@ A chat or approval-continuation turn that the platform cuts after it started end
 - The Session can stay busy for up to a minute. A resend in that time returns `session_busy`, then `session_turn_unresponsive`. See [session busy](#session-busy).
 
 - In a `useChat` frontend, `onFinish` receives `isAbort`, `isError`, `isDisconnect`, and `finishReason`. Treat the turn as failed when any flag is set, `finishReason` is missing, or it equals `"error"`. Restore the last good messages and keep the user's draft.
-- Completion and object streams carry no `data-turn-interrupted` part. A cut one fails the stream. In TypeScript, awaiting `result.text` or `result.object` rejects with `stream_error`. A network failure before any response is `network_error`, and your own abort is `request_aborted`. In Python, these are `StreamError` and `APIConnectionError`.
+- Completion and object streams carry no `data-turn-interrupted` part. A cut one fails the stream. In TypeScript, awaiting `result.text` or `result.object` rejects with `stream_error`. A network failure before any response is `network_error`, and your own abort is `request_aborted`. In Python, these are `StreamError` and `APIConnectionError`; in Rust, `Error::Stream` and `Error::Connection`.
 - A failed or cancelled turn adds nothing to Session history, but a dropped connection can hide a turn that finished and was saved. Reload the Session's messages before you assume the reply was lost.
 - A resend is an ordinary new message with a fresh message ID. It can repeat tool side effects.
 - Log `requestId` from the result. Relay responses built by the SDK keep the original request ID.
@@ -266,13 +298,28 @@ def check_chat_health(client: BlazingAgents, chat_connection_id: str) -> None:
             print(check.code, check.status, check.subject)
 ```
 
+```rust
+use blazing_agents::chat_connections::ChatHealthCheckStatus;
+
+let connection = client
+    .chat_connections()
+    .check_health("cc_0123456789abcdef")
+    .await?;
+println!("{} {}", connection.enabled, connection.health.token_valid);
+for check in &connection.health.checks {
+    if check.status != ChatHealthCheckStatus::Pass {
+        println!("{} {:?} {:?}", check.code, check.status, check.subject);
+    }
+}
+```
+
 For every check that is `fail` or `unknown`, verify that setting by hand on the platform:
 
 - `webhook_url` (Telegram): the bot's webhook points at the connection's `webhookUrl`. A valid token alone does not prove messages arrive. Enable the connection again to re-register it. `chat_webhook_conflict` (409) means the bot already has a webhook set by another service. Remove it, or use a new bot.
 - `channel_membership`: the bot is in the listed channel or chat. `channelIds` and `chatIds` choose where checks look; they do not restrict where the bot answers.
 - `bot_identity`: the bot identity read from the token matches the connection. On failure, check that the token is current and for the same bot. Rotate with the full credential set for Slack, or only the new bot token for Telegram.
 - Also confirm that both the connection and its Agent are enabled, your subscription is active, and, for Slack, that both the Event Subscriptions and Interactivity request URLs point at `webhookUrl`.
-- If the agent finished but no reply appeared, list the connection's deliveries with REST `GET /v1/chat-connections/{id}/deliveries`; neither SDK exposes it. `confirmed` means the platform accepted the reply, `failed` means it did not, and `ambiguous` means it may have been sent. Repairing a delivery with REST `POST /v1/chat-connections/{id}/deliveries/{deliveryId}/repair` posts the saved reply without running the agent again, and it can post a duplicate. `chatDeliveries.list()` (Python `chat_deliveries.list()`) with a `since` lists failed and ambiguous deliveries across all connections at once.
+- If the agent finished but no reply appeared, list the connection's deliveries with REST `GET /v1/chat-connections/{id}/deliveries` (`chat_connections().deliveries(id)` in Rust; the TypeScript and Python SDKs do not expose it). `confirmed` means the platform accepted the reply, `failed` means it did not, and `ambiguous` means it may have been sent. Repairing a delivery with REST `POST /v1/chat-connections/{id}/deliveries/{deliveryId}/repair` (`chat_connections().repair_delivery(id, delivery_id, expected_attempt)` in Rust) posts the saved reply without running the agent again, and it can post a duplicate. `chatDeliveries.list()` (Python `chat_deliveries.list()`, Rust `chat_deliveries().list()`) with a `since` lists failed and ambiguous deliveries across all connections at once.
 
 See [Slack and Telegram](recipes/slack-and-telegram.md) for setup.
 

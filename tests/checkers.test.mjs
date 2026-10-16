@@ -160,11 +160,12 @@ test("snippet checker maps diagnostics and rejects compiler failures", async (t)
       markdown: "```sh\necho hello\n```",
       outputs: [],
       status: 0,
-      message: /0 TypeScript and 0 Python/,
+      message: /0 TypeScript, 0 Python, and 0 Rust/,
     },
     {
-      name: "both compilers succeed",
-      markdown: "```ts\nconst answer = 42;\n```\n```py\nanswer = 42\n```",
+      name: "all three compilers succeed",
+      markdown:
+        "```ts\nconst answer = 42;\n```\n```py\nanswer = 42\n```\n```rust\nlet answer: u8 = 42;\n```\n```rust\nfn main() { println!(\"hi\"); }\n```",
       outputs: [
         { status: 0, stdout: "", stderr: "" },
         {
@@ -174,9 +175,11 @@ test("snippet checker maps diagnostics and rejects compiler failures", async (t)
           }),
           stderr: "",
         },
+        { status: 0, stdout: "warning: unused", stderr: "" },
       ],
       status: 0,
-      message: /1 TypeScript and 1 Python/,
+      message: /1 TypeScript, 1 Python, and 2 Rust/,
+      rust: { wrapped: ["snippet0.rs"], plain: ["snippet1.rs"] },
     },
     {
       name: "TypeScript failure without diagnostics",
@@ -252,6 +255,66 @@ test("snippet checker maps diagnostics and rejects compiler failures", async (t)
       status: 1,
       message: /pyright failed:[\s\S]*invalid reportbackend failed/,
     },
+    {
+      name: "Rust located fragment diagnostic",
+      markdown: '```rust\nlet x: u8 = "no";\n```',
+      outputs: [
+        {
+          status: 101,
+          stdout:
+            "examples/snippet0.rs:3:13: error[E0308]: mismatched types\nerror: could not compile `skills-rust-snippets` (example \"snippet0\") due to 1 previous error\n",
+          stderr: "",
+        },
+      ],
+      status: 1,
+      message: /SKILL\.md:2: error\[E0308\]: mismatched types/,
+      rust: { wrapped: ["snippet0.rs"] },
+    },
+    {
+      name: "Rust located program diagnostic",
+      markdown: '```rust\nfn main() {\nlet x: u8 = "no";\n}\n```',
+      outputs: [
+        {
+          status: 101,
+          stdout:
+            "examples/snippet0.rs:2:13: error[E0308]: mismatched types\n",
+          stderr: "",
+        },
+      ],
+      status: 1,
+      message: /SKILL\.md:3: error\[E0308\]: mismatched types/,
+      rust: { plain: ["snippet0.rs"] },
+    },
+    {
+      name: "Rust unlocated error line is printed",
+      markdown: "```rust\nlet x = 1;\n```",
+      outputs: [
+        {
+          status: 0,
+          stdout: "",
+          stderr: "error: could not compile `skills-rust-snippets`\n",
+        },
+      ],
+      status: 0,
+      message: /error: could not compile `skills-rust-snippets`/,
+      rust: { wrapped: ["snippet0.rs"] },
+    },
+    {
+      name: "Rust failure without diagnostics",
+      markdown: "```rust\nlet x = 1;\n```",
+      outputs: [{ status: 101, stdout: "", stderr: "linker blew up" }],
+      status: 1,
+      message: /Snippet type-check failed \(1 error/,
+      rust: { wrapped: ["snippet0.rs"] },
+    },
+    {
+      name: "missing cargo executable",
+      markdown: "```rust\nlet x = 1;\n```",
+      outputs: [{ error: { message: "ENOENT" } }],
+      status: 1,
+      message: /Install the Rust toolchain/,
+      rust: { wrapped: ["snippet0.rs"] },
+    },
   ];
   for (const scenario of cases) {
     await t.test(scenario.name, (t) => {
@@ -260,11 +323,29 @@ test("snippet checker maps diagnostics and rejects compiler failures", async (t)
       const code = `
         import { mock } from 'node:test';
         import assert from 'node:assert/strict';
+        import { readFileSync, readdirSync } from 'node:fs';
+        import { dirname, join } from 'node:path';
         const outputs = ${JSON.stringify(scenario.outputs)};
+        const rust = ${JSON.stringify(scenario.rust ?? null)};
         mock.module('node:child_process', { namedExports: { spawnSync: (command, args) => {
+          assert.ok(outputs.length > 0, 'no unexpected compiler calls');
+          if (command === 'cargo') {
+            assert.ok(args.includes('--examples'));
+            assert.ok(args.includes('--locked'));
+            assert.ok(args.includes('--manifest-path'));
+            const manifest = args[args.indexOf('--manifest-path') + 1];
+            const dir = join(dirname(manifest), 'examples');
+            for (const name of rust?.wrapped ?? []) {
+              assert.match(readFileSync(join(dir, name), 'utf8'), /async fn snippet\\(client: blazing_agents::Client\\)/);
+            }
+            for (const name of rust?.plain ?? []) {
+              assert.doesNotMatch(readFileSync(join(dir, name), 'utf8'), /async fn snippet\\(client: blazing_agents::Client\\)/);
+            }
+            assert.equal(readdirSync(dir).length, (rust?.wrapped?.length ?? 0) + (rust?.plain?.length ?? 0));
+            return outputs.shift();
+          }
           assert.ok(command.endsWith('/tsc') || command === 'uv');
           assert.ok(args.some((arg) => /snippet\\d+\\.(ts|tsx|py)$/.test(arg)));
-          assert.ok(outputs.length > 0, 'no unexpected compiler calls');
           return outputs.shift();
         } } });
         await import(${JSON.stringify(new URL("../scripts/check-snippets.mjs", import.meta.url).href)});
