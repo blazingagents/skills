@@ -1,22 +1,24 @@
 # Rust SDK reference
 
-Use this page to call Blazing Agents from a Rust backend: install the crate, build a client, run Turns, and find the method for every operation. It matches the `blazing-agents` crate at commit `aa1957f` of the repository's main branch, the revision this skill's snippets compile against. The crate is not on crates.io yet, so install it from the repository.
+Use this page to call Blazing Agents from a Rust backend: install the crate, build a client, run Turns, and find the method for every operation. It matches the `blazing-agents` crate at rev `789a123` of the repository's main branch, the revision this skill's snippets compile against. The crate is not on crates.io yet, so install it from the repository.
 
 For the same surface in Python or TypeScript, read [Python SDK reference](sdk-python.md) or [TypeScript SDK reference](sdk-typescript.md). For end-to-end builds, start from a recipe such as [Add chat to your app](recipes/chat-in-your-app.md).
+
+The snippets on this page assume a `client` built as shown in [Construct](#construct); short fragments appear inside an async function that receives it.
 
 ## Install
 
 The crate is `blazing-agents`; the import name is `blazing_agents`. It needs Rust 1.85 or newer and runs on Tokio.
 
 ```bash
-cargo add blazing-agents --git https://github.com/blazingagents/rust-sdk
+cargo add blazing-agents --git https://github.com/blazingagents/rust-sdk --rev 789a123
 cargo add tokio --features macros,rt-multi-thread
 cargo add futures-util
 ```
 
 ```toml
 [dependencies]
-blazing-agents = { git = "https://github.com/blazingagents/rust-sdk" }
+blazing-agents = { git = "https://github.com/blazingagents/rust-sdk", rev = "789a12397333868577404b4d9bafaee89446e4d0" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 futures-util = "0.3"
 ```
@@ -101,7 +103,7 @@ async fn start_chat(
 }
 ```
 
-To relay, turn the stream into your framework's streaming body. In axum that is `Body::from_stream(stream)` with the `x-vercel-ai-ui-message-stream: v1` header. When the call started a new Session, also copy the response's `location` header from `stream.meta().headers()`: `BlazingAgentsChatTransport` in your frontend reads the new Session ID from that header.
+To relay, turn the stream into your framework's streaming body. In axum that is `Body::from_stream(stream)` with the `x-vercel-ai-ui-message-stream: v1` header, plus `x-ba-turn-id` (the running Turn's `turn_...` ID, used for Stop). When the call started a new Session, also copy the response's `location` header from `stream.meta().headers()`: `BlazingAgentsChatTransport` in your frontend reads the new Session ID from that header.
 
 ```rust
 use axum::body::Body;
@@ -135,6 +137,9 @@ async fn chat(
     let mut response = Response::builder()
         .header("content-type", "text/event-stream")
         .header("x-vercel-ai-ui-message-stream", "v1");
+    if let Some(turn_id) = stream.meta().headers().get("x-ba-turn-id") {
+        response = response.header("x-ba-turn-id", turn_id.clone());
+    }
     if body.session_id.is_none() {
         if let Some(location) = stream.meta().headers().get("location") {
             response = response.header("location", location.clone());
@@ -325,7 +330,7 @@ An `Upload` comes from `Upload::bytes(...)`, `Upload::file(path).await`, or `Upl
 | `list_latest()`, `.user_id(...)`, `.by_agent(true)`, `.limit(...)` | `Page<LatestSession>` (`.by_agent(true)` gives at most one session per agent: its latest, for an inbox view) |
 | `get(agent_id, session_id)` | `SessionDetail` (`agent_config`, `forked_from`) |
 | `fork(agent_id, session_id, message_id, idempotency_key)` | `SessionDetail` for the child |
-| `messages(agent_id, session_id)`, `.after(cursor)`, `.limit(...)` | `MessagesPage` (`data`, `next_cursor`, `latest_cursor`) |
+| `messages(agent_id, session_id)`, `.cursor(...)`, `.after(cursor)`, `.limit(...)` | `MessagesPage` (`data`, `next_cursor`, `latest_cursor`) |
 | `tool_approvals(agent_id, session_id)` | `ToolApprovalList` (`data` of `ToolApproval`, `continuation`) |
 | `submit_input(agent_id, session_id, request_id, message)` | `SubmittedInput` (`input`, the `SessionInput` receipt, plus `activity`). Steers the running Turn; fails `steer_not_available` when no Turn can take it |
 | `inputs(agent_id, session_id)`, `.include_completed(true)`, `.limit(...)` | `InputsPage` (`data`, `next_cursor`, `activity`) |

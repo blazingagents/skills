@@ -306,7 +306,7 @@ async def history(
 ```rust
 use axum::body::Body;
 use axum::extract::{Json, Query, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::Router;
@@ -323,7 +323,16 @@ struct ChatBody {
     messages: Option<Vec<Value>>,
     #[serde(rename = "sessionId")]
     session_id: Option<String>,
-    trigger: Option<String>,
+    #[serde(rename = "messageId")]
+    message_id: Option<String>,
+    trigger: Option<Trigger>,
+}
+
+#[derive(Deserialize, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+enum Trigger {
+    SubmitMessage,
+    RegenerateMessage,
 }
 
 #[derive(Deserialize)]
@@ -333,9 +342,10 @@ struct HistoryQuery {
     cursor: Option<String>,
 }
 
-fn current_user() -> String {
-    // Your sign-in check. Return the verified user ID or reject the request.
-    "user_123".to_owned()
+fn current_user(headers: &HeaderMap) -> String {
+    // Your sign-in check: verify the session token and return its user ID.
+    let _ = headers;
+    todo!("verify the signed-in user")
 }
 
 fn agent_for_user(_user_id: &str) -> String {
@@ -376,6 +386,9 @@ fn relay(stream: ChatStream, new_session: bool) -> Response {
         .header("cache-control", "no-cache")
         .header("content-type", "text/event-stream")
         .header("x-vercel-ai-ui-message-stream", "v1");
+    if let Some(turn_id) = stream.meta().headers().get("x-ba-turn-id") {
+        response = response.header("x-ba-turn-id", turn_id.clone());
+    }
     if new_session {
         if let Some(location) = stream.meta().headers().get("location") {
             response = response.header("location", location.clone());
@@ -404,9 +417,10 @@ fn failure(error: Error) -> Response {
 
 async fn history(
     State(client): State<Client>,
+    headers: HeaderMap,
     Query(query): Query<HistoryQuery>,
 ) -> Response {
-    let user_id = current_user();
+    let user_id = current_user(&headers);
     let Ok(scoped) = client.for_user(&user_id) else {
         return StatusCode::UNAUTHORIZED.into_response();
     };
@@ -428,8 +442,12 @@ async fn history(
         .unwrap_or_else(failure)
 }
 
-async fn chat(State(client): State<Client>, Json(body): Json<ChatBody>) -> Response {
-    let user_id = current_user();
+async fn chat(
+    State(client): State<Client>,
+    headers: HeaderMap,
+    Json(body): Json<ChatBody>,
+) -> Response {
+    let user_id = current_user(&headers);
     let Ok(scoped) = client.for_user(&user_id) else {
         return StatusCode::UNAUTHORIZED.into_response();
     };
@@ -483,12 +501,15 @@ async fn chat(State(client): State<Client>, Json(body): Json<ChatBody>) -> Respo
                         .user_id(&user_id)
                         .await
                         .map(|stream| relay(stream, true)),
-                    Some(session_id) if body.trigger.as_deref() == Some("regenerate-message") => {
-                        scoped
+                    Some(session_id) if body.trigger == Some(Trigger::RegenerateMessage) => {
+                        let call = scoped
                             .regenerate(agent_id, session_id, message)
-                            .user_id(&user_id)
-                            .await
-                            .map(|stream| relay(stream, false))
+                            .user_id(&user_id);
+                        let call = match &body.message_id {
+                            Some(message_id) => call.message_id(message_id),
+                            None => call,
+                        };
+                        call.await.map(|stream| relay(stream, false))
                     }
                     Some(session_id) => scoped
                         .chat(agent_id, message)
@@ -695,7 +716,7 @@ async def stop(body: StopBody, user_id: str = Depends(current_user)):
 
 ```rust
 use axum::extract::{Json, Query, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::Router;
@@ -727,9 +748,10 @@ struct StopBody {
     turn_id: String,
 }
 
-fn current_user() -> String {
-    // Your sign-in check. Return the verified user ID or reject the request.
-    "user_123".to_owned()
+fn current_user(headers: &HeaderMap) -> String {
+    // Your sign-in check: verify the session token and return its user ID.
+    let _ = headers;
+    todo!("verify the signed-in user")
 }
 
 fn agent_for_user(_user_id: &str) -> String {
@@ -752,28 +774,12 @@ fn failure(error: Error) -> Response {
     }
 }
 
-async fn history(
-    State(client): State<Client>,
-    Query(query): Query<SessionQuery>,
-) -> Response {
-    let user_id = current_user();
-    let Ok(scoped) = client.for_user(&user_id) else {
-        return StatusCode::UNAUTHORIZED.into_response();
-    };
-    scoped
-        .sessions()
-        .messages(agent_for_user(&user_id), query.session_id)
-        .limit(200)
-        .await
-        .map(|page| Json(json!({ "messages": page.data })).into_response())
-        .unwrap_or_else(failure)
-}
-
 async fn session(
     State(client): State<Client>,
+    headers: HeaderMap,
     Query(query): Query<SessionQuery>,
 ) -> Response {
-    let user_id = current_user();
+    let user_id = current_user(&headers);
     let Ok(scoped) = client.for_user(&user_id) else {
         return StatusCode::UNAUTHORIZED.into_response();
     };
@@ -788,8 +794,12 @@ async fn session(
         .unwrap_or_else(failure)
 }
 
-async fn steer(State(client): State<Client>, Json(body): Json<SteerBody>) -> Response {
-    let user_id = current_user();
+async fn steer(
+    State(client): State<Client>,
+    headers: HeaderMap,
+    Json(body): Json<SteerBody>,
+) -> Response {
+    let user_id = current_user(&headers);
     let Ok(scoped) = client.for_user(&user_id) else {
         return StatusCode::UNAUTHORIZED.into_response();
     };
@@ -806,8 +816,12 @@ async fn steer(State(client): State<Client>, Json(body): Json<SteerBody>) -> Res
         .unwrap_or_else(failure)
 }
 
-async fn stop(State(client): State<Client>, Json(body): Json<StopBody>) -> Response {
-    let user_id = current_user();
+async fn stop(
+    State(client): State<Client>,
+    headers: HeaderMap,
+    Json(body): Json<StopBody>,
+) -> Response {
+    let user_id = current_user(&headers);
     let Ok(scoped) = client.for_user(&user_id) else {
         return StatusCode::UNAUTHORIZED.into_response();
     };
@@ -822,7 +836,6 @@ async fn stop(State(client): State<Client>, Json(body): Json<StopBody>) -> Respo
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let app = Router::new()
-        .route("/api/chat/history", get(history))
         .route("/api/chat/session", get(session))
         .route("/api/chat/steer", post(steer))
         .route("/api/chat/stop", post(stop))

@@ -169,7 +169,7 @@ async def list_pending(
 
 ```rust
 use axum::extract::{Json, Query, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
@@ -184,9 +184,10 @@ struct ApprovalsQuery {
     session_id: String,
 }
 
-fn current_user() -> String {
-    // Your sign-in check. Return the verified user ID or reject the request.
-    "user_123".to_owned()
+fn current_user(headers: &HeaderMap) -> String {
+    // Your sign-in check: verify the session token and return its user ID.
+    let _ = headers;
+    todo!("verify the signed-in user")
 }
 
 fn agent_for_user(_user_id: &str) -> String {
@@ -196,9 +197,10 @@ fn agent_for_user(_user_id: &str) -> String {
 
 async fn list_pending(
     State(client): State<Client>,
+    headers: HeaderMap,
     Query(query): Query<ApprovalsQuery>,
 ) -> Response {
-    let user_id = current_user();
+    let user_id = current_user(&headers);
     let Ok(scoped) = client.for_user(&user_id) else {
         return StatusCode::UNAUTHORIZED.into_response();
     };
@@ -337,7 +339,7 @@ async def continue_round(
 ```rust
 use axum::body::Body;
 use axum::extract::{Json, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::Response;
 use axum::routing::post;
 use axum::Router;
@@ -360,9 +362,10 @@ struct ContinueBody {
     decisions: Vec<Decision>,
 }
 
-fn current_user() -> String {
-    // Your sign-in check; return the verified user ID or reject the request.
-    "user_123".to_owned()
+fn current_user(headers: &HeaderMap) -> String {
+    // Your sign-in check: verify the session token and return its user ID.
+    let _ = headers;
+    todo!("verify the signed-in user")
 }
 
 fn agent_for_user(_user_id: &str) -> String {
@@ -372,9 +375,10 @@ fn agent_for_user(_user_id: &str) -> String {
 
 async fn continue_round(
     State(client): State<Client>,
+    headers: HeaderMap,
     Json(body): Json<ContinueBody>,
 ) -> Result<Response, StatusCode> {
-    let user_id = current_user();
+    let user_id = current_user(&headers);
     if body.decisions.is_empty() {
         return Err(StatusCode::BAD_REQUEST);
     }
@@ -394,9 +398,13 @@ async fn continue_round(
         .continue_chat(agent_for_user(&user_id), &body.session_id, decisions)
         .await
         .map_err(|_| StatusCode::BAD_GATEWAY)?;
-    Response::builder()
+    let mut response = Response::builder()
         .header("content-type", "text/event-stream")
-        .header("x-vercel-ai-ui-message-stream", "v1")
+        .header("x-vercel-ai-ui-message-stream", "v1");
+    if let Some(turn_id) = stream.meta().headers().get("x-ba-turn-id") {
+        response = response.header("x-ba-turn-id", turn_id.clone());
+    }
+    response
         .body(Body::from_stream(stream))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }

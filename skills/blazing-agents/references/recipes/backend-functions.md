@@ -129,7 +129,7 @@ async def chat(body: ChatBody, user_id: str = Depends(current_user)):
 use anyhow::anyhow;
 use axum::body::Body;
 use axum::extract::{Json, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::Response;
 use axum::routing::post;
 use axum::Router;
@@ -152,9 +152,10 @@ struct ChatBody {
     session_id: Option<String>,
 }
 
-fn current_user() -> String {
-    // Your sign-in check; return the verified user ID or reject the request.
-    "user_123".to_owned()
+fn current_user(headers: &HeaderMap) -> String {
+    // Your sign-in check: verify the session token and return its user ID.
+    let _ = headers;
+    todo!("verify the signed-in user")
 }
 
 fn agent_for_user(_user_id: &str) -> String {
@@ -169,9 +170,10 @@ async fn find_order(_user_id: &str, _order_id: &str) -> Option<serde_json::Value
 
 async fn chat(
     State(client): State<Client>,
+    headers: HeaderMap,
     Json(body): Json<ChatBody>,
 ) -> Result<Response, StatusCode> {
-    let user_id = current_user();
+    let user_id = current_user(&headers);
 
     let functions = Functions::builder()
         .function(
@@ -213,6 +215,9 @@ async fn chat(
     let mut response = Response::builder()
         .header("content-type", "text/event-stream")
         .header("x-vercel-ai-ui-message-stream", "v1");
+    if let Some(turn_id) = stream.meta().headers().get("x-ba-turn-id") {
+        response = response.header("x-ba-turn-id", turn_id.clone());
+    }
     if body.session_id.is_none() {
         if let Some(location) = stream.meta().headers().get("location") {
             response = response.header("location", location);
@@ -312,10 +317,13 @@ let stream = client
     )
     .functions(chat_functions_for(session_owner_id)?)
     .await?;
-let response = Response::builder()
+let mut response = Response::builder()
     .header("x-vercel-ai-ui-message-stream", "v1")
-    .header("content-type", "text/event-stream")
-    .body(Body::from_stream(stream))?;
+    .header("content-type", "text/event-stream");
+if let Some(turn_id) = stream.meta().headers().get("x-ba-turn-id") {
+    response = response.header("x-ba-turn-id", turn_id.clone());
+}
+let response = response.body(Body::from_stream(stream))?;
 let _ = response;
 ```
 
