@@ -241,7 +241,7 @@ Signatures below drop `extra_headers` and `timeout`, which every method accepts.
 | `get_spending_limit(agent_id)` | `SpendingLimitResponse` |
 | `update_spending_limit(agent_id, *, spending_limit)` | `SpendingLimitResponse`. `None` disables the limit. See [model spending limits](recipes/usage-dashboards.md#model-spending-limits). |
 
-`provider_id` and `model` go together on create. On update, `model` alone changes the model and `provider_id` needs `model`. `tools` is a list of built-in tool names (`AgentTool`), each listed once, such as `"read"`, `"write_todos"`, `"save_memory"`, or `"web_search"`. See [Built-in tools](concepts.md#built-in-tools).
+`provider_id` and `model` go together on create. On update, `model` alone changes the model and `provider_id` needs `model`. `tools` is a list of built-in tool names (`AgentTool`), each listed once, such as `"read"`, `"write_todos"`, `"save_memory"`, or `"web_search"`. `AGENT_TOOLS` lists each tool with `description`, `requires_workspace`, and `tags`, and `AGENT_TOOL_GROUPS` names each group tag; `[tool.name for tool in AGENT_TOOLS if "file_read" in tool.tags]` gives the read-only file tools. See [Built-in tools](concepts.md#built-in-tools).
 
 ### `client.agent(agent_id).skills`
 
