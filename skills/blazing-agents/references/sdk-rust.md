@@ -304,7 +304,7 @@ Required inputs are arguments; optional inputs are setters on the returned `Call
 | `update_mcp_attachment(agent_id, mcp_connection_id)`, `.forward_user_id(...)`, `.forwarded_metadata_keys(...)` | `McpAttachment` |
 | `get_spending_limit(agent_id)` / `update_spending_limit(agent_id, Option<SpendingLimitInput>)` | `SpendingLimitStatus`. `None` disables the limit. See [model spending limits](recipes/usage-dashboards.md#model-spending-limits) |
 
-`.model(provider_id, model)` sets both together on create. On update, `.model_on_current_provider(model)` changes only the model and `.model(provider_id, model)` changes Provider and model. `tools` is `AgentTool` values, each listed once, such as `AgentTool::Read`, `AgentTool::WriteTodos`, `AgentTool::SaveMemory`, or `AgentTool::WebSearch`. See [Built-in tools](concepts.md#built-in-tools).
+`.model(provider_id, model)` sets both together on create. On update, `.model_on_current_provider(model)` changes only the model and `.model(provider_id, model)` changes Provider and model. `tools` is `AgentTool` values, each listed once, such as `AgentTool::Read`, `AgentTool::WriteTodos`, `AgentTool::SaveMemory`, or `AgentTool::WebSearch`. `agents::AGENT_TOOLS` lists each tool with `description`, `requires_workspace`, and `tags`, and `agents::AGENT_TOOL_GROUPS` names each group tag; filter on `tool.tags.contains(&AgentToolTag::FileRead)` for the read-only file tools. See [Built-in tools](concepts.md#built-in-tools).
 
 ### `client.agent(agent_id).skills()`
 

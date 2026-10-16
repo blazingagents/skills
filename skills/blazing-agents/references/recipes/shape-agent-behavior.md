@@ -86,6 +86,8 @@ let agent = client
 println!("{:?} {}", agent.model, agent.instructions);
 ```
 
+The file tools here are the `file_read`-tagged ones (`read`, `grep`, `glob`), so the Agent can search its Workspace but never change it. Add `write` or `edit` to let it change files; add `bash` only if it may run any command. See [Built-in tools](../concepts.md#built-in-tools).
+
 2. Save a Prompt linked to the Agent and run it with exactly its variables. `agentId` groups Prompts for listing. A scoped request requires the Prompt and Agent to belong to the same user.
 
 ```ts
