@@ -109,14 +109,16 @@ Not the same as: any file in the Workspace. Only published files are Artifacts, 
 
 ### Built-in tools
 
-Ready-made abilities you switch on per agent, one tool at a time, by listing tool names in `tools`. Any subset is valid, such as read-only `read`, `grep`, and `glob`. The tools, by category:
+Ready-made abilities you switch on per agent, one tool at a time, by listing tool names in `tools`. Any subset is valid. The tools, by group:
 
 - **Files** (run in the Workspace): `read`, `write`, `edit`, `grep`, `glob`, `bash`, `publish_artifacts`.
 - **Planning**: `write_todos`.
 - **Memory**: `save_memory`, `get_memory`, `search_memories`, `update_memory`, `delete_memory`.
 - **Web**: `web_search`, which costs Usage credit per successful search. See [Search the web](recipes/web-search.md).
 
-A category only groups tools for display; `tools` never accepts a category name. A new agent has no built-in tools; without tools, attached MCP Connections, or backend functions on the chat request, it can only talk. The `tools` list you send replaces the whole selection, and each name can appear once. An agent with Skills also gets `activate_skill` and a `read` that opens Skill files; that `read` opens Workspace files only when `read` is in `tools`.
+Each tool in the SDK catalog has tags. The first is its group (`files`, `planning`, `memory`, `web`). A file tool also has one access tag: `file_read` (`read`, `grep`, `glob`) never changes Workspace files, `file_write` (`write`, `edit`) changes them, and `execute` (`bash`) runs any command. For a read-only agent, select only `file_read` file tools and leave out `bash`, which can do anything a `file_write` tool can. `publish_artifacts` has no access tag.
+
+Tags and groups only describe tools; `tools` never accepts a tag or group name. A new agent has no built-in tools; without tools, attached MCP Connections, or backend functions on the chat request, it can only talk. The `tools` list you send replaces the whole selection, and each name can appear once. An agent with Skills also gets `activate_skill` and a `read` that opens Skill files; that `read` opens Workspace files only when `read` is in `tools`.
 
 Not the same as: MCP tools, which come from MCP Connections, or backend functions, which your backend attaches to a chat request.
 

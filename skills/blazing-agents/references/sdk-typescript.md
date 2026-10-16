@@ -288,7 +288,7 @@ means the result is `{ data, nextCursor }` (see [Pagination](#pagination)).
 | `getSpendingLimit({ agentId })` | `GET /v1/agents/{agentId}/spending-limit` | `SpendingLimitResponse`. Unscoped client only. |
 | `updateSpendingLimit({ agentId, spendingLimit })` | `PUT /v1/agents/{agentId}/spending-limit` | `SpendingLimitResponse`. `null` disables the limit. See [model spending limits](recipes/usage-dashboards.md#model-spending-limits). |
 
-`tools` is an `AgentToolName[]` of built-in tool names, each listed once. To build a tool picker, import `AGENT_TOOLS` (each entry has `name`, `category`, `description`, and `requiresWorkspace`) and `AGENT_TOOL_CATEGORIES` (display name and description per category). Categories only group tools for display; `tools` never accepts one. See [Built-in tools](concepts.md#built-in-tools).
+`tools` is an `AgentToolName[]` of built-in tool names, each listed once. To build a tool picker, import `AGENT_TOOLS` (each entry has `name`, `description`, `requiresWorkspace`, and `tags`) and `AGENT_TOOL_GROUPS` (display name and description per group tag, the first tag of each tool). `AGENT_TOOLS.filter((tool) => tool.tags.includes("file_read"))` gives the read-only file tools. `category` and `AGENT_TOOL_CATEGORIES` are deprecated. Tags only describe tools; `tools` never accepts one. See [Built-in tools](concepts.md#built-in-tools).
 
 ### `client.providers`
 
