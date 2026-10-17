@@ -98,7 +98,7 @@ if (pyFiles.length) {
     "uv",
     [
       ...["run", "--no-project", "--python", "3.12"],
-      ...["--with", join(snippets, "vendor/blazing_agents-0.22.0-py3-none-any.whl"), "--with", "pyright==1.1.414", "--with", "fastapi==0.141.1"],
+      ...["--with", join(snippets, "vendor/blazing_agents-0.23.0-py3-none-any.whl"), "--with", "pyright==1.1.414", "--with", "fastapi==0.141.1"],
       ...["pyright", "--outputjson", ...pyFiles],
     ],
     { cwd: out, encoding: "utf8" },

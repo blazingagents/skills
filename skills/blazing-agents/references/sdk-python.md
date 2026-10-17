@@ -217,7 +217,7 @@ def list_my_agents(verified_user_id: str):
 
 - Take the ID from the session your backend verified, never from a request body or query parameter.
 - The ID is 1 to 256 printable ASCII characters with no leading or trailing space. Anything else raises `ValueError`.
-- A `UserClient` has `agents`, `artifacts`, `memories`, `prompts`, `sessions`, `tasks`, `workspaces`, `agent()`, the generation methods, and `usage` with only `get()` and `sessions()`. Tenant administration (`providers`, `mcp_connections`, `chat_connections`, `chat_deliveries`, `tenant`, the merchant resources) and `usage.overview()` / `usage.get_for_agent()` stay on the tenant client.
+- A `UserClient` has `agents`, `artifacts`, `memories`, `prompts`, `sessions`, `tasks`, `workspaces`, `agent()`, the generation methods, and `usage` with `get()`, `sessions()`, and `get_for_agent()`. Tenant administration (`providers`, `mcp_connections`, `chat_connections`, `chat_deliveries`, `tenant`, the merchant resources) and `usage.overview()` stay on the tenant client. Its `agents.get_spending_limit()` and `agents.update_spending_limit()` are deprecated and emit a `DeprecationWarning`, because the API always refuses them for a user-scoped client.
 - `with_options()` on a `UserClient` keeps the scope.
 
 ## Operation map
@@ -238,7 +238,7 @@ Signatures below drop `extra_headers` and `timeout`, which every method accepts.
 | `remove_avatar(agent_id)` | `Agent` |
 | `list_mcp_attachments(agent_id)` | `McpAttachments` (`.mcp_attachments`) |
 | `update_mcp_attachment(agent_id, mcp_connection_id, *, forward_user_id=..., forwarded_metadata_keys=...)` | `McpAttachment` |
-| `get_spending_limit(agent_id)` | `SpendingLimitResponse` |
+| `get_spending_limit(agent_id)` | `SpendingLimitResponse`. Tenant client only; deprecated on a `UserClient`, where the API refuses it. |
 | `update_spending_limit(agent_id, *, spending_limit)` | `SpendingLimitResponse`. `None` disables the limit. See [model spending limits](recipes/usage-dashboards.md#model-spending-limits). |
 
 `provider_id` and `model` go together on create. On update, `model` alone changes the model and `provider_id` needs `model`. `tools` is a list of built-in tool names (`AgentTool`), each listed once, such as `"read"`, `"write_todos"`, `"save_memory"`, or `"web_search"`. `AGENT_TOOLS` lists each tool with `description`, `requires_workspace`, and `tags`, and `AGENT_TOOL_GROUPS` names each group tag; `[tool.name for tool in AGENT_TOOLS if "file_read" in tool.tags]` gives the read-only file tools. See [Built-in tools](concepts.md#built-in-tools).
