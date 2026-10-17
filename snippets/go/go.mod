@@ -4,7 +4,7 @@ go 1.26.0
 
 tool golang.org/x/tools/cmd/goimports
 
-require github.com/blazingagents/golang-sdk v0.0.0-20261017095851-5c762cba38a4
+require github.com/blazingagents/golang-sdk v0.1.0
 
 require (
 	golang.org/x/mod v0.42.0 // indirect
