@@ -397,6 +397,39 @@ test("snippet checker maps diagnostics and rejects compiler failures", async (t)
       go: { wrapped: ["snippet0"] },
     },
     {
+      name: "TypeScript against a packed SDK",
+      markdown: "```ts\nconst answer = 42;\n```",
+      env: { SNIPPETS_TYPESCRIPT_SDK: "/packs/sdk.tgz" },
+      outputs: [
+        { status: 0, stdout: "", stderr: "" },
+        { status: 0, stdout: "", stderr: "" },
+      ],
+      status: 0,
+      message: /TypeScript snippets use \/packs\/sdk\.tgz/,
+    },
+    {
+      name: "a packed SDK that fails to install",
+      markdown: "```ts\nconst answer = 42;\n```",
+      env: { SNIPPETS_TYPESCRIPT_SDK: "/packs/sdk.tgz" },
+      outputs: [{ status: 1, stdout: "", stderr: "" }],
+      status: 1,
+      message: /npm install --no-save \/packs\/sdk\.tgz failed/,
+    },
+    {
+      name: "Python against a packed wheel",
+      markdown: "```py\nanswer = 42\n```",
+      env: { SNIPPETS_PYTHON_SDK: "/packs/sdk.whl" },
+      outputs: [
+        {
+          status: 0,
+          stdout: JSON.stringify({ generalDiagnostics: [] }),
+          stderr: "",
+        },
+      ],
+      status: 0,
+      message: /Python snippets use \/packs\/sdk\.whl/,
+    },
+    {
       name: "missing gofmt executable",
       markdown: "```go\nx := 1\n```",
       outputs: [{ error: { message: "ENOENT" } }],
@@ -478,6 +511,14 @@ test("snippet checker maps diagnostics and rejects compiler failures", async (t)
             assert.equal(readdirSync(dir).length, (rust?.wrapped?.length ?? 0) + (rust?.plain?.length ?? 0));
             return outputs.shift();
           }
+          if (command === 'npm') {
+            assert.deepEqual(args.slice(0, 3), ['install', '--no-save', '--silent']);
+            assert.equal(args.at(-1), process.env.SNIPPETS_TYPESCRIPT_SDK);
+            return outputs.shift();
+          }
+          if (command === 'uv') {
+            assert.ok(args.includes(process.env.SNIPPETS_PYTHON_SDK ?? join(dirname(options.cwd), 'vendor/blazing_agents-0.27.0-py3-none-any.whl')), 'the pinned or packed wheel');
+          }
           assert.ok(command.endsWith('/tsc') || command === 'uv');
           assert.ok(args.some((arg) => /snippet\\d+\\.(ts|tsx|py)$/.test(arg)));
           return outputs.shift();
@@ -488,7 +529,7 @@ test("snippet checker maps diagnostics and rejects compiler failures", async (t)
       const result = spawnSync(
         process.execPath,
         ["--experimental-test-module-mocks", "--input-type=module", "-e", code],
-        { cwd: dir, encoding: "utf8" },
+        { cwd: dir, encoding: "utf8", env: { ...process.env, ...scenario.env } },
       );
       assert.equal(
         result.status,
