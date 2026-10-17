@@ -160,12 +160,12 @@ test("snippet checker maps diagnostics and rejects compiler failures", async (t)
       markdown: "```sh\necho hello\n```",
       outputs: [],
       status: 0,
-      message: /0 TypeScript, 0 Python, and 0 Rust/,
+      message: /0 TypeScript, 0 Python, 0 Rust, and 0 Go/,
     },
     {
-      name: "all three compilers succeed",
+      name: "all four compilers succeed",
       markdown:
-        "```ts\nconst answer = 42;\n```\n```py\nanswer = 42\n```\n```rust\nlet answer: u8 = 42;\n```\n```rust\nfn main() { println!(\"hi\"); }\n```",
+        "```ts\nconst answer = 42;\n```\n```py\nanswer = 42\n```\n```rust\nlet answer: u8 = 42;\n```\n```rust\nfn main() { println!(\"hi\"); }\n```\n```go\nx := 1\n_ = x\n```\n```go\npackage main\nfunc main() {}\n```",
       outputs: [
         { status: 0, stdout: "", stderr: "" },
         {
@@ -176,10 +176,14 @@ test("snippet checker maps diagnostics and rejects compiler failures", async (t)
           stderr: "",
         },
         { status: 0, stdout: "warning: unused", stderr: "" },
+        { status: 0, stdout: "", stderr: "" },
+        { status: 0, stdout: "", stderr: "" },
+        { status: 0, stdout: "", stderr: "go: downloading example.com/dep v1\n" },
       ],
       status: 0,
-      message: /1 TypeScript, 1 Python, and 2 Rust/,
+      message: /1 TypeScript, 1 Python, 2 Rust, and 2 Go/,
       rust: { wrapped: ["snippet0.rs"], plain: ["snippet1.rs"] },
+      go: { wrapped: ["snippet0"], plain: ["snippet1"] },
     },
     {
       name: "TypeScript failure without diagnostics",
@@ -315,6 +319,107 @@ test("snippet checker maps diagnostics and rejects compiler failures", async (t)
       message: /Install the Rust toolchain/,
       rust: { wrapped: ["snippet0.rs"] },
     },
+    {
+      name: "Go located fragment diagnostic",
+      markdown: '```go\nvar x int = "no"\n```',
+      outputs: [
+        { status: 0, stdout: "", stderr: "" },
+        { status: 0, stdout: "", stderr: "" },
+        {
+          status: 1,
+          stdout: "",
+          stderr: '# skills-go-snippets/examples/snippet0\nexamples/snippet0/main.go:10:13: cannot use "no" (untyped string constant) as int value\n',
+        },
+      ],
+      status: 1,
+      message: /SKILL\.md:2: cannot use "no"/,
+      go: { wrapped: ["snippet0"] },
+    },
+    {
+      name: "Go located program diagnostic",
+      markdown: '```go\npackage main\nfunc main() {\nvar x int = "no"\n}\n```',
+      outputs: [
+        { status: 0, stdout: "", stderr: "" },
+        {
+          status: 1,
+          stdout: "",
+          stderr: 'examples/snippet0/main.go:3:13: cannot use "no" (untyped string constant) as int value\n',
+        },
+      ],
+      status: 1,
+      message: /SKILL\.md:4: cannot use "no"/,
+      go: { plain: ["snippet0"] },
+    },
+    {
+      name: "Go fragment that goimports cannot parse",
+      markdown: "```go\nif {\n```",
+      outputs: [
+        { status: 0, stdout: "", stderr: "" },
+        { status: 2, stdout: "", stderr: "examples/snippet0/main.go:10:4: expected operand\n" },
+      ],
+      status: 1,
+      message: /SKILL\.md:2: expected operand/,
+      go: { wrapped: ["snippet0"] },
+    },
+    {
+      name: "Go goimports failure without diagnostics",
+      markdown: "```go\nx := 1\n```",
+      outputs: [
+        { status: 0, stdout: "", stderr: "" },
+        { status: 2, stdout: "", stderr: "goimports blew up" },
+      ],
+      status: 1,
+      message: /goimports blew up[\s\S]*Snippet type-check failed \(1 error/,
+      go: { wrapped: ["snippet0"] },
+    },
+    {
+      name: "Go build failure without diagnostics",
+      markdown: "```go\nx := 1\n```",
+      outputs: [
+        { status: 0, stdout: "", stderr: "" },
+        { status: 0, stdout: "", stderr: "" },
+        { status: 1, stdout: "", stderr: "# skills-go-snippets/examples/snippet0\n" },
+      ],
+      status: 1,
+      message: /Snippet type-check failed \(1 error/,
+      go: { wrapped: ["snippet0"] },
+    },
+    {
+      name: "Go block that is not gofmt-formatted",
+      markdown: "```go\nx  :=  1\n_ = x\n```",
+      outputs: [
+        { status: 0, stdout: "{files}\n", stderr: "" },
+        { status: 0, stdout: "", stderr: "" },
+        { status: 0, stdout: "", stderr: "" },
+      ],
+      status: 1,
+      message: /SKILL\.md:1: Go block is not gofmt-formatted[\s\S]*Snippet type-check failed \(1 error/,
+      go: { wrapped: ["snippet0"] },
+    },
+    {
+      name: "missing gofmt executable",
+      markdown: "```go\nx := 1\n```",
+      outputs: [{ error: { message: "ENOENT" } }],
+      status: 1,
+      message: /Install Go first/,
+      go: { wrapped: ["snippet0"] },
+    },
+    {
+      name: "missing go executable",
+      markdown: "```go\nx := 1\n```",
+      outputs: [{ status: 0, stdout: "", stderr: "" }, { error: { message: "ENOENT" } }],
+      status: 1,
+      message: /Install Go first/,
+      go: { wrapped: ["snippet0"] },
+    },
+    {
+      name: "missing go executable for a program",
+      markdown: "```go\npackage main\nfunc main() {}\n```",
+      outputs: [{ status: 0, stdout: "", stderr: "" }, { error: { message: "ENOENT" } }],
+      status: 1,
+      message: /ENOENT/,
+      go: { plain: ["snippet0"] },
+    },
   ];
   for (const scenario of cases) {
     await t.test(scenario.name, (t) => {
@@ -327,8 +432,37 @@ test("snippet checker maps diagnostics and rejects compiler failures", async (t)
         import { dirname, join } from 'node:path';
         const outputs = ${JSON.stringify(scenario.outputs)};
         const rust = ${JSON.stringify(scenario.rust ?? null)};
-        mock.module('node:child_process', { namedExports: { spawnSync: (command, args) => {
+        const go = ${JSON.stringify(scenario.go ?? null)};
+        mock.module('node:child_process', { namedExports: { spawnSync: (command, args, options) => {
           assert.ok(outputs.length > 0, 'no unexpected compiler calls');
+          if (command === 'gofmt') {
+            assert.equal(args[0], '-l');
+            assert.equal(args.length - 1, (go?.wrapped?.length ?? 0) + (go?.plain?.length ?? 0));
+            for (const path of args.slice(1)) {
+              const text = readFileSync(path, 'utf8');
+              if (/func snippet\\(/.test(text)) assert.match(text, /\\) error \\{\\n\\t\\S/, 'fragment indented');
+            }
+            const output = outputs.shift();
+            return output.stdout ? { ...output, stdout: output.stdout.replace('{files}', args.slice(1).join('\\n')) } : output;
+          }
+          if (command === 'go') {
+            const dir = join(options.cwd, 'examples');
+            const wrapper = /func snippet\\(ctx context\\.Context, client \\*ba\\.Client, agentID ba\\.AgentID, sessionID ba\\.SessionID\\) error/;
+            if (args[0] === 'tool') {
+              assert.deepEqual(args.slice(0, 3), ['tool', 'goimports', '-w']);
+              assert.deepEqual(args.slice(3), (go?.wrapped ?? []).map((name) => join(dir, name, 'main.go')));
+            } else {
+              assert.deepEqual(args, ['build', '-gcflags=-e', './examples/...']);
+            }
+            for (const name of go?.wrapped ?? []) {
+              assert.match(readFileSync(join(dir, name, 'main.go'), 'utf8'), wrapper);
+            }
+            for (const name of go?.plain ?? []) {
+              assert.doesNotMatch(readFileSync(join(dir, name, 'main.go'), 'utf8'), wrapper);
+            }
+            assert.equal(readdirSync(dir).length, (go?.wrapped?.length ?? 0) + (go?.plain?.length ?? 0));
+            return outputs.shift();
+          }
           if (command === 'cargo') {
             assert.ok(args.includes('--examples'));
             assert.ok(args.includes('--locked'));

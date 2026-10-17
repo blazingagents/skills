@@ -66,6 +66,8 @@ def triage(agent_id: str, message: str) -> Triage:
     )
 ```
 
+In Rust, derive the schema from a struct with `ObjectSchema::derive()`. In Go, `ba.Object` derives it from the type argument with `ba.SchemaFor` and decodes the answer into that type; a `jsonschema` struct tag adds a field description.
+
 ```rust
 use blazing_agents::generation::ObjectSchema;
 use schemars::JsonSchema;
@@ -87,6 +89,21 @@ let triage: Triage = client
     )
     .await?;
 println!("{} {}", triage.category, triage.summary);
+```
+
+```go
+type Triage struct {
+	Category string `json:"category" jsonschema:"billing, technical, or other"`
+	Urgent   bool   `json:"urgent"`
+	Summary  string `json:"summary"`
+}
+
+triage, err := ba.Object(ctx, client.Generation, agentID,
+	ba.Text("Triage this support message:\n\nWhere is my invoice?"), ba.ObjectParams[Triage]{})
+if err != nil {
+	return err
+}
+fmt.Println(triage.Category, triage.Summary)
 ```
 
 2. To show progress, relay the stream from your backend. `toResponse()` returns the JSON text as it arrives, which is the format the AI SDK `useObject` hook reads.
@@ -205,6 +222,32 @@ let triage: Triage = stream.final_object().await?;
 println!("\n{} {}", triage.category, triage.summary);
 ```
 
+```go
+type Triage struct {
+	Category string `json:"category"`
+	Urgent   bool   `json:"urgent"`
+	Summary  string `json:"summary"`
+}
+
+stream, err := ba.StreamObject(ctx, client.Generation, agentID,
+	ba.Text("Triage this support message:\n\nWhere is my invoice?"), ba.ObjectParams[Triage]{})
+if err != nil {
+	return err
+}
+defer stream.Close()
+for delta, err := range stream.Deltas() {
+	if err != nil {
+		return err
+	}
+	fmt.Print(delta) // or forward it to your client
+}
+triage, err := stream.Object()
+if err != nil {
+	return err
+}
+fmt.Printf("\n%s %s\n", triage.Category, triage.Summary)
+```
+
 3. To keep the wording out of your code, save a Prompt once and call it with `promptId` and `variables` instead of `prompt`.
 
 ```ts
@@ -308,6 +351,30 @@ let triage: Triage = client
 println!("{} {}", triage.category, triage.summary);
 ```
 
+```go
+type Triage struct {
+	Category string `json:"category"`
+	Urgent   bool   `json:"urgent"`
+	Summary  string `json:"summary"`
+}
+
+prompt, err := client.Prompts.Create(ctx, ba.CreatePromptParams{
+	Name:     "Support triage",
+	Template: "Triage this message from a {{ plan }} customer:\n\n{{ message }}",
+})
+if err != nil {
+	return err
+}
+triage, err := ba.Object(ctx, client.Generation, agentID, ba.SavedPrompt{
+	ID:        prompt.ID,
+	Variables: map[string]string{"plan": "pro", "message": "Where is my invoice?"},
+}, ba.ObjectParams[Triage]{})
+if err != nil {
+	return err
+}
+fmt.Println(triage.Category, triage.Summary)
+```
+
 ## Gotchas
 
 - Using `result.object` directly in TypeScript. It is `unknown`. Parse it with your Zod schema before use.
@@ -315,7 +382,7 @@ println!("{} {}", triage.category, triage.summary);
 - A schema rejected with `validation_failed` before anything runs. The schema needs a root `type` or `properties`. List `required` fields, use `enum` for fixed choices, and set `additionalProperties: false` on hand-written schemas.
 - Expecting the Agent to remember the last call. There is no Session. Put all needed context in the prompt, or use chat.
 - Asking the Agent to publish a file here. Stateless calls cannot publish Artifacts. Use a chat Session or a Task run for files.
-- Not handling bad final JSON. TypeScript rejects `result.object` with a `BlazingAgentsError` whose `code` is `stream_error`. Python raises a `StreamError` subclass: `ObjectJSONDecodeError`, `ObjectTruncationError`, or `ObjectValidationError`. Retry or show an error.
+- Not handling bad final JSON. TypeScript rejects `result.object` with a `BlazingAgentsError` whose `code` is `stream_error`. Python raises a `StreamError` subclass: `ObjectJSONDecodeError`, `ObjectTruncationError`, or `ObjectValidationError`. Rust returns `Error::Object`, and Go returns a `*ba.ObjectError` whose `Kind` is `ba.ObjectTruncated`, `ba.ObjectInvalidJSON`, or `ba.ObjectMismatch`. Retry or show an error.
 - Passing the wrong Prompt variables. Every variable is required and extras are rejected (`prompt_variable_missing`, `prompt_variable_unknown`).
 - Calling `client.object()` from the browser. Your Tenant key must stay on the backend. The browser calls your endpoint, as `useObject` does above.
 - Calling `toResponse()` twice. The body can be claimed once per result.

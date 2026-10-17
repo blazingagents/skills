@@ -3,3 +3,4 @@ node_modules/
 snippets/.out/
 snippets/rust/target/
 snippets/rust/examples/
+snippets/go/examples/

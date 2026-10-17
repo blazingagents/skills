@@ -19,10 +19,12 @@ Do not present usage numbers as your Blazing Agents bill. BA charges its own exe
 For dollar allowances, use `tenant.getSpendingLimit` and
 `tenant.updateSpendingLimit` for the account, or the corresponding
 `agents` methods with `agentId`. Python provides `get_spending_limit` and
-`update_spending_limit`. These operations require unscoped Tenant authority.
+`update_spending_limit`. Go groups them on `client.SpendingLimits` as
+`GetTenant`, `UpdateTenant`, `GetAgent`, and `UpdateAgent`. These operations
+require unscoped Tenant authority.
 
 A settings form needs `amountUsd`, `resetStartDate`, and a `resetInterval` of
-`daily`, `weekly`, `biweekly`, or `monthly` (snake_case in Python, a `ResetInterval` variant in Rust). Saving
+`daily`, `weekly`, `biweekly`, or `monthly` (snake_case in Python, a `ResetInterval` variant in Rust, a `ba.ResetInterval` constant in Go). Saving
 applies immediately and keeps the current period's spend.
 
 Render `period.spentUsd`, `period.reservedUsd`, `period.availableUsd`, and
@@ -130,6 +132,45 @@ for row in &overview.by_model {
 }
 ```
 
+```go
+or := func(p *string, fallback string) string {
+	if p == nil || *p == "" {
+		return fallback
+	}
+	return *p
+}
+
+overview, err := client.Usage.Overview(ctx, ba.UsageOverviewParams{
+	DateRange: &ba.DateRange{
+		From: ba.Date{Year: 2026, Month: time.September, Day: 1},
+		To:   ba.Date{Year: 2026, Month: time.September, Day: 26},
+	},
+	Limit: new(5),
+})
+if err != nil {
+	return err
+}
+
+fmt.Println("Requests", overview.Totals.RequestCount)
+fmt.Println("Active Agents", overview.ActiveAgentCount)
+for _, day := range overview.Daily {
+	fmt.Println(day.Day, day.InputTokens+day.OutputTokens)
+}
+for _, row := range overview.ByAgent {
+	fmt.Println(row.AgentID, row.InputTokens+row.OutputTokens)
+}
+for _, row := range overview.ByUser {
+	fmt.Println(or(row.UserID, "No user"), row.InputTokens+row.OutputTokens)
+}
+for _, row := range overview.ByModel {
+	label := "Other models"
+	if row.Provider != nil || row.Model != nil {
+		label = or(row.Provider, "") + "/" + or(row.Model, "")
+	}
+	fmt.Println(label, row.InputTokens+row.OutputTokens)
+}
+```
+
 2. Drill in with `usage.get()` or `usage.getForAgent()`. Group by `user`, `agent`, `model`, `day`, or `session`; `limit` (1 to 200, default 50) sets how many top Sessions come back when you group by `session`; other groupings return every group and ignore it.
 
 ```ts
@@ -218,6 +259,46 @@ for bucket in &top_sessions.buckets {
 }
 ```
 
+```go
+or := func(p *string, fallback string) string {
+	if p == nil || *p == "" {
+		return fallback
+	}
+	return *p
+}
+
+byUser, err := client.Usage.Get(ctx, ba.UsageParams{GroupBy: new(ba.UsageGroupByUser)})
+if err != nil {
+	return err
+}
+for _, bucket := range byUser.Buckets {
+	fmt.Println(or(bucket.UserID, "No user"), bucket.RequestCount)
+}
+
+agentModels, err := client.Usage.ForAgent(ctx, agentID, ba.AgentUsageParams{GroupBy: new(ba.UsageGroupByModel)})
+if err != nil {
+	return err
+}
+for _, bucket := range agentModels.Buckets {
+	fmt.Println(or(bucket.Provider, ""), or(bucket.Model, ""), bucket.OutputTokens)
+}
+
+topSessions, err := client.Usage.ForAgent(ctx, agentID, ba.AgentUsageParams{
+	GroupBy: new(ba.UsageGroupBySession),
+	Limit:   new(10),
+})
+if err != nil {
+	return err
+}
+for _, bucket := range topSessions.Buckets {
+	label := "Stateless calls"
+	if bucket.SessionID != nil {
+		label = string(*bucket.SessionID)
+	}
+	fmt.Println(label, bucket.InputTokens)
+}
+```
+
 3. Show one customer their own usage. Resolve the customer's `userId` from your sign-in on the backend, then filter by it.
 
 ```ts
@@ -286,6 +367,37 @@ let body = serde_json::json!({
     "days": days,
     "total_tokens": usage.totals.input_tokens + usage.totals.output_tokens,
 });
+```
+
+```go
+signedInUserID := "user_123"
+usage, err := client.Usage.Get(ctx, ba.UsageParams{
+	UserID: new("app:" + signedInUserID),
+	DateRange: &ba.DateRange{
+		From: ba.Date{Year: 2026, Month: time.September, Day: 1},
+		To:   ba.Date{Year: 2026, Month: time.September, Day: 26},
+	},
+	GroupBy: new(ba.UsageGroupByDay),
+})
+if err != nil {
+	return err
+}
+type dayUsage struct {
+	Day    *string `json:"day"`
+	Tokens int64   `json:"tokens"`
+}
+days := make([]dayUsage, 0, len(usage.Buckets))
+for _, bucket := range usage.Buckets {
+	days = append(days, dayUsage{Day: bucket.Day, Tokens: bucket.InputTokens + bucket.OutputTokens})
+}
+body, err := json.Marshal(map[string]any{
+	"days":        days,
+	"totalTokens": usage.Totals.InputTokens + usage.Totals.OutputTokens,
+})
+if err != nil {
+	return err
+}
+fmt.Println(string(body))
 ```
 
 4. Handle quota and plan outcomes. A chat or generation call that starts over the ceiling throws `quota_exceeded`, one stopped by a model spending limit throws `model_spending_limit_exceeded`, and one refused by the billing guard from step 7 throws a `merchant_*` code. A Task run refused before it runs, by the quota, your Blazing Agents plan, the billing guard, or a model spending limit, ends with status `blocked` instead of `failed`. A spending limit that stops a Task run after model work started ends it `failed`.
@@ -406,6 +518,41 @@ let status = if run.status == TaskRunStatus::Blocked {
 println!("{status}");
 ```
 
+```go
+answer, err := client.Generation.Completion(ctx, agentID, ba.Text("Summarize this ticket."),
+	ba.GenerateParams{UserID: new("app:user-42")})
+var apiErr *ba.APIError
+if errors.As(err, &apiErr) {
+	switch apiErr.Code {
+	case ba.ErrorCodeQuotaExceeded:
+		answer = "Monthly limit reached."
+	case ba.ErrorCodeModelSpendingLimitExceeded:
+		answer = "Spending limit reached. Try again after it resets."
+	case ba.ErrorCodeSubscriptionRequired, ba.ErrorCodeUsageCreditRequired:
+		answer = "Your Blazing Agents plan needs attention."
+	case ba.ErrorCodeMerchantSubscriptionRequired, ba.ErrorCodeMerchantBalanceRequired, ba.ErrorCodeMerchantCustomerUnmapped:
+		answer = "Upgrade your plan or top up your credits to continue."
+	case ba.ErrorCodeMerchantEligibilityUnavailable, ba.ErrorCodeRateLimited:
+		answer = "Busy, try again shortly."
+	default:
+		return err
+	}
+} else if err != nil {
+	return err
+}
+fmt.Println(answer)
+
+run, err := client.Tasks.GetRun(ctx, ba.TaskID("tk_0123456789abcdef"), ba.TaskRunID("tr_0123456789abcdef"))
+if err != nil {
+	return err
+}
+status := string(run.Status)
+if run.Status == ba.TaskRunStatusBlocked {
+	status = "Paused by quota or billing"
+}
+fmt.Println(status)
+```
+
 5. Connect your Polar or Dodo account, then turn on the billing switch. Start in `sandbox`. For Polar, use an Organization Access Token with only `organizations:read`, `customers:read`, and `events:write`; for Dodo, an API key in the matching mode.
 
 ```ts
@@ -459,6 +606,22 @@ let settings = client
 println!("{}", settings.monetization_enabled);
 ```
 
+```go
+_, err := client.MerchantConnection.Create(ctx, ba.CreateMerchantConnectionParams{
+	Provider:    ba.MerchantProviderPolar,
+	Environment: ba.MerchantEnvironmentSandbox,
+	Credential:  ba.NewSecret(os.Getenv("POLAR_ACCESS_TOKEN")),
+})
+if err != nil {
+	return err
+}
+settings, err := client.Tenant.Update(ctx, ba.UpdateTenantParams{MonetizationEnabled: new(true)})
+if err != nil {
+	return err
+}
+fmt.Println(settings.MonetizationEnabled)
+```
+
 Then, in your provider, create a meter for events named `ba.model_tokens.v1` that sums `total_tokens` (or `input_tokens` and `output_tokens` for split prices), and attach it to a price or allowance. Events also carry `model`, `agent_id`, `session_id`, and `status` (`succeeded`, `failed`, or `cancelled`) for meter filters.
 
 6. When a user signs up or starts a paid plan, create the customer in your provider, then link your `userId` to it.
@@ -497,6 +660,14 @@ let binding = client
     .put("app:user_123", "cus_0123456789")
     .await?;
 println!("{} {}", binding.user_id, binding.customer_id);
+```
+
+```go
+binding, err := client.MerchantBindings.Set(ctx, "app:user_123", ba.SetMerchantBindingParams{CustomerID: "cus_0123456789"})
+if err != nil {
+	return err
+}
+fmt.Println(binding.UserID, binding.CustomerID)
 ```
 
 Use the exact `userId` you pass on chat, generation, and Task calls. Blazing Agents checks that the customer exists in your provider.
@@ -575,6 +746,35 @@ let released = client
     .await?;
 ```
 
+```go
+_, err := client.MerchantConnection.Update(ctx, ba.UpdateMerchantConnectionParams{
+	Guard: &ba.MerchantGuard{Enabled: true, ProductIDs: []string{"prod_pro_plan"}},
+})
+if err != nil {
+	return err
+}
+
+summary, err := client.MerchantUsageEvents.Summary(ctx, ba.MerchantUsageSummaryParams{Days: new(7)})
+if err != nil {
+	return err
+}
+fmt.Println(summary.Counts.Accepted, summary.Counts.Unmapped, summary.Counts.Failed)
+
+unmapped := ba.ListMerchantUsageEventsParams{Status: new(ba.MerchantUsageEventStatusUnmapped)}
+for event, err := range client.MerchantUsageEvents.All(ctx, unmapped) {
+	if err != nil {
+		return err
+	}
+	fmt.Println(event.UserID, event.TotalTokens, event.NextAction)
+}
+
+released, err := client.MerchantUsageEvents.Release(ctx, ba.MerchantUsageEventID("mev_0123456789abcdef"))
+if err != nil {
+	return err
+}
+fmt.Println(released.Status)
+```
+
 `productIds` requires an active subscription to one of those products; `meterId` (a Polar meter or a Dodo credit entitlement) requires a balance above zero; set both to require both. Each event has a suggested `nextAction` such as `retry`, `bind_and_release`, or `discard`.
 
 ## Exact usage for a Session list
@@ -627,6 +827,24 @@ if !session_ids.is_empty() {
             row.totals.input_tokens + row.totals.output_tokens
         );
     }
+}
+```
+
+```go
+verifiedUserID := "user_123"
+sessionIDs := []ba.SessionID{sessionID}
+if len(sessionIDs) > 0 {
+	scoped, err := client.ForUser(verifiedUserID)
+	if err != nil {
+		return err
+	}
+	usage, err := scoped.Usage.Sessions(ctx, ba.SessionUsageParams{SessionIDs: sessionIDs})
+	if err != nil {
+		return err
+	}
+	for _, row := range usage.Data {
+		fmt.Println(row.SessionID, row.Totals.InputTokens+row.Totals.OutputTokens)
+	}
 }
 ```
 

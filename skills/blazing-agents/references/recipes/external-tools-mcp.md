@@ -67,7 +67,19 @@ let connection = client
 println!("{} {:?}", connection.id, connection.status);
 ```
 
-2. If you chose `oauth_authorization_code`, finish sign-in in the dashboard. The Connection starts as `needs_auth`. A Tenant administrator opens MCP connections in the [dashboard](https://www.blazingagents.com/app), clicks **Connect**, and signs in to the server. If the server's authorization server asks for a redirect URL, register `https://api.blazingagents.com/v1/mcp/oauth/callback`. This sign-in needs a signed-in dashboard administrator, so no SDK can start it with an API key: the TypeScript and Python `connect()` method fails with `unauthorized`, and the Rust SDK has no such method.
+```go
+connection, err := client.MCPConnections.Create(ctx, ba.CreateMCPConnectionParams{
+	Name: "Customer tools",
+	URL:  "https://mcp.example.com/v1",
+	Auth: ba.MCPAuthBearer{Token: ba.NewSecret(os.Getenv("CUSTOMER_MCP_TOKEN"))},
+})
+if err != nil {
+	return err
+}
+fmt.Println(connection.ID, connection.Status)
+```
+
+2. If you chose `oauth_authorization_code`, finish sign-in in the dashboard. The Connection starts as `needs_auth`. A Tenant administrator opens MCP connections in the [dashboard](https://www.blazingagents.com/app), clicks **Connect**, and signs in to the server. If the server's authorization server asks for a redirect URL, register `https://api.blazingagents.com/v1/mcp/oauth/callback`. This sign-in needs a signed-in dashboard administrator, so no SDK can start it with an API key: the TypeScript and Python `connect()` method fails with `unauthorized`, and the Rust and Go SDKs have no such method.
 
 3. Test the Connection, attach it to the Agent, and choose what end-user context the server receives. `mcpConnectionIds` replaces the Agent's whole list, so add to the current one.
 
@@ -168,6 +180,42 @@ client
     .await?;
 ```
 
+```go
+connectionID := ba.MCPConnectionID("mcp_0123456789abcdef")
+
+test, err := client.MCPConnections.Test(ctx, connectionID)
+if err != nil {
+	return err
+}
+if !test.OK {
+	return fmt.Errorf("%s: %s", test.Error.Code, test.Error.Message)
+}
+if !slices.Contains(test.ToolNames, "lookup_customer") {
+	return fmt.Errorf("expected lookup_customer, got %v", test.ToolNames)
+}
+
+agent, err := client.Agents.Get(ctx, agentID)
+if err != nil {
+	return err
+}
+if !slices.Contains(agent.MCPConnectionIDs, connectionID) {
+	_, err = client.Agents.Update(ctx, agentID, ba.UpdateAgentParams{
+		MCPConnectionIDs: append(agent.MCPConnectionIDs, connectionID),
+	})
+	if err != nil {
+		return err
+	}
+}
+
+_, err = client.Agents.UpdateMCPAttachment(ctx, agentID, connectionID, ba.UpdateMCPAttachmentParams{
+	ForwardUserID:         new(true),
+	ForwardedMetadataKeys: []string{"plan"},
+})
+if err != nil {
+	return err
+}
+```
+
 4. Run a Turn that needs the tool, then read the saved Session to confirm the call. The saved tool part uses a generated name that contains the original tool name.
 
 ```ts
@@ -254,6 +302,44 @@ println!(
     "{session_id} {}",
     if called { "MCP tool was called" } else { "MCP tool was not called" }
 );
+```
+
+```go
+stream, err := client.Chat.Send(ctx, agentID,
+	ba.Messages(ba.TextMessage("Look up customer 42 and summarize their account.")),
+	ba.ChatParams{UserID: new("user_123"), Metadata: ba.Metadata{"plan": "pro"}})
+if err != nil {
+	return err
+}
+defer stream.Close()
+chatSessionID := stream.SessionID()
+for _, err := range stream.Events() {
+	if err != nil {
+		return err
+	}
+	// Drain the stream; in an app, relay the raw bytes to the browser instead.
+}
+
+page, err := client.Sessions.ListMessages(ctx, agentID, chatSessionID, ba.ListSessionMessagesParams{})
+if err != nil {
+	return err
+}
+called := false
+for _, message := range page.Data {
+	for _, raw := range message.Parts {
+		var part struct {
+			Type string `json:"type"`
+		}
+		if json.Unmarshal(raw, &part) == nil && strings.Contains(part.Type, "lookup_customer") {
+			called = true
+		}
+	}
+}
+if called {
+	fmt.Println(chatSessionID, "MCP tool was called")
+} else {
+	fmt.Println(chatSessionID, "MCP tool was not called")
+}
 ```
 
 ## Gotchas

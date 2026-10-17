@@ -89,12 +89,27 @@ let created = client
 println!("{}", created.task.id);
 ```
 
+```go
+created, err := client.Tasks.Create(ctx, ba.CreateTaskParams{
+	AgentID:  agentID,
+	Name:     "Morning summary",
+	Prompt:   "Summarize yesterday's support tickets.",
+	UserID:   new("app:user-42"),
+	Metadata: ba.Metadata{"team": "support"},
+	Schedule: ba.Value[ba.Schedule](ba.ScheduleCron{Expression: "0 9 * * 1-5", Timezone: new("Europe/London")}),
+})
+if err != nil {
+	return err
+}
+fmt.Println(created.Task.ID)
+```
+
 Pick the schedule kind that matches the need:
 
 | `kind` | `config` | Runs |
 | --- | --- | --- |
 | `once` | `{ at: "2026-10-02T09:00:00+01:00" }` (ISO 8601 with offset) | Once at that time |
-| `interval` | `{ everyMs: 900000 }` (Python `every_ms`, minimum 60000) | Every N ms from creation |
+| `interval` | `{ everyMs: 900000 }` (Python `every_ms`, Go `ba.ScheduleInterval{Every: 15 * time.Minute}`, minimum 60000) | Every N ms from creation |
 | `cron` | `{ expression, timezone?, staggerMs? }` (five numeric fields, IANA zone, default `UTC`) | On the calendar |
 
 3. Start a run on demand. Build the idempotency key from a stable business fact so a retried request returns the same run.
@@ -152,9 +167,25 @@ let run_id = match client
 println!("{run_id:?}");
 ```
 
+```go
+week := "2026-W41"
+created, err := client.Tasks.Submit(ctx, ba.TaskID("tk_0123456789abcdef"), ba.SubmitTaskParams{
+	IdempotencyKey: new("weekly-report:" + week),
+})
+var apiErr *ba.APIError
+switch {
+case errors.As(err, &apiErr) && apiErr.Code == ba.ErrorCodeTaskActiveRunExists:
+	fmt.Println("a run is already active")
+case err != nil:
+	return err
+default:
+	fmt.Println(created.RunID)
+}
+```
+
 Save the `tr_...` run ID with the Task ID, then return from your request.
 
-For a new Task that should run immediately, TypeScript and Rust can create both in one retry-safe request:
+For a new Task that should run immediately, TypeScript, Rust, and Go can create both in one retry-safe request:
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
@@ -188,6 +219,28 @@ let created = client
     .idempotency_key(format!("daily-report:{report_date}"))
     .await?;
 println!("{} {:?}", created.task.id, created.run_id);
+```
+
+```go
+reportDate := "2026-10-02"
+scoped, err := client.ForUser("app:user-42")
+if err != nil {
+	return err
+}
+created, err := scoped.Tasks.Create(ctx, ba.CreateTaskParams{
+	AgentID:        agentID,
+	Name:           "Daily report",
+	Prompt:         "Summarize activity for " + reportDate + ".",
+	Submit:         new(true),
+	IdempotencyKey: new("daily-report:" + reportDate),
+})
+if err != nil {
+	return err
+}
+fmt.Println(created.Task.ID)
+if created.RunID != nil {
+	fmt.Println(*created.RunID)
+}
 ```
 
 Keep the key and input stable across retries. Agent and Prompt names are display labels and can repeat; persist resource IDs.
@@ -246,6 +299,25 @@ for _ in 0..120 {
 return Err("Run tr_0123456789abcdef did not finish in time".into());
 ```
 
+```go
+taskID, runID := ba.TaskID("tk_0123456789abcdef"), ba.TaskRunID("tr_0123456789abcdef")
+for range 120 {
+	run, err := client.Tasks.ListRunMessages(ctx, taskID, runID, ba.ListTaskRunMessagesParams{})
+	if err != nil {
+		return err
+	}
+	if run.Status != ba.TaskRunStatusQueued && run.Status != ba.TaskRunStatusRunning {
+		fmt.Println(run.Status)
+		if run.Error != nil {
+			fmt.Println(*run.Error) // redact before logging
+		}
+		return nil
+	}
+	time.Sleep(5 * time.Second)
+}
+return fmt.Errorf("run %s did not finish in time", runID)
+```
+
 Handle each final status: `succeeded` means the last assistant message is the result. `failed` carries `error`; redact it before logging. `blocked` means a quota or billing check stopped the run before it started; it is not a failure and its transcript may be empty. `canceled` means you stopped it.
 
 5. Find runs the schedule started. List a Task's runs, newest first, or list Tasks with each one's `latestRun` embedded.
@@ -294,6 +366,27 @@ for task in &tasks.data {
 }
 ```
 
+```go
+taskID := ba.TaskID("tk_0123456789abcdef")
+runs, err := client.Tasks.ListRuns(ctx, taskID, ba.ListTaskRunsParams{Limit: new(20)})
+if err != nil {
+	return err
+}
+for _, run := range runs.Data {
+	fmt.Println(run.ID, run.Status, run.FinishedAt)
+}
+
+tasks, err := client.Tasks.List(ctx, ba.ListTasksParams{UserID: new("app:user-42")})
+if err != nil {
+	return err
+}
+for _, task := range tasks.Data {
+	if task.LatestRun != nil {
+		fmt.Println(task.Name, task.LatestRun.Status)
+	}
+}
+```
+
 6. Cancel a run, pause the schedule, or make the Task on-demand only.
 
 ```ts
@@ -337,13 +430,28 @@ client
     .await?;
 ```
 
-Leaving `schedule` out of an update preserves it. Passing `null` removes it. Display BA's `nextFireAt` rather than calculating the next time in your app.
+```go
+taskID := ba.TaskID("tk_0123456789abcdef")
+if err := client.Tasks.CancelRun(ctx, taskID, ba.TaskRunID("tr_0123456789abcdef")); err != nil {
+	return err
+}
+if _, err := client.Tasks.Update(ctx, taskID, ba.UpdateTaskParams{Enabled: new(false)}); err != nil {
+	return err
+}
+task, err := client.Tasks.Update(ctx, taskID, ba.UpdateTaskParams{Schedule: ba.Null[ba.Schedule]()})
+if err != nil {
+	return err
+}
+fmt.Println(task.NextFireAt)
+```
+
+Leaving `schedule` out of an update preserves it. Passing `null` (`.clear_schedule()` in Rust, `ba.Null[ba.Schedule]()` in Go) removes it. Display BA's `nextFireAt` rather than calculating the next time in your app.
 
 Cancel asks the run to stop at its next safe point. Keep polling until a final status; the run may still end as `succeeded`.
 
 ## Gotchas
 
-- In TypeScript, pass `idempotencyKey` to `tasks.create()`, including when `submit: true`; in Rust, chain `.submit(true).idempotency_key(...)`. The same key and original input return the same Task and initial run. Changed input or a deleted Task returns `idempotency_conflict` (409). Without a key, a retry creates another Task. Python currently supports keys on `submit()` only; reconcile Task creation before retrying it.
+- In TypeScript, pass `idempotencyKey` to `tasks.create()`, including when `submit: true`; in Rust, chain `.submit(true).idempotency_key(...)`; in Go, set `Submit: new(true)` and `IdempotencyKey` together. The same key and original input return the same Task and initial run. Changed input or a deleted Task returns `idempotency_conflict` (409). Without a key, a retry creates another Task. Python currently supports keys on `submit()` only; reconcile Task creation before retrying it.
 - A run keeps the `userId`, `metadata`, and Agent configuration (including `approvalInTasks`) captured when it was queued; read it with `getRun()`. Editing the Task or Agent changes later runs only. `agentId` and `userId` cannot change; create a new Task instead.
 - Designing a Task around `manual` approval does not work: the call is denied and the run continues without it. Grant the tools it needs with `full` in `approvalInTasks`, or move the step to chat.
 - Starting a run with a new key while another run is active returns `task_active_run_exists` (HTTP 409). Scheduled times that fall during an active run are skipped, and missed times are not caught up.

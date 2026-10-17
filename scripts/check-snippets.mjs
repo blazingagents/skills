@@ -1,11 +1,13 @@
 /**
- * Type-checks every ts, tsx, python, and rust fenced block in skills/**\/*.md as
- * its own file. TypeScript uses the pinned deps in snippets/; Python uses
+ * Type-checks every ts, tsx, python, rust, and go fenced block in skills/**\/*.md
+ * as its own file. TypeScript uses the pinned deps in snippets/; Python uses
  * pyright with the pinned SDK via uv; Rust uses `cargo check --examples` with
- * the pinned SDK crate in snippets/rust.
+ * the pinned SDK crate in snippets/rust; Go blocks must be gofmt-formatted and
+ * use `go build` with the pinned SDK module in snippets/go, after goimports adds
+ * each fragment's stdlib imports.
  */
 import { spawnSync } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fencedBlocks, markdownFiles } from "./markdown.mjs";
 
@@ -17,6 +19,7 @@ const extensions = {
   py: "py",
   rust: "rs",
   rs: "rs",
+  go: "go",
 };
 const snippets = resolve(import.meta.dirname, "../snippets");
 const out = join(snippets, ".out");
@@ -26,6 +29,10 @@ writeFileSync(join(out, "package.json"), '{ "type": "module" }\n');
 const examples = join(snippets, "rust/examples");
 rmSync(examples, { recursive: true, force: true });
 mkdirSync(examples, { recursive: true });
+const goModule = join(snippets, "go");
+const goExamples = join(goModule, "examples");
+rmSync(goExamples, { recursive: true, force: true });
+mkdirSync(goExamples, { recursive: true });
 
 /** Wraps a Rust fragment in an async function that takes the client. */
 const PRELUDE = `#[allow(unused, clippy::all)]
@@ -33,13 +40,50 @@ async fn snippet(client: blazing_agents::Client) -> Result<(), Box<dyn std::erro
 `;
 const offset = PRELUDE.split("\n").length - 1;
 
+/**
+ * Wraps a Go fragment, indented one tab so gofmt can check it, in a function
+ * that takes the client and the IDs it names. goimports fills in the stdlib
+ * imports the fragment uses, so the fragment's offset is read back from the
+ * rewritten file.
+ */
+const GO_PRELUDE = `package main
+
+import (
+	"context"
+
+	ba "github.com/blazingagents/golang-sdk"
+)
+
+func snippet(ctx context.Context, client *ba.Client, agentID ba.AgentID, sessionID ba.SessionID) error {
+`;
+const goOffset = GO_PRELUDE.split("\n").length - 1;
+
 /** Absolute snippet path -> { file, line, offset } of its opening fence. */
 const sources = new Map();
 let rustCount = 0;
+let goCount = 0;
+/** Go fragments that goimports rewrites before the build. */
+const goFragments = [];
 for (const { file, lines } of markdownFiles()) {
   for (const block of fencedBlocks(lines)) {
     const extension = extensions[block.lang];
     if (!extension) continue;
+    if (extension === "go") {
+      const dir = join(goExamples, `snippet${goCount}`);
+      goCount++;
+      mkdirSync(dir);
+      const path = join(dir, "main.go");
+      if (/\bfunc\s+main\s*\(/.test(block.code)) {
+        writeFileSync(path, block.code);
+        sources.set(path, { file, line: block.line, offset: 0 });
+      } else {
+        const body = block.code.replace(/^(?=.)/gm, "\t");
+        writeFileSync(path, `${GO_PRELUDE}${body}\treturn nil\n}\n\nfunc main() {}\n`);
+        sources.set(path, { file, line: block.line, offset: goOffset });
+        goFragments.push(path);
+      }
+      continue;
+    }
     if (extension === "rs") {
       const path = join(examples, `snippet${rustCount}.rs`);
       rustCount++;
@@ -147,10 +191,56 @@ if (rsFiles.length) {
   if (cargo.status && !rsFailures) failures++;
 }
 
+const goFiles = paths.filter((path) => path.endsWith(".go"));
+let goFailures = 0;
+const goDiagnostics = (text) => {
+  for (const line of text.split("\n").filter(Boolean)) {
+    const match = /examples\/(snippet\d+\/main\.go):(\d+):\d+: (.*)$/.exec(line);
+    if (match) {
+      failures++;
+      goFailures++;
+      console.error(`${where(join(goExamples, match[1]), Number(match[2]))}: ${match[3]}`);
+    } else if (!line.startsWith("#") && !line.startsWith("go: downloading")) {
+      console.error(line);
+    }
+  }
+};
+if (goFiles.length) {
+  const gofmt = spawnSync("gofmt", ["-l", ...goFiles], { encoding: "utf8" });
+  if (gofmt.error) {
+    throw new Error(`Install Go first (https://go.dev/dl). ${gofmt.error.message}`);
+  }
+  for (const path of gofmt.stdout.split("\n").filter(Boolean)) {
+    failures++;
+    const { file, line } = sources.get(path);
+    console.error(`${file}:${line}: Go block is not gofmt-formatted`);
+  }
+  const goimports = goFragments.length
+    ? spawnSync("go", ["tool", "goimports", "-w", ...goFragments], { cwd: goModule, encoding: "utf8" })
+    : { status: 0, stdout: "", stderr: "" };
+  if (goimports.error) {
+    throw new Error(`Install Go first (https://go.dev/dl). ${goimports.error.message}`);
+  }
+  goDiagnostics(`${goimports.stdout}${goimports.stderr}`);
+  if (goimports.status) {
+    if (!goFailures) failures++;
+  } else {
+    for (const path of goFragments) {
+      const line = readFileSync(path, "utf8").split("\n").findIndex((text) => text.startsWith("func snippet("));
+      sources.get(path).offset = line + 1;
+    }
+    const build = spawnSync("go", ["build", "-gcflags=-e", "./examples/..."], { cwd: goModule, encoding: "utf8" });
+    if (build.error) throw build.error;
+    goDiagnostics(`${build.stdout}${build.stderr}`);
+    if (build.status && !goFailures) failures++;
+  }
+}
+
 if (failures) {
   console.error(`\nSnippet type-check failed (${failures} error(s)).`);
   process.exit(1);
 }
 rmSync(out, { recursive: true, force: true });
 rmSync(examples, { recursive: true, force: true });
-console.log(`Snippets: ${tsFiles.length} TypeScript, ${pyFiles.length} Python, and ${rsFiles.length} Rust block(s) type-check.`);
+rmSync(goExamples, { recursive: true, force: true });
+console.log(`Snippets: ${tsFiles.length} TypeScript, ${pyFiles.length} Python, ${rsFiles.length} Rust, and ${goFiles.length} Go block(s) type-check.`);
