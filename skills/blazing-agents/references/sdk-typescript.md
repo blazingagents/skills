@@ -74,8 +74,10 @@ After authenticating a user in your backend, call `client.forUser(userId)` to
 bind their ID to requests. The server checks ownership and attributes new
 resources and Turns to that user. Pass only a trusted ID; the scoped client
 sends it as `X-BA-User-Id`. It exposes user operations, including generation,
-Agents, Prompts, Sessions, Tasks, and `usage.get` / `usage.sessions`; Tenant
-administration and Tenant-wide usage methods stay on the root client. Its
+Agents, Prompts, Sessions, Tasks, and `usage.get` / `usage.getForAgent` /
+`usage.sessions`; Tenant administration and `usage.overview` stay on the root
+client. Its `agents.getSpendingLimit` and `agents.updateSpendingLimit` are
+deprecated: the API always refuses them for a scoped client. Its
 `withOptions` view keeps the user scope. Its `chat` and `continueChat` accept
 backend `functions` like the root client's.
 
@@ -285,7 +287,7 @@ means the result is `{ data, nextCursor }` (see [Pagination](#pagination)).
 | `removeAvatar({ agentId })` | `DELETE /v1/agents/{agentId}/avatar` | `Agent` |
 | `listMcpAttachments({ agentId })` | `GET /v1/agents/{agentId}/mcp-attachments` | `McpAttachmentsResponse` |
 | `updateMcpAttachment({ agentId, mcpConnectionId, ...body })` | `PATCH /v1/agents/{agentId}/mcp-attachments/{mcpConnectionId}` | `McpAttachmentResponse` |
-| `getSpendingLimit({ agentId })` | `GET /v1/agents/{agentId}/spending-limit` | `SpendingLimitResponse`. Unscoped client only. |
+| `getSpendingLimit({ agentId })` | `GET /v1/agents/{agentId}/spending-limit` | `SpendingLimitResponse`. Unscoped client only; deprecated on a `UserClient`, where the API refuses it. |
 | `updateSpendingLimit({ agentId, spendingLimit })` | `PUT /v1/agents/{agentId}/spending-limit` | `SpendingLimitResponse`. `null` disables the limit. See [model spending limits](recipes/usage-dashboards.md#model-spending-limits). |
 
 `tools` is an `AgentToolName[]` of built-in tool names, each listed once. To build a tool picker, import `AGENT_TOOLS` (each entry has `name`, `description`, `requiresWorkspace`, and `tags`) and `AGENT_TOOL_GROUPS` (display name and description per group tag, the first tag of each tool). `AGENT_TOOLS.filter((tool) => tool.tags.includes("file_read"))` gives the read-only file tools. Tags only describe tools; `tools` never accepts one. See [Built-in tools](concepts.md#built-in-tools).
@@ -438,7 +440,7 @@ A `SessionInput` is a steer receipt: `requestId`, `sequence`, `message`, `state`
 | Method | HTTP | Returns / notes |
 | --- | --- | --- |
 | `get({ from?, to?, agentId?, sessionId?, userId?, groupBy?, limit? })` | `GET /v1/usage` | `UsageResponse`. `groupBy` is `day` (default), `agent`, `model`, `session`, or `user`. Dates are `YYYY-MM-DD`. |
-| `getForAgent({ agentId, ...query })` | `GET /v1/agents/{agentId}/usage` | `UsageResponse` |
+| `getForAgent({ agentId, ...query })` | `GET /v1/agents/{agentId}/usage` | `UsageResponse`. Also on a `UserClient`. |
 | `overview({ from?, to?, limit? })` | `GET /v1/usage/overview` | `UsageOverviewResponse`: totals, daily usage, and top Agents, users, and models. |
 | `sessions({ sessionIds, from?, to? })` | `POST /v1/usage/sessions` | `{ data: { sessionId, totals }[] }`. Supply 1 to 100 distinct Session IDs; dates are `YYYY-MM-DD`. |
 
