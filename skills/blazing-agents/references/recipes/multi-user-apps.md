@@ -8,7 +8,7 @@ Your product has signed-in users who need their own Agents, chat history, Tasks,
 
 ## How it works
 
-Your backend authenticates the user and selects their scope. `client.forUser(userId)` (`client.for_user(user_id)` in Python, `client.for_user(user_id)?` in Rust) sends `X-BA-User-Id` on every request. BA fills in missing Attribution, rejects a conflicting `userId`, and checks resource ownership. A different user's resource returns `not_found` (404). The Agent and related resources must belong to the scoped user.
+Your backend authenticates the user and selects their scope. `client.forUser(userId)` (`client.for_user(user_id)` in Python, `client.for_user(user_id)?` in Rust, `client.ForUser(userID)` in Go) sends `X-BA-User-Id` on every request. BA fills in missing Attribution, rejects a conflicting `userId`, and checks resource ownership. A different user's resource returns `not_found` (404). The Agent and related resources must belong to the scoped user.
 
 The API key still grants Tenant authority. Keep it on the backend. A body or list filter `userId` alone is only Attribution; an unscoped client retains access across the Tenant. Keep Tenant administration on that unscoped client in trusted code.
 
@@ -49,6 +49,19 @@ def list_my_agents(verified_user_id: str):
 let verified_user_id = "user_123";
 let scoped = client.for_user(format!("app:{verified_user_id}"))?;
 let page = scoped.agents().list().limit(50).await?;
+```
+
+```go
+verifiedUserID := "user_123"
+scoped, err := client.ForUser("app:" + verifiedUserID)
+if err != nil {
+	return err
+}
+page, err := scoped.Agents.List(ctx, ba.ListAgentsParams{Limit: new(50)})
+if err != nil {
+	return err
+}
+fmt.Println(len(page.Data))
 ```
 
 2. Create user-owned resources through that scope. Select the Provider and model in trusted backend configuration. Agent and Prompt names can repeat; store the returned IDs.
@@ -110,7 +123,7 @@ List responses expose `data` and `nextCursor`. Pass the cursor back until it is 
 - Scope is immutable for each client. Do not store one user's scoped client in a global variable reused by other requests.
 - Tasks retain the scope selected at creation. A Task created without that scope cannot later be enabled or run through a scoped client; create it through the user scope from the start.
 - A body `userId` that disagrees with the scope fails. Omit it when the scope already supplies the value.
-- The scoped TypeScript client omits Tenant administration, usage overview, and per-Agent usage. Use scoped `usage.get()` or `usage.sessions()` for a user's dashboard.
+- The scoped TypeScript client omits Tenant administration, usage overview, and per-Agent usage, and so does the Go `*ba.UserClient`. Use scoped `usage.get()` or `usage.sessions()` for a user's dashboard.
 - Python exposes Tenant methods even when you pass the scope header. BA rejects unsupported scoped routes; do not remove the header to make an end-user operation succeed.
 - On sign-out or account switch, stop streams, discard pending responses, clear user caches, and remount the chat transport. Namespace persisted Session IDs by the authenticated user.
 

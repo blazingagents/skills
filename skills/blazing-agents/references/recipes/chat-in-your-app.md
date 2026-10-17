@@ -14,12 +14,14 @@ BA holds no queue. A message sent while the Session is busy either steers the ru
 
 ## Build it
 
-1. Install the packages. Your backend needs `@blazingagents/sdk` (or `blazing-agents`, the Python package or the Rust crate). Your React frontend needs `@blazingagents/sdk`, `ai`, and `@ai-sdk/react`.
+1. Install the packages. Your backend needs `@blazingagents/sdk` (or `blazing-agents`, the Python package or the Rust crate, or the Go module). Your React frontend needs `@blazingagents/sdk`, `ai`, and `@ai-sdk/react`.
 
 ```bash
 npm install @blazingagents/sdk ai@^7 @ai-sdk/react zod
 # Python backend instead:
 pip install "blazing-agents>=0.17.0" fastapi uvicorn
+# Go backend instead:
+go get github.com/blazingagents/golang-sdk@v0.0.0-20261017030624-3c7b00ef7385
 ```
 
 This recipe needs `@blazingagents/sdk` 0.23.0 or `blazing-agents` 0.17.0 or newer.
@@ -142,7 +144,7 @@ export async function history(request: Request): Promise<Response> {
 
 The authentication hook returns the verified user's ID and their Agent ID from trusted backend state. Provision that Agent with the same user scope. `createChatRelay` remains an alternative for integrations that maintain their own `SessionOwnershipStore`; it does not select a scoped client automatically.
 
-The Python SDK accepts the verified scope in `extra_headers` on every call; a Rust `UserClient` sends it on every request it makes. The SDK returns the raw stream bytes; relay them unchanged and copy the `Location` header on the first Turn so the frontend learns the Session ID.
+The Python SDK accepts the verified scope in `extra_headers` on every call; a Rust `UserClient` or a Go `*ba.UserClient` sends it on every request it makes. The SDK returns the raw stream bytes; relay them unchanged and copy the `Location` header on the first Turn so the frontend learns the Session ID. In Go, `stream.SetRelayHeaders(w.Header())` sets the stream headers and `stream.WriteTo(w)` relays and flushes each event.
 
 ```python
 from typing import Any, Literal, TypedDict
@@ -536,6 +538,232 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 }
 ```
 
+```go
+package main
+
+import (
+	"encoding/json"
+	"errors"
+	"log"
+	"net/http"
+
+	ba "github.com/blazingagents/golang-sdk"
+)
+
+type chatBody struct {
+	Message   json.RawMessage   `json:"message"`
+	Messages  []json.RawMessage `json:"messages"`
+	SessionID ba.SessionID      `json:"sessionId"`
+	MessageID string            `json:"messageId"`
+	Trigger   string            `json:"trigger"` // submit-message or regenerate-message
+}
+
+func currentUser(r *http.Request) (string, bool) {
+	// Your sign-in check: verify the session token and return its user ID.
+	return "", false
+}
+
+func agentForUser(userID string) ba.AgentID {
+	// Read this user's Agent ID from trusted backend state.
+	return "ag_0123456789abcdef"
+}
+
+// approvalDecisions reads the round's decisions: answered tool parts after the last step-start.
+func approvalDecisions(message json.RawMessage) []ba.ToolApprovalDecision {
+	var assistant struct {
+		Parts []struct {
+			Type     string `json:"type"`
+			State    string `json:"state"`
+			Approval *struct {
+				ID       ba.ApprovalID `json:"id"`
+				Approved bool          `json:"approved"`
+				Reason   string        `json:"reason"`
+			} `json:"approval"`
+		} `json:"parts"`
+	}
+	if json.Unmarshal(message, &assistant) != nil {
+		return nil
+	}
+	start := 0
+	for i, part := range assistant.Parts {
+		if part.Type == "step-start" {
+			start = i + 1
+		}
+	}
+	var decisions []ba.ToolApprovalDecision
+	for _, part := range assistant.Parts[start:] {
+		if part.State != "approval-responded" || part.Approval == nil {
+			continue
+		}
+		d := ba.Deny(part.Approval.ID, part.Approval.Reason) // "" sends no reason
+		if part.Approval.Approved {
+			d = ba.Approve(part.Approval.ID)
+			if part.Approval.Reason != "" {
+				d.Reason = new(part.Approval.Reason)
+			}
+		}
+		decisions = append(decisions, d)
+	}
+	return decisions
+}
+
+func relay(w http.ResponseWriter, stream *ba.ChatStream, newSession bool) {
+	defer stream.Close()
+	stream.SetRelayHeaders(w.Header()) // content type, no-cache, x-vercel-ai-ui-message-stream, x-ba-turn-id
+	if newSession {
+		w.Header().Set("Location", stream.Meta().Header.Get("Location"))
+	}
+	if _, err := stream.WriteTo(w); err != nil {
+		log.Printf("relay ended: %v", err)
+	}
+}
+
+func writeJSON(w http.ResponseWriter, status int, body any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(body)
+}
+
+func failure(w http.ResponseWriter, err error) {
+	var apiErr *ba.APIError
+	var argErr *ba.ArgumentError
+	switch {
+	case errors.As(err, &argErr): // an invalid sessionId never reaches the URL
+		http.Error(w, "Invalid request.", http.StatusBadRequest)
+	case errors.As(err, &apiErr):
+		writeJSON(w, apiErr.Status, map[string]any{"error": map[string]string{"code": string(apiErr.Code)}})
+	default:
+		writeJSON(w, http.StatusBadGateway, map[string]any{"error": map[string]string{"code": "upstream_error"}})
+	}
+}
+
+func history(client *ba.Client) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, ok := currentUser(r)
+		if !ok {
+			http.Error(w, "Sign in first.", http.StatusUnauthorized)
+			return
+		}
+		scoped, err := client.ForUser(userID)
+		if err != nil {
+			http.Error(w, "Sign in first.", http.StatusUnauthorized)
+			return
+		}
+		params := ba.ListSessionMessagesParams{Limit: new(200)}
+		if cursor := r.URL.Query().Get("cursor"); cursor != "" {
+			params.Cursor = &cursor
+		}
+		sessionID := ba.SessionID(r.URL.Query().Get("sessionId"))
+		page, err := scoped.Sessions.ListMessages(r.Context(), agentForUser(userID), sessionID, params)
+		if err != nil {
+			failure(w, err)
+			return
+		}
+		var next any
+		if page.NextCursor != "" {
+			next = page.NextCursor
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"messages": page.Data, "nextCursor": next})
+	}
+}
+
+func chat(client *ba.Client) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, ok := currentUser(r)
+		if !ok {
+			http.Error(w, "Sign in first.", http.StatusUnauthorized)
+			return
+		}
+		scoped, err := client.ForUser(userID)
+		if err != nil {
+			http.Error(w, "Sign in first.", http.StatusUnauthorized)
+			return
+		}
+		var body chatBody
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "Invalid message.", http.StatusBadRequest)
+			return
+		}
+		ctx := r.Context()
+		agentID := agentForUser(userID)
+
+		var role struct {
+			Role string `json:"role"`
+		}
+		json.Unmarshal(body.Message, &role)
+		if body.Messages == nil && role.Role == "assistant" {
+			// The frontend posts the answered assistant message; its tool parts
+			// after the last step-start carry the round's decisions.
+			decisions := approvalDecisions(body.Message)
+			if body.SessionID == "" || len(decisions) == 0 {
+				http.Error(w, "Invalid approval.", http.StatusBadRequest)
+				return
+			}
+			stream, err := scoped.Chat.Continue(ctx, agentID, body.SessionID, decisions, ba.ContinueParams{})
+			if err != nil {
+				failure(w, err)
+				return
+			}
+			relay(w, stream, false)
+			return
+		}
+
+		raw := body.Messages
+		if raw == nil && body.Message != nil {
+			raw = []json.RawMessage{body.Message}
+		}
+		messages := make([]ba.UserMessage, 0, len(raw))
+		for _, item := range raw {
+			var message ba.UserMessage // UnmarshalJSON requires role user, an id and parts
+			if err := json.Unmarshal(item, &message); err != nil {
+				http.Error(w, "Invalid message.", http.StatusBadRequest)
+				return
+			}
+			messages = append(messages, message)
+		}
+		if len(messages) == 0 {
+			http.Error(w, "Invalid message.", http.StatusBadRequest)
+			return
+		}
+		params := ba.ChatParams{SessionID: body.SessionID, UserID: new(userID)}
+
+		var stream *ba.ChatStream
+		switch {
+		case body.Messages != nil:
+			// Waiting messages go out as one batch once the Session is idle.
+			if body.SessionID == "" {
+				http.Error(w, "A batch needs a Session.", http.StatusBadRequest)
+				return
+			}
+			stream, err = scoped.Chat.Send(ctx, agentID, ba.Messages(messages[0], messages[1:]...), params)
+		case body.SessionID != "" && body.Trigger == "regenerate-message":
+			regenerate := ba.RegenerateParams{UserID: new(userID)}
+			if body.MessageID != "" {
+				regenerate.MessageID = new(body.MessageID)
+			}
+			stream, err = scoped.Chat.Regenerate(ctx, agentID, body.SessionID, messages[0], regenerate)
+		default:
+			stream, err = scoped.Chat.Send(ctx, agentID, ba.Messages(messages[0]), params)
+		}
+		if err != nil {
+			failure(w, err)
+			return
+		}
+		relay(w, stream, body.SessionID == "")
+	}
+}
+
+func main() {
+	client, err := ba.NewClient() // reads BLAZING_AGENTS_API_KEY
+	if err != nil {
+		log.Fatal(err)
+	}
+	http.Handle("POST /api/chat", chat(client))
+	http.Handle("GET /api/chat/history", history(client))
+	log.Fatal(http.ListenAndServe(":3000", nil))
+}
+```
+
 3. Add the Session endpoints. `GET /api/chat/session` returns the Session's steer receipts and activity. `POST /api/chat/steer` submits one message as a steer to the running Turn. `POST /api/chat/stop` stops the running Turn by its `turnId`. Every call goes through the same verified user scope as `chat`. Deleting a queued message needs no endpoint: the queue lives in the browser, so the client just drops the row.
 
 ```ts
@@ -843,6 +1071,146 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
     axum::serve(listener, app).await?;
     Ok(())
+}
+```
+
+```go
+package main
+
+import (
+	"encoding/json"
+	"errors"
+	"log"
+	"net/http"
+
+	ba "github.com/blazingagents/golang-sdk"
+)
+
+type steerBody struct {
+	SessionID ba.SessionID   `json:"sessionId"`
+	RequestID string         `json:"requestId"`
+	Message   ba.UserMessage `json:"message"`
+}
+
+type stopBody struct {
+	SessionID ba.SessionID `json:"sessionId"`
+	TurnID    ba.TurnID    `json:"turnId"`
+}
+
+func currentUser(r *http.Request) (string, bool) {
+	// Your sign-in check: verify the session token and return its user ID.
+	return "", false
+}
+
+func agentForUser(userID string) ba.AgentID {
+	// Read this user's Agent ID from trusted backend state.
+	return "ag_0123456789abcdef"
+}
+
+func writeJSON(w http.ResponseWriter, status int, body any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(body)
+}
+
+func failure(w http.ResponseWriter, err error) {
+	var apiErr *ba.APIError
+	var argErr *ba.ArgumentError
+	switch {
+	case errors.As(err, &argErr): // an invalid sessionId, turnId or requestId never reaches the URL
+		http.Error(w, "Invalid request.", http.StatusBadRequest)
+	case errors.As(err, &apiErr):
+		writeJSON(w, apiErr.Status, map[string]any{"error": map[string]string{"code": string(apiErr.Code)}})
+	default:
+		writeJSON(w, http.StatusBadGateway, map[string]any{"error": map[string]string{"code": "upstream_error"}})
+	}
+}
+
+// scopedClient derives the signed-in user's client, or answers 401.
+func scopedClient(client *ba.Client, w http.ResponseWriter, r *http.Request) (*ba.UserClient, string, bool) {
+	userID, ok := currentUser(r)
+	if !ok {
+		http.Error(w, "Sign in first.", http.StatusUnauthorized)
+		return nil, "", false
+	}
+	scoped, err := client.ForUser(userID)
+	if err != nil {
+		http.Error(w, "Sign in first.", http.StatusUnauthorized)
+		return nil, "", false
+	}
+	return scoped, userID, true
+}
+
+func session(client *ba.Client) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		scoped, userID, ok := scopedClient(client, w, r)
+		if !ok {
+			return
+		}
+		// Terminal receipts too: IncludeCompleted returns committed and
+		// not_placed inputs, and Activity says what the Session is doing.
+		sessionID := ba.SessionID(r.URL.Query().Get("sessionId"))
+		page, err := scoped.Sessions.ListInputs(r.Context(), agentForUser(userID), sessionID,
+			ba.ListSessionInputsParams{IncludeCompleted: new(true)})
+		if err != nil {
+			failure(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, page)
+	}
+}
+
+func steer(client *ba.Client) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		scoped, userID, ok := scopedClient(client, w, r)
+		if !ok {
+			return
+		}
+		var body steerBody
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "Invalid message.", http.StatusBadRequest)
+			return
+		}
+		receipt, err := scoped.Sessions.SubmitInput(r.Context(), agentForUser(userID), body.SessionID,
+			ba.SubmitSessionInputParams{RequestID: body.RequestID, Message: body.Message})
+		if err != nil {
+			failure(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, receipt)
+	}
+}
+
+func stop(client *ba.Client) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		scoped, userID, ok := scopedClient(client, w, r)
+		if !ok {
+			return
+		}
+		var body stopBody
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "Invalid request.", http.StatusBadRequest)
+			return
+		}
+		result, err := scoped.Sessions.Stop(r.Context(), agentForUser(userID), body.SessionID,
+			ba.StopSessionTurnParams{TurnID: body.TurnID})
+		if err != nil {
+			failure(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	}
+}
+
+func main() {
+	client, err := ba.NewClient() // reads BLAZING_AGENTS_API_KEY
+	if err != nil {
+		log.Fatal(err)
+	}
+	http.Handle("GET /api/chat/session", session(client))
+	http.Handle("POST /api/chat/steer", steer(client))
+	http.Handle("POST /api/chat/stop", stop(client))
+	log.Fatal(http.ListenAndServe(":3000", nil))
 }
 ```
 
@@ -1309,10 +1677,10 @@ function Chat({
 The chat example ships no fork control. Add one only when the user asks to branch a conversation from a reply they chose.
 
 1. Offer the action only on assistant messages that `sessions.messages()` returns with `branchable: true`. Never judge eligibility from the live stream or rendered parts. A reply that is streaming or waiting on an approval is not branchable; earlier replies stay branchable while the source runs.
-2. Save one idempotency key for the user's action, then call `client.sessions.fork({ agentId, sessionId, messageId, idempotencyKey })` (Python: `client.sessions.fork(agent_id, session_id, message_id=..., idempotency_key=...)`; Rust: `client.sessions().fork(agent_id, session_id, message_id, idempotency_key)`) under the signed-in user's scope. After a lost response, retry with the same key and message. A retry returns the same child, even after the source is deleted. Never mint a new key for a retry.
+2. Save one idempotency key for the user's action, then call `client.sessions.fork({ agentId, sessionId, messageId, idempotencyKey })` (Python: `client.sessions.fork(agent_id, session_id, message_id=..., idempotency_key=...)`; Rust: `client.sessions().fork(agent_id, session_id, message_id, idempotency_key)`; Go: `client.Sessions.Fork(ctx, agentID, sessionID, ba.ForkSessionParams{MessageID: messageID, IdempotencyKey: key})`) under the signed-in user's scope. After a lost response, retry with the same key and message. A retry returns the same child, even after the source is deleted. Never mint a new key for a retry.
 3. Switch the conversation to the returned child Session ID, load its history, and continue it with ordinary `chat()`. Keep the source's and the child's queues separate.
 
-The child is idle and holds history through the selected reply. Forking runs no model or Tool and records no usage. The child keeps the source's saved Agent configuration, `metadata`, and `userId`. It shares the Agent's Workspace files and Memories with the source, so a file change in one conversation shows in the other. Running Turns, pending approvals, and queued inputs are not copied. `forkedFrom` (`forked_from` in Python and Rust) on the child names the source Session and message.
+The child is idle and holds history through the selected reply. Forking runs no model or Tool and records no usage. The child keeps the source's saved Agent configuration, `metadata`, and `userId`. It shares the Agent's Workspace files and Memories with the source, so a file change in one conversation shows in the other. Running Turns, pending approvals, and queued inputs are not copied. `forkedFrom` (`forked_from` in Python and Rust, `ForkedFrom` in Go) on the child names the source Session and message.
 
 Handle these errors:
 
@@ -1326,7 +1694,7 @@ Handle these errors:
 ## Gotchas
 
 - **History lives in BA.** Send only new user messages: one `message`, or a `messages` batch of the ones that waited. A client that posts the whole conversation gets a 400: the handler accepts user messages, or one answered assistant message that carries an approval round.
-- **Validate every ID before it reaches a URL.** The browser sends `sessionId`, `turnId`, and `requestId`, and the SDK places them in request paths. A value such as `../../ag_other/sessions/ss_x` or `..` would make the request reach another route. Check them at your relay as the handlers do: `sessionIdSchema` and `sessionInputRequestIdSchema` from `@blazingagents/sdk/contracts` in TypeScript, and the same patterns in Python. The Rust SDK percent-encodes every path segment and rejects an empty, `.`, or `..` value client-side as `Error::InvalidArgument`, so `../../ag_other/sessions/ss_x` can never leave its segment. A `requestId` of `.` or `..` is invalid.
+- **Validate every ID before it reaches a URL.** The browser sends `sessionId`, `turnId`, and `requestId`, and the SDK places them in request paths. A value such as `../../ag_other/sessions/ss_x` or `..` would make the request reach another route. Check them at your relay as the handlers do: `sessionIdSchema` and `sessionInputRequestIdSchema` from `@blazingagents/sdk/contracts` in TypeScript, and the same patterns in Python. The Rust SDK percent-encodes every path segment and rejects an empty, `.`, or `..` value client-side as `Error::InvalidArgument`, so `../../ag_other/sessions/ss_x` can never leave its segment. The Go SDK does the same and reports the rejected value as `*ba.ArgumentError`. A `requestId` of `.` or `..` is invalid.
 - **Derive scope from verified sign-in.** BA enforces ownership when you use `forUser()`. A body `userId` alone grants no access.
 - **Save the Session ID.** The transport receives it before the answer streams. Keep it even when the first Turn fails or is stopped; the Session exists and is simply empty.
 - **Keep one transport per conversation.** `useChat` ignores a new transport after mount. To switch Session or user, remount `Chat` with a new `key`, as `ChatPage` does. Clear persisted user data on sign-out and abort requests from the old account.
@@ -1336,7 +1704,7 @@ Handle these errors:
 - **A lost response may already be saved.** A dropped connection is not proof of failure. Reload history before telling the user their message was lost.
 - **Regenerate only after a successful answer.** A prompt that failed was never saved, so there is nothing to regenerate. If regeneration fails or is stopped, the old answer stays.
 - **`session_busy` (HTTP 409)** from `chat` means a Tool approval is pending, a continuation is running, or another Turn holds the Session, for example one started from another tab. Steer the running Turn, or hold the message in the queue and let the next dispatch send it.
-- **`session_turn_unresponsive` (HTTP 409)** means the Session's previous Turn stopped responding, so the Session is not free yet. It frees within a minute. Keep the message queued, wait the whole seconds in the `Retry-After` header (`error.headers` in TypeScript, `error.retry_after` in Python, `error.retry_after()` in Rust), and send again under a new message ID.
+- **`session_turn_unresponsive` (HTTP 409)** means the Session's previous Turn stopped responding, so the Session is not free yet. It frees within a minute. Keep the message queued, wait the whole seconds in the `Retry-After` header (`error.headers` in TypeScript, `error.retry_after` in Python, `error.retry_after()` in Rust, `apiErr.RetryAfter` in Go), and send again under a new message ID.
 - **A cut Turn sends `data-turn-interrupted`.** When the platform cuts a Turn after the stream started, the stream sends a transient `data-turn-interrupted` part (`data.code` is `turn_interrupted`), then an `error` chunk, with status 200. The Turn may have saved its work, so reload history before restoring the draft. The Session can stay busy for up to a minute afterward.
 - **Queue only after the Session exists.** The first message creates the Session through `chat`. Steers and batches need a Session ID, which the transport receives before the answer streams.
 - **The queue is yours.** It lives in client state, such as `useState`, localStorage, or your own store. Take a message out before sending it (a queued row means "not sent"), never auto-retry a send whose outcome is unknown, and never rebuild the queue from receipts or history. A send containing any message ID already in history returns `message_id_conflict` (409) before model or Tool work: the message is already saved, so reload history instead of resending. Regeneration may reuse IDs.

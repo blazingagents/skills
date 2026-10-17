@@ -86,6 +86,29 @@ let agent = client
 println!("{:?} {}", agent.model, agent.instructions);
 ```
 
+```go
+providerID := ba.ProviderID("prv_0123456789abcdef")
+models, err := client.Providers.ListModels(ctx, providerID)
+if err != nil {
+	return err
+}
+if !slices.ContainsFunc(models, func(m ba.ProviderModel) bool { return m.ID == "openai/gpt-6-luna" }) {
+	return errors.New("model not offered by this Provider")
+}
+
+agent, err := client.Agents.Update(ctx, agentID, ba.UpdateAgentParams{
+	ProviderID:              ba.Value(providerID),
+	Model:                   ba.Value("openai/gpt-6-luna"),
+	Instructions:            new("You are the support assistant for Acme. Answer in two short paragraphs."),
+	Tools:                   []ba.AgentTool{ba.AgentToolRead, ba.AgentToolGrep, ba.AgentToolGlob, ba.AgentToolSaveMemory, ba.AgentToolSearchMemories},
+	CompactionReserveTokens: new(32_768),
+})
+if err != nil {
+	return err
+}
+fmt.Println(*agent.Model, agent.Instructions)
+```
+
 The file tools here are the `file_read`-tagged ones (`read`, `grep`, `glob`), so the Agent can search its Workspace but never change it. Add `write` or `edit` to let it change files; add `bash` only if it may run any command. See [Built-in tools](../concepts.md#built-in-tools).
 
 2. Save a Prompt linked to the Agent and run it with exactly its variables. `agentId` groups Prompts for listing. A scoped request requires the Prompt and Agent to belong to the same user.
@@ -158,6 +181,32 @@ let page = client
 println!("{:?}", page.data.iter().map(|p| &p.name).collect::<Vec<_>>());
 ```
 
+```go
+prompt, err := client.Prompts.Create(ctx, ba.CreatePromptParams{
+	Name:     "Release summary",
+	Template: "Summarize {{ version }} for {{ audience }}.",
+	AgentID:  ba.Value(agentID),
+})
+if err != nil {
+	return err
+}
+answer, err := client.Generation.Completion(ctx, agentID, ba.SavedPrompt{
+	ID:        prompt.ID,
+	Variables: map[string]string{"version": "2.4", "audience": "developers"},
+}, ba.GenerateParams{})
+if err != nil {
+	return err
+}
+fmt.Println(answer)
+page, err := client.Prompts.List(ctx, ba.ListPromptsParams{AgentID: new(agentID)})
+if err != nil {
+	return err
+}
+for _, p := range page.Data {
+	fmt.Println(p.Name)
+}
+```
+
 These list calls show the first page. Follow `nextCursor` or `next_cursor` for the remaining Prompts.
 
 3. Upload a runtime Skill: a ZIP (or tar, tar.gz) with `SKILL.md` at the archive root plus any reference files. Edit one file later with `putFile()`.
@@ -221,6 +270,26 @@ skills
         Upload::bytes("Use sentence case headings.\n"),
     )
     .await?;
+```
+
+```go
+skill, err := client.Skills.Upload(ctx, agentID, ba.UploadSkillParams{
+	Type: ba.ArchiveTypeZip,
+	File: ba.UploadFile("release-notes.zip"),
+})
+if err != nil {
+	return err
+}
+fmt.Println(skill.Name)
+for _, file := range skill.Files {
+	fmt.Println(file.Path)
+}
+
+_, err = client.Skills.ReplaceFile(ctx, agentID, skill.ID, "references/style-guide.md",
+	strings.NewReader("Use sentence case headings.\n"))
+if err != nil {
+	return err
+}
 ```
 
 4. Store Memory for one End-user and turn on injection so every Turn with that `userId` starts with the newest notes it can see, general and that user's (up to 4,000 words). Use list with `search`, `update()`, and `delete()` to curate them.
@@ -299,6 +368,34 @@ client
     .await?;
 ```
 
+```go
+if _, err := client.Agents.Update(ctx, agentID, ba.UpdateAgentParams{MemoryInjectionEnabled: new(true)}); err != nil {
+	return err
+}
+memory, err := client.Memories.Create(ctx, agentID, ba.CreateMemoryParams{
+	UserID: new("app:user-42"),
+	Text:   "Prefers concise status updates.",
+})
+if err != nil {
+	return err
+}
+
+page, err := client.Memories.List(ctx, agentID, ba.ListMemoriesParams{UserID: new("app:user-42"), Search: new("status")})
+if err != nil {
+	return err
+}
+for _, m := range page.Data {
+	fmt.Println(m.Text)
+}
+
+if _, err := client.Memories.Update(ctx, agentID, memory.ID, ba.UpdateMemoryParams{Text: "Prefers bullet-point status updates."}); err != nil {
+	return err
+}
+if err := client.Memories.Delete(ctx, agentID, memory.ID); err != nil {
+	return err
+}
+```
+
 5. Read saved configuration and pause new work. Edit the Agent for future Sessions and Task runs. The existing Session keeps its saved settings.
 
 ```ts
@@ -343,13 +440,31 @@ client
 client.agents().enable("ag_0123456789abcdef").await?;
 ```
 
+```go
+session, err := client.Sessions.Get(ctx, agentID, sessionID)
+if err != nil {
+	return err
+}
+if session.AgentConfig.Model != nil {
+	fmt.Println(*session.AgentConfig.Model)
+}
+fmt.Println(session.AgentConfig.Instructions)
+
+if _, err := client.Agents.Disable(ctx, agentID); err != nil {
+	return err
+}
+if _, err := client.Agents.Enable(ctx, agentID); err != nil {
+	return err
+}
+```
+
 ## Gotchas
 
 - `tools` and `mcpConnectionIds` replace the whole list on `update()`. Send the full list you want.
 - Changing only `model` keeps the Provider; switching Provider needs `providerId` and `model` together, or the update fails validation.
 - A Prompt call must supply every variable and no extras (`prompt_variable_missing`, `prompt_variable_unknown`). A call uses `promptId` or a literal `prompt`, never both.
 - Deleting an Agent deletes its linked Prompts. Set the Prompt's `agentId` to `null` first to keep it.
-- Uploading a Skill whose `name` already exists on the Agent fails with `skill_name_conflict`. Edit it with `putFile()` / `replace_file()`, or delete it and upload again.
+- Uploading a Skill whose `name` already exists on the Agent fails with `skill_name_conflict`. Edit it with `putFile()` / `replace_file()` / `Skills.ReplaceFile()`, or delete it and upload again.
 - Skills and Memory use their current content; the saved Agent configuration holds neither file contents nor notes.
 - Memory `userId` labels notes. Use the verified user scope from [multi-user apps](multi-user-apps.md) for user-owned Memory and Turns. A scoped Turn sees that user's notes. An unscoped Turn retains the Tenant's general Memory behavior.
 - Memory search matches words, not meaning. Each Agent keeps up to 500 notes and evicts the least recently used one when full.
