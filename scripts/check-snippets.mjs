@@ -5,6 +5,11 @@
  * the pinned SDK crate in snippets/rust; Go blocks must be gofmt-formatted and
  * use `go build` with the pinned SDK module in snippets/go, after goimports adds
  * each fragment's stdlib imports.
+ *
+ * To check against an unreleased SDK, point SNIPPETS_TYPESCRIPT_SDK at a tarball
+ * or SNIPPETS_PYTHON_SDK at a wheel, such as one `rig run sdk:pack` built. The
+ * tarball is installed without saving; the next `npm ci --prefix snippets`
+ * restores the pin.
  */
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -115,6 +120,14 @@ const tsFiles = paths.filter(
   (path) => path.endsWith(".ts") || path.endsWith(".tsx"),
 );
 if (tsFiles.length) {
+  const sdk = process.env.SNIPPETS_TYPESCRIPT_SDK;
+  if (sdk) {
+    console.log(`TypeScript snippets use ${sdk}`);
+    const install = spawnSync("npm", ["install", "--no-save", "--silent", "--prefix", snippets, resolve(sdk)], {
+      stdio: "inherit",
+    });
+    if (install.status !== 0) throw new Error(`npm install --no-save ${sdk} failed`);
+  }
   const tsc = spawnSync(
     join(snippets, "node_modules/.bin/tsc"),
     [
@@ -136,13 +149,21 @@ if (tsFiles.length) {
   if (tsc.status && !failures) failures++;
 }
 
+/** The pinned wheel, which `rig run sdk:pin` moves, unless SNIPPETS_PYTHON_SDK names another. */
+function pythonSdk() {
+  const sdk = process.env.SNIPPETS_PYTHON_SDK;
+  if (!sdk) return join(snippets, "vendor/blazing_agents-0.27.0-py3-none-any.whl");
+  console.log(`Python snippets use ${sdk}`);
+  return resolve(sdk);
+}
+
 const pyFiles = paths.filter((path) => path.endsWith(".py"));
 if (pyFiles.length) {
   const pyright = spawnSync(
     "uv",
     [
       ...["run", "--no-project", "--python", "3.12"],
-      ...["--with", join(snippets, "vendor/blazing_agents-0.27.0-py3-none-any.whl"), "--with", "pyright==1.1.414", "--with", "fastapi==0.141.1"],
+      ...["--with", pythonSdk(), "--with", "pyright==1.1.414", "--with", "fastapi==0.141.1"],
       ...["pyright", "--outputjson", ...pyFiles],
     ],
     { cwd: out, encoding: "utf8" },
