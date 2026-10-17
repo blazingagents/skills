@@ -37,12 +37,12 @@ pip install blazing-agents
 ```
 
 ```bash
-cargo add blazing-agents --git https://github.com/blazingagents/rust-sdk --rev 43b14ef
+cargo add blazing-agents
 cargo add tokio --features macros,rt-multi-thread
 ```
 
 ```bash
-go get github.com/blazingagents/golang-sdk@v0.0.0-20261017095851-5c762cba38a4
+go get github.com/blazingagents/golang-sdk@v0.1.0
 ```
 
 2. Check the connection. This lists the first page of Agents in your Tenant and changes nothing. A new Tenant already has 1 Agent, its admin Agent.

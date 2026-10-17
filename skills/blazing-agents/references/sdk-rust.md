@@ -1,6 +1,6 @@
 # Rust SDK reference
 
-Use this page to call Blazing Agents from a Rust backend: install the crate, build a client, run Turns, and find the method for every operation. It matches the `blazing-agents` crate at rev `43b14ef` of the repository's main branch, the revision this skill's snippets compile against. The crate is not on crates.io yet, so install it from the repository.
+Use this page to call Blazing Agents from a Rust backend: install the crate, build a client, run Turns, and find the method for every operation. It matches the `blazing-agents` crate at 0.1.0 on crates.io, the release this skill's snippets compile against.
 
 For the same surface in Python, TypeScript, or Go, read [Python SDK reference](sdk-python.md), [TypeScript SDK reference](sdk-typescript.md), or [Go SDK reference](sdk-go.md). For end-to-end builds, start from a recipe such as [Add chat to your app](recipes/chat-in-your-app.md).
 
@@ -11,14 +11,14 @@ The snippets on this page assume a `client` built as shown in [Construct](#const
 The crate is `blazing-agents`; the import name is `blazing_agents`. It needs Rust 1.85 or newer and runs on Tokio.
 
 ```bash
-cargo add blazing-agents --git https://github.com/blazingagents/rust-sdk --rev 43b14ef
+cargo add blazing-agents
 cargo add tokio --features macros,rt-multi-thread
 cargo add futures-util
 ```
 
 ```toml
 [dependencies]
-blazing-agents = { git = "https://github.com/blazingagents/rust-sdk", rev = "43b14efeec93214cbb644b3a04a35898a7e39282" }
+blazing-agents = "0.1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 futures-util = "0.3"
 ```
