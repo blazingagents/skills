@@ -177,6 +177,7 @@ test("snippet checker maps diagnostics and rejects compiler failures", async (t)
         },
         { status: 0, stdout: "warning: unused", stderr: "" },
         { status: 0, stdout: "", stderr: "" },
+        { status: 0, stdout: "", stderr: "" },
         { status: 0, stdout: "", stderr: "go: downloading example.com/dep v1\n" },
       ],
       status: 0,
@@ -323,6 +324,7 @@ test("snippet checker maps diagnostics and rejects compiler failures", async (t)
       markdown: '```go\nvar x int = "no"\n```',
       outputs: [
         { status: 0, stdout: "", stderr: "" },
+        { status: 0, stdout: "", stderr: "" },
         {
           status: 1,
           stdout: "",
@@ -337,6 +339,7 @@ test("snippet checker maps diagnostics and rejects compiler failures", async (t)
       name: "Go located program diagnostic",
       markdown: '```go\npackage main\nfunc main() {\nvar x int = "no"\n}\n```',
       outputs: [
+        { status: 0, stdout: "", stderr: "" },
         {
           status: 1,
           stdout: "",
@@ -351,6 +354,7 @@ test("snippet checker maps diagnostics and rejects compiler failures", async (t)
       name: "Go fragment that goimports cannot parse",
       markdown: "```go\nif {\n```",
       outputs: [
+        { status: 0, stdout: "", stderr: "" },
         { status: 2, stdout: "", stderr: "examples/snippet0/main.go:10:4: expected operand\n" },
       ],
       status: 1,
@@ -360,7 +364,10 @@ test("snippet checker maps diagnostics and rejects compiler failures", async (t)
     {
       name: "Go goimports failure without diagnostics",
       markdown: "```go\nx := 1\n```",
-      outputs: [{ status: 2, stdout: "", stderr: "goimports blew up" }],
+      outputs: [
+        { status: 0, stdout: "", stderr: "" },
+        { status: 2, stdout: "", stderr: "goimports blew up" },
+      ],
       status: 1,
       message: /goimports blew up[\s\S]*Snippet type-check failed \(1 error/,
       go: { wrapped: ["snippet0"] },
@@ -370,6 +377,7 @@ test("snippet checker maps diagnostics and rejects compiler failures", async (t)
       markdown: "```go\nx := 1\n```",
       outputs: [
         { status: 0, stdout: "", stderr: "" },
+        { status: 0, stdout: "", stderr: "" },
         { status: 1, stdout: "", stderr: "# skills-go-snippets/examples/snippet0\n" },
       ],
       status: 1,
@@ -377,7 +385,19 @@ test("snippet checker maps diagnostics and rejects compiler failures", async (t)
       go: { wrapped: ["snippet0"] },
     },
     {
-      name: "missing go executable",
+      name: "Go block that is not gofmt-formatted",
+      markdown: "```go\nx  :=  1\n_ = x\n```",
+      outputs: [
+        { status: 0, stdout: "{files}\n", stderr: "" },
+        { status: 0, stdout: "", stderr: "" },
+        { status: 0, stdout: "", stderr: "" },
+      ],
+      status: 1,
+      message: /SKILL\.md:1: Go block is not gofmt-formatted[\s\S]*Snippet type-check failed \(1 error/,
+      go: { wrapped: ["snippet0"] },
+    },
+    {
+      name: "missing gofmt executable",
       markdown: "```go\nx := 1\n```",
       outputs: [{ error: { message: "ENOENT" } }],
       status: 1,
@@ -385,9 +405,17 @@ test("snippet checker maps diagnostics and rejects compiler failures", async (t)
       go: { wrapped: ["snippet0"] },
     },
     {
+      name: "missing go executable",
+      markdown: "```go\nx := 1\n```",
+      outputs: [{ status: 0, stdout: "", stderr: "" }, { error: { message: "ENOENT" } }],
+      status: 1,
+      message: /Install Go first/,
+      go: { wrapped: ["snippet0"] },
+    },
+    {
       name: "missing go executable for a program",
       markdown: "```go\npackage main\nfunc main() {}\n```",
-      outputs: [{ error: { message: "ENOENT" } }],
+      outputs: [{ status: 0, stdout: "", stderr: "" }, { error: { message: "ENOENT" } }],
       status: 1,
       message: /ENOENT/,
       go: { plain: ["snippet0"] },
@@ -407,6 +435,16 @@ test("snippet checker maps diagnostics and rejects compiler failures", async (t)
         const go = ${JSON.stringify(scenario.go ?? null)};
         mock.module('node:child_process', { namedExports: { spawnSync: (command, args, options) => {
           assert.ok(outputs.length > 0, 'no unexpected compiler calls');
+          if (command === 'gofmt') {
+            assert.equal(args[0], '-l');
+            assert.equal(args.length - 1, (go?.wrapped?.length ?? 0) + (go?.plain?.length ?? 0));
+            for (const path of args.slice(1)) {
+              const text = readFileSync(path, 'utf8');
+              if (/func snippet\\(/.test(text)) assert.match(text, /\\) error \\{\\n\\t\\S/, 'fragment indented');
+            }
+            const output = outputs.shift();
+            return output.stdout ? { ...output, stdout: output.stdout.replace('{files}', args.slice(1).join('\\n')) } : output;
+          }
           if (command === 'go') {
             const dir = join(options.cwd, 'examples');
             const wrapper = /func snippet\\(ctx context\\.Context, client \\*ba\\.Client, agentID ba\\.AgentID, sessionID ba\\.SessionID\\) error/;

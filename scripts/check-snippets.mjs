@@ -2,8 +2,9 @@
  * Type-checks every ts, tsx, python, rust, and go fenced block in skills/**\/*.md
  * as its own file. TypeScript uses the pinned deps in snippets/; Python uses
  * pyright with the pinned SDK via uv; Rust uses `cargo check --examples` with
- * the pinned SDK crate in snippets/rust; Go uses `go build` with the pinned SDK
- * module in snippets/go, after goimports adds each fragment's stdlib imports.
+ * the pinned SDK crate in snippets/rust; Go blocks must be gofmt-formatted and
+ * use `go build` with the pinned SDK module in snippets/go, after goimports adds
+ * each fragment's stdlib imports.
  */
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -40,9 +41,10 @@ async fn snippet(client: blazing_agents::Client) -> Result<(), Box<dyn std::erro
 const offset = PRELUDE.split("\n").length - 1;
 
 /**
- * Wraps a Go fragment in a function that takes the client and the IDs it
- * names. goimports fills in the stdlib imports the fragment uses, so the
- * fragment's offset is read back from the rewritten file.
+ * Wraps a Go fragment, indented one tab so gofmt can check it, in a function
+ * that takes the client and the IDs it names. goimports fills in the stdlib
+ * imports the fragment uses, so the fragment's offset is read back from the
+ * rewritten file.
  */
 const GO_PRELUDE = `package main
 
@@ -75,7 +77,8 @@ for (const { file, lines } of markdownFiles()) {
         writeFileSync(path, block.code);
         sources.set(path, { file, line: block.line, offset: 0 });
       } else {
-        writeFileSync(path, `${GO_PRELUDE}${block.code}return nil\n}\n\nfunc main() {}\n`);
+        const body = block.code.replace(/^(?=.)/gm, "\t");
+        writeFileSync(path, `${GO_PRELUDE}${body}\treturn nil\n}\n\nfunc main() {}\n`);
         sources.set(path, { file, line: block.line, offset: goOffset });
         goFragments.push(path);
       }
@@ -203,6 +206,15 @@ const goDiagnostics = (text) => {
   }
 };
 if (goFiles.length) {
+  const gofmt = spawnSync("gofmt", ["-l", ...goFiles], { encoding: "utf8" });
+  if (gofmt.error) {
+    throw new Error(`Install Go first (https://go.dev/dl). ${gofmt.error.message}`);
+  }
+  for (const path of gofmt.stdout.split("\n").filter(Boolean)) {
+    failures++;
+    const { file, line } = sources.get(path);
+    console.error(`${file}:${line}: Go block is not gofmt-formatted`);
+  }
   const goimports = goFragments.length
     ? spawnSync("go", ["tool", "goimports", "-w", ...goFragments], { cwd: goModule, encoding: "utf8" })
     : { status: 0, stdout: "", stderr: "" };
