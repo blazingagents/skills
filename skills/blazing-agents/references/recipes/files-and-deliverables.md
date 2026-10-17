@@ -75,6 +75,22 @@ let agent = client
 println!("{} {}", agent.id, agent.workspace_id);
 ```
 
+```go
+agent, err := client.Agents.Create(ctx, ba.CreateAgentParams{
+	Name:       "Report writer",
+	ProviderID: new(ba.ProviderID("prv_0123456789abcdef")),
+	Model:      new("openai/gpt-6-luna"),
+	Instructions: new("Write reports as Markdown files. " +
+		"When a file is finished, publish it with publish_artifacts."),
+	WorkspaceTier: new(ba.WorkspaceTierPlus),
+	Tools:         []ba.AgentTool{ba.AgentToolRead, ba.AgentToolWrite, ba.AgentToolBash, ba.AgentToolPublishArtifacts},
+})
+if err != nil {
+	return err
+}
+fmt.Println(agent.ID, agent.WorkspaceID)
+```
+
 For an existing Agent, read `agent.tools` and send the full list with the new tools added. `tools` replaces the whole list and rejects duplicate names.
 
 2. To let several Agents work on the same files, create a Workspace and attach each Agent to it. Pick the narrowest network policy: `unrestricted` (default), `allowlist`, or `offline`.
@@ -131,6 +147,25 @@ for agent_id in agent_ids {
         .await?;
 }
 println!("{}", workspace.id);
+```
+
+```go
+agentIDs := []ba.AgentID{"ag_0123456789abcdef", "ag_abcdef0123456789"}
+workspace, err := client.Workspaces.Create(ctx, ba.CreateWorkspaceParams{
+	Name:          new("Release files"),
+	Tier:          new(ba.WorkspaceTierPlus),
+	NetworkPolicy: ba.NetworkPolicyAllowlist{AllowedHosts: []string{"registry.npmjs.org"}},
+})
+if err != nil {
+	return err
+}
+for _, id := range agentIDs {
+	_, err := client.Agents.Update(ctx, id, ba.UpdateAgentParams{WorkspaceID: new(workspace.ID)})
+	if err != nil {
+		return err
+	}
+}
+fmt.Println(workspace.ID)
 ```
 
 3. Ask for the file in a chat turn, read the stream to the end, then list the Session's Artifacts. Pass `userId` so each Artifact carries the Session's user ID, which you check before download.
@@ -212,6 +247,30 @@ let page = client
 let artifact_ids: Vec<_> = page.data.iter().map(|artifact| &artifact.artifact_id).collect();
 ```
 
+```go
+stream, err := client.Chat.Send(ctx, agentID,
+	ba.Messages(ba.TextMessage("Write a short release summary to release.md, then publish it.")),
+	ba.ChatParams{UserID: new("app:user-42")})
+if err != nil {
+	return err
+}
+defer stream.Close()
+chatSessionID := stream.SessionID()
+for _, err := range stream.Events() {
+	if err != nil {
+		return err
+	}
+	// or forward each event to your client
+}
+page, err := client.Artifacts.List(ctx, ba.ListArtifactsParams{AgentID: new(agentID), SessionID: new(chatSessionID)})
+if err != nil {
+	return err
+}
+for _, artifact := range page.Data {
+	fmt.Println(artifact.ArtifactID, artifact.Filename, artifact.SizeBytes)
+}
+```
+
 This recipe uses a Tenant-owned Agent with explicit end-user Attribution. For user-owned Agents, scope Agent creation, chat, and downloads consistently as shown in [multi-user apps](multi-user-apps.md). A scoped download cannot read an Artifact produced by a Tenant-owned Agent.
 
 4. Serve downloads from your backend. Compare the Artifact's `userId` with the `userId` you send for the signed-in user on chat calls, then redirect to a fresh download URL.
@@ -260,6 +319,24 @@ let url = client
     .url;
 ```
 
+```go
+signedInUserID := "app:user-42"
+artifactID := ba.ArtifactID("at_0123456789abcdef")
+artifact, err := client.Artifacts.Get(ctx, artifactID)
+if err != nil {
+	return err
+}
+if artifact.UserID != signedInUserID {
+	return errors.New("not found") // respond 404
+}
+download, err := client.Artifacts.CreateDownloadURL(ctx, artifactID)
+if err != nil {
+	return err
+}
+// Redirect to download.URL.Reveal(). The Secret prints as [redacted] in logs.
+_ = download.URL.Reveal()
+```
+
 5. Clean up. Deleting an Artifact is permanent and leaves the Workspace file alone. When you delete a Session, choose whether its Artifacts go too. A Workspace can be deleted only after every Agent has moved off it.
 
 ```ts
@@ -300,6 +377,20 @@ client
     .delete("ag_0123456789abcdef", "ss_0123456789abcdef", true)
     .await?;
 client.workspaces().delete("ws_0123456789abcdef").await?;
+```
+
+```go
+if err := client.Artifacts.Delete(ctx, ba.ArtifactID("at_0123456789abcdef")); err != nil {
+	return err
+}
+if err := client.Sessions.Delete(ctx, agentID, sessionID, ba.DeleteSessionParams{DeleteArtifacts: true}); err != nil {
+	return err
+}
+outcome, err := client.Workspaces.Delete(ctx, ba.WorkspaceID("ws_0123456789abcdef"))
+if err != nil {
+	return err
+}
+fmt.Println(outcome) // ba.WorkspaceDeletionCompleted, or ba.WorkspaceDeletionPending while cleanup finishes
 ```
 
 ## Gotchas

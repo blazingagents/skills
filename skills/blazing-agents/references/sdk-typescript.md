@@ -8,8 +8,8 @@ This page matches `@blazingagents/sdk` 0.27.0. If the project pins an older
 version, upgrade it or check the installed types before using a method from
 this page.
 
-For the same surface in Python or Rust, read [Python SDK reference](sdk-python.md)
-or [Rust SDK reference](sdk-rust.md). For end-to-end builds, start from a
+For the same surface in Python, Rust, or Go, read [Python SDK reference](sdk-python.md),
+[Rust SDK reference](sdk-rust.md), or [Go SDK reference](sdk-go.md). For end-to-end builds, start from a
 recipe such as [Add chat to your app](recipes/chat-in-your-app.md).
 
 ## Install

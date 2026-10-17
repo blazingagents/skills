@@ -2,7 +2,7 @@
 
 Use this page to call Blazing Agents from a Rust backend: install the crate, build a client, run Turns, and find the method for every operation. It matches the `blazing-agents` crate at rev `43b14ef` of the repository's main branch, the revision this skill's snippets compile against. The crate is not on crates.io yet, so install it from the repository.
 
-For the same surface in Python or TypeScript, read [Python SDK reference](sdk-python.md) or [TypeScript SDK reference](sdk-typescript.md). For end-to-end builds, start from a recipe such as [Add chat to your app](recipes/chat-in-your-app.md).
+For the same surface in Python, TypeScript, or Go, read [Python SDK reference](sdk-python.md), [TypeScript SDK reference](sdk-typescript.md), or [Go SDK reference](sdk-go.md). For end-to-end builds, start from a recipe such as [Add chat to your app](recipes/chat-in-your-app.md).
 
 The snippets on this page assume a `client` built as shown in [Construct](#construct); short fragments appear inside an async function that receives it.
 

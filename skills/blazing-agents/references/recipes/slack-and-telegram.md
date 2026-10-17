@@ -82,6 +82,23 @@ let connection = client
 println!("{} {}", connection.id, connection.webhook_url);
 ```
 
+```go
+connection, err := client.ChatConnections.Create(ctx, ba.SlackConnection{
+	AgentID:    agentID,
+	Name:       "Support on Slack",
+	Enabled:    new(false),
+	ChannelIDs: []string{"C0123456789"},
+	Credentials: ba.SlackCredentials{
+		BotToken:      ba.NewSecret(os.Getenv("SLACK_BOT_TOKEN")),
+		SigningSecret: ba.NewSecret(os.Getenv("SLACK_SIGNING_SECRET")),
+	},
+})
+if err != nil {
+	return err
+}
+fmt.Println(connection.ID, connection.WebhookURL)
+```
+
 For Telegram, pass `platform: "telegram"`, `credentials: { botToken }`, and optionally `configuration: { chatIds, businessMode }`. Set `businessMode: true` only for a Telegram Business bot.
 
 2. Register the URL on the platform. This is a separate step from creating the connection.
@@ -162,6 +179,35 @@ if webhook.is_none_or(|check| check.status != ChatHealthCheckStatus::Pass) {
 }
 ```
 
+```go
+connectionID := ba.ChatConnectionID("cc_0123456789abcdef")
+before, err := client.ChatConnections.CheckHealth(ctx, connectionID)
+if err != nil {
+	return err
+}
+if !before.Health.TokenValid || !before.Health.IdentityVerified {
+	return errors.New("bot credentials rejected; fix them before enabling")
+}
+
+if _, err := client.ChatConnections.Enable(ctx, connectionID); err != nil {
+	return err
+}
+
+after, err := client.ChatConnections.CheckHealth(ctx, connectionID)
+if err != nil {
+	return err
+}
+webhookConfirmed := false
+for _, check := range after.Health.Checks {
+	if check.Code == "webhook_url" && check.Status == ba.ChatHealthCheckStatusPass {
+		webhookConfirmed = true
+	}
+}
+if !webhookConfirmed {
+	fmt.Println("Webhook not confirmed", after.Health.Checks)
+}
+```
+
 4. Rotate credentials by sending the complete set for the same bot or Slack installation. Sessions stay attached.
 
 ```ts
@@ -203,6 +249,16 @@ let rotated = client
 println!("{} {}", rotated.credential_version, rotated.credential_fragment);
 ```
 
+```go
+newBotToken := "123456:telegram-token"
+rotated, err := client.ChatConnections.RotateCredentials(ctx, ba.ChatConnectionID("cc_0123456789abcdef"),
+	ba.TelegramCredentials{BotToken: ba.NewSecret(newBotToken)})
+if err != nil {
+	return err
+}
+fmt.Println(rotated.CredentialVersion, rotated.CredentialFragment)
+```
+
 5. Pause or remove the connection. `disable()` stops new messages and approval clicks; work already running may finish, and missed messages are not replayed on `enable()`. `delete()` disconnects the bot and keeps its Sessions readable. BA clears the Telegram webhook it set; uninstall a Slack app yourself.
 
 ```ts
@@ -236,6 +292,16 @@ client
     .await?;
 ```
 
+```go
+connectionID := ba.ChatConnectionID("cc_0123456789abcdef")
+if _, err := client.ChatConnections.Disable(ctx, connectionID); err != nil {
+	return err
+}
+if err := client.ChatConnections.Delete(ctx, connectionID); err != nil {
+	return err
+}
+```
+
 ## Gotchas
 
 - Anyone who can reach the bot can talk to it, and anyone who can see an approval card can approve or deny it. Choose where you add the bot and which Tools need approval (`approvalInChat` on the Agent) with that in mind.
@@ -262,7 +328,7 @@ client
 
 ## Watch for failed deliveries
 
-`chatDeliveries.list()` (Python `chat_deliveries.list()`) is an attention feed: it lists failed and ambiguous deliveries across every connection, newest first, optionally bounded by `since`. Use it for an operator status view; each entry carries `connectionId`, `agentId`, and `platform` so you can tell which bot is affected. BA sends a pending reply by itself, even after an interruption, so only failed and ambiguous deliveries need attention. For pending and confirmed deliveries, or to repair one, use REST: `GET /v1/chat-connections/{id}/deliveries` and `POST /v1/chat-connections/{id}/deliveries/{deliveryId}/repair`; neither SDK exposes them.
+`chatDeliveries.list()` (Python `chat_deliveries.list()`, Rust `chat_deliveries().list()`, Go `client.ChatDeliveries.List()`) is an attention feed: it lists failed and ambiguous deliveries across every connection, newest first, optionally bounded by `since`. Use it for an operator status view; each entry carries `connectionId`, `agentId`, and `platform` so you can tell which bot is affected. BA sends a pending reply by itself, even after an interruption, so only failed and ambiguous deliveries need attention. For pending and confirmed deliveries, or to repair one, use REST: `GET /v1/chat-connections/{id}/deliveries` and `POST /v1/chat-connections/{id}/deliveries/{deliveryId}/repair`. The TypeScript and Python SDKs do not expose them; Rust has `chat_connections().deliveries()` and `repair_delivery()`, and Go has `client.ChatConnections.ListDeliveries()` and `RepairDelivery()`.
 
 ## Go deeper
 

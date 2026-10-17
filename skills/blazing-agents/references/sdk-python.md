@@ -2,7 +2,7 @@
 
 Use this page to call Blazing Agents from a Python backend: install the package, pick a client, run Turns, and find the method for every operation. It matches `blazing-agents` 0.21.0, the floor the install command below pins. If the project pins an older version, upgrade it or check the installed package before using a method from this page.
 
-For the same surface in TypeScript or Rust, read [TypeScript SDK reference](sdk-typescript.md) or [Rust SDK reference](sdk-rust.md). For end-to-end builds, start from a recipe such as [Add chat to your app](recipes/chat-in-your-app.md).
+For the same surface in TypeScript, Rust, or Go, read [TypeScript SDK reference](sdk-typescript.md), [Rust SDK reference](sdk-rust.md), or [Go SDK reference](sdk-go.md). For end-to-end builds, start from a recipe such as [Add chat to your app](recipes/chat-in-your-app.md).
 
 ## Install
 
