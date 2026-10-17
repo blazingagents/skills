@@ -1219,7 +1219,11 @@ func main() {
 ```tsx
 import { useChat } from "@ai-sdk/react";
 import { BlazingAgentsChatTransport, type SessionActivity, type SessionInput } from "@blazingagents/sdk";
-import { type SpendingLimitStopDetails, spendingLimitStopEventSchema } from "@blazingagents/sdk/contracts";
+import {
+  type SpendingLimitStopDetails,
+  spendingLimitStopDetailsSchema,
+  turnStreamErrorEventSchema,
+} from "@blazingagents/sdk/contracts";
 import { type ChatTransport, DefaultChatTransport, generateId, type UIMessage } from "ai";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
@@ -1339,10 +1343,11 @@ function Chat({
     transport,
     messages: conversation.messages,
     onData(part) {
-      if (part.type !== "data-model-spending-limit") return;
-      const { code: _code, ...details } = spendingLimitStopEventSchema.parse(part).data;
+      if (part.type !== "data-ba-error") return;
+      const { data } = turnStreamErrorEventSchema.parse(part);
+      if (data.code !== "model_spending_limit_exceeded") return;
       spendingStopped.current = true;
-      setSpendingStop(details);
+      setSpendingStop(spendingLimitStopDetailsSchema.parse(data.details));
     },
     onError(error) {
       sending.current = false;
@@ -1698,14 +1703,14 @@ Handle these errors:
 - **Derive scope from verified sign-in.** BA enforces ownership when you use `forUser()`. A body `userId` alone grants no access.
 - **Save the Session ID.** The transport receives it before the answer streams. Keep it even when the first Turn fails or is stopped; the Session exists and is simply empty.
 - **Keep one transport per conversation.** `useChat` ignores a new transport after mount. To switch Session or user, remount `Chat` with a new `key`, as `ChatPage` does. Clear persisted user data on sign-out and abort requests from the old account.
-- **A spending stop keeps what finished.** A Turn stopped mid-stream by a model spending limit sends a `data-model-spending-limit` part (scope, reason, balances, `nextResetAt`) before the error. Messages and Tool results completed before the stop are saved, so `Chat` reloads history instead of restoring the draft. Never resend automatically: the user waits for the reset or a tenant admin changes the limit ([usage dashboards](usage-dashboards.md)). A stop before streaming starts is an ordinary HTTP 429 `model_spending_limit_exceeded` that saved nothing.
+- **A spending stop keeps what finished.** A Turn stopped mid-stream by a model spending limit sends a `data-ba-error` part with code `model_spending_limit_exceeded` before the error. Its `details` hold the scope, reason, balances and `nextResetAt`, as in the HTTP 429 body. Messages and Tool results completed before the stop are saved, so `Chat` reloads history instead of restoring the draft. Never resend automatically: the user waits for the reset or a tenant admin changes the limit ([usage dashboards](usage-dashboards.md)). A stop before streaming starts is an ordinary HTTP 429 `model_spending_limit_exceeded` that saved nothing.
 - **Resend is a new attempt.** A failed or stopped Turn adds nothing to history, so the edited or unchanged text is simply sent again with a fresh message ID. Message IDs are not idempotency keys, but BA refuses one it has already saved.
 - **Tool effects can repeat.** Stop cancels the Turn but cannot undo a Tool call that already ran, and a resend can run it again (for example, a second email). Make side-effecting Tools safe to repeat or gate them with [human approval](human-approval.md).
 - **A lost response may already be saved.** A dropped connection is not proof of failure. Reload history before telling the user their message was lost.
 - **Regenerate only after a successful answer.** A prompt that failed was never saved, so there is nothing to regenerate. If regeneration fails or is stopped, the old answer stays.
 - **`session_busy` (HTTP 409)** from `chat` means a Tool approval is pending, a continuation is running, or another Turn holds the Session, for example one started from another tab. Steer the running Turn, or hold the message in the queue and let the next dispatch send it.
 - **`session_turn_unresponsive` (HTTP 409)** means the Session's previous Turn stopped responding, so the Session is not free yet. It frees within a minute. Keep the message queued, wait the whole seconds in the `Retry-After` header (`error.headers` in TypeScript, `error.retry_after` in Python, `error.retry_after()` in Rust, `apiErr.RetryAfter` in Go), and send again under a new message ID.
-- **A cut Turn sends `data-turn-interrupted`.** When the platform cuts a Turn after the stream started, the stream sends a transient `data-turn-interrupted` part (`data.code` is `turn_interrupted`), then an `error` chunk, with status 200. The Turn may have saved its work, so reload history before restoring the draft. The Session can stay busy for up to a minute afterward.
+- **A cut Turn sends `turn_interrupted`.** When the platform cuts a Turn after the stream started, the stream sends a transient `data-ba-error` part (`data.code` is `turn_interrupted`), then an `error` chunk, with status 200. The Turn may have saved its work, so reload history before restoring the draft. The Session can stay busy for up to a minute afterward.
 - **Queue only after the Session exists.** The first message creates the Session through `chat`. Steers and batches need a Session ID, which the transport receives before the answer streams.
 - **The queue is yours.** It lives in client state, such as `useState`, localStorage, or your own store. Take a message out before sending it (a queued row means "not sent"), never auto-retry a send whose outcome is unknown, and never rebuild the queue from receipts or history. A send containing any message ID already in history returns `message_id_conflict` (409) before model or Tool work: the message is already saved, so reload history instead of resending. Regeneration may reuse IDs.
 - **Keep the `requestId` until the outcome is known.** `submitInput` saves the steer before it returns, so a lost response may still have placed it. Retry with the same `requestId` and message; a changed payload under the same `requestId`, or the same message ID under a new one, returns `input_idempotency_conflict`.
