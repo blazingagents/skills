@@ -561,9 +561,10 @@ export async function findAgentName(agentId: string): Promise<string | null> {
 
 Errors before streaming starts reject the `chat`, `completion`, or `object`
 promise. After streaming starts, a failed chat Turn ends its stream with an
-`{ type: "error", errorText }` event, which `useChat` already understands. A Turn
-cut after it started sends a transient `data-turn-interrupted` part first, with
-`data.code` set to `turn_interrupted`. For
+`{ type: "error", errorText }` event, which `useChat` already understands. A
+failure with a code sends a transient `data-ba-error` part first, whose `data`
+has the `code`, `message` and `details` an HTTP error would carry. A Turn cut
+after it started uses `turn_interrupted`, a code only streams send. For
 `completion` and `object`, the stream throws and awaiting `text` or `object`
 rejects with `stream_error`.
 

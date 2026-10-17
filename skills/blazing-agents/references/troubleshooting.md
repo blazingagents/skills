@@ -87,7 +87,7 @@ Use `BlazingAgentsError.isInstance(error)` instead of `instanceof`, which fails 
 | `model_not_found` (400) or `model_validation_unavailable` (503) | The model ID is not in the Provider's list, or the Provider could not be reached or rejected the stored key. | [Fix the model or the Provider](#provider-credential-rejected). |
 | Turn fails right after it starts, no code | The Provider rejected the stored key or the request during the turn. | [Replace the Provider](#provider-credential-rejected). |
 | `quota_exceeded` (429), or a Task run ends `blocked` | Usage in the current window is at or above your tenant quota. | [Wait for reset or raise the quota](#quota-blocked). |
-| `model_spending_limit_exceeded` (429), a `data-model-spending-limit` part in a chat stream, or a Task run ends `blocked` with a spending-limit `error` | The Agent's or the account's model spending limit has nothing left this period. | [Wait for the reset or change the limit](#quota-blocked). |
+| `model_spending_limit_exceeded` (429), a `data-ba-error` part with that code in a chat stream, or a Task run ends `blocked` with a spending-limit `error` | The Agent's or the account's model spending limit has nothing left this period. | [Wait for the reset or change the limit](#quota-blocked). |
 | `subscription_required` or `usage_credit_required` (402) | No active plan, or no usage credit left. | [Fix billing](#quota-blocked). |
 | `rate_limited` (429) | Too many interactive turns at once, or resources created too fast. | [Back off](#quota-blocked). |
 | `session_busy` (409) | A tool approval is pending, an approval continuation is running, or another turn holds the Session. | [Decide approvals, then resend](#session-busy). |
@@ -102,7 +102,7 @@ Use `BlazingAgentsError.isInstance(error)` instead of `instanceof`, which fails 
 | `invalid_cursor` (400) | The cursor was altered, came from another list, or was reused with different filters. | [Restart pagination](#invalid-cursor). |
 | Tool call never runs; the agent reports it was denied | The approval policy for this surface is `deny`, or `manual`/`auto` in a Task or stateless generation, where no person can approve. | [Change the policy or use chat](#tool-blocked-by-approval-policy). |
 | Turn fails with `mcp_connection_discovery_failed` (502), or the connection shows `needs_auth` | An attached MCP connection needs OAuth sign-in, or its server is down. | [Finish sign-in or detach](#mcp-authorization-missing). |
-| Chat stream ends without a `finish` chunk, ends with a `data-turn-interrupted` part, or `stream_error` | The stream broke after it started: network drop, server error, a turn the platform cut, or your Stop. | [Reload history and let the user resend](#stream-ended-without-finish). |
+| Chat stream ends without a `finish` chunk, ends with a `data-ba-error` part with code `turn_interrupted`, or `stream_error` | The stream broke after it started: network drop, server error, a turn the platform cut, or your Stop. | [Reload history and let the user resend](#stream-ended-without-finish). |
 | Slack or Telegram bot stays silent; a health check shows `unknown` | The health check could not verify a setting. | [Check that setting by hand](#chat-connection-health-unknown). |
 
 For any code not listed here, open its entry in the [error catalog](https://docs.blazingagents.com/api-reference/protocols/errors). Each entry says whether retrying the same request can succeed.
@@ -286,14 +286,14 @@ if !test.OK {
 
 A turn is done only when its stream finishes normally with a `finish` chunk. A `200` status or a closed connection proves nothing. Once a stream has started, its status is already sent, so later failures arrive as an `error` chunk inside the stream, or the stream just stops.
 
-A chat or approval-continuation turn that the platform cuts after it started ends in a fixed order. First comes a transient `data-turn-interrupted` part with `data.code` set to `turn_interrupted`. Then come an `error` chunk and `[DONE]`. The HTTP status stays 200.
+A chat or approval-continuation turn that the platform cuts after it started ends in a fixed order. First comes a transient `data-ba-error` part with `data.code` set to `turn_interrupted`. Then come an `error` chunk and `[DONE]`. The HTTP status stays 200.
 
-- `turn_interrupted` is the code of that stream part only. No HTTP error returns it, and the `error` chunk carries no code.
+- `turn_interrupted` is a stream code only. No HTTP error returns it, and the `error` chunk carries no code.
 - The turn may have saved its work before the cut. Read the Session's messages before you resend.
 - The Session can stay busy for up to a minute. A resend in that time returns `session_busy`, then `session_turn_unresponsive`. See [session busy](#session-busy).
 
 - In a `useChat` frontend, `onFinish` receives `isAbort`, `isError`, `isDisconnect`, and `finishReason`. Treat the turn as failed when any flag is set, `finishReason` is missing, or it equals `"error"`. Restore the last good messages and keep the user's draft.
-- Completion and object streams carry no `data-turn-interrupted` part. A cut one fails the stream. In TypeScript, awaiting `result.text` or `result.object` rejects with `stream_error`. A network failure before any response is `network_error`, and your own abort is `request_aborted`. In Python, these are `StreamError` and `APIConnectionError`; in Rust, `Error::Stream` and `Error::Connection`; in Go, `*ba.StreamError` and `*ba.ConnectionError`.
+- Completion and object streams carry no `data-ba-error` part. A cut one fails the stream. In TypeScript, awaiting `result.text` or `result.object` rejects with `stream_error`. A network failure before any response is `network_error`, and your own abort is `request_aborted`. In Python, these are `StreamError` and `APIConnectionError`; in Rust, `Error::Stream` and `Error::Connection`; in Go, `*ba.StreamError` and `*ba.ConnectionError`.
 - A failed or cancelled turn adds nothing to Session history, but a dropped connection can hide a turn that finished and was saved. Reload the Session's messages before you assume the reply was lost.
 - A resend is an ordinary new message with a fresh message ID. It can repeat tool side effects.
 - Log `requestId` from the result. Relay responses built by the SDK keep the original request ID.
