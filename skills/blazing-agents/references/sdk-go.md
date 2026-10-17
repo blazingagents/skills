@@ -45,7 +45,7 @@ Keep the Tenant API key in `BLAZING_AGENTS_API_KEY` on your backend. It can reac
 
 There is one `*ba.Client`, safe for concurrent use. Resources are fields on it (`client.Agents`, `client.Sessions`, `client.Chat`), and every method takes a `context.Context` first, then typed path IDs, then one params struct that holds every body, query, and header input, and finally optional `ba.RequestOption` values. A method returns `(*Model, error)`, `error`, `(*ba.Page[T], error)`, or a stream. On error the model is always `nil`.
 
-Field kinds in a params struct follow the API's field kinds. A required field is a plain value. An optional field is a pointer, set with Go 1.26 `new(expr)`, such as `Limit: new(50)`. An optional list or map is a plain slice or map that is omitted while `nil`. A field the API lets you omit, send as `null`, or set is a `ba.Nullable[T]`: leave it zero to omit, `ba.Null[T]()` to clear, `ba.Value(v)` to set. A required list that the API accepts as `null` is a pointer with no omit rule, so `nil` sends `null`.
+Field kinds in a params struct follow the API's field kinds. A required field is a plain value. An optional field is a pointer, set with Go 1.26 `new(expr)`, such as `Limit: new(50)`. An optional list or map is a plain slice or map that is omitted while `nil`. A field the API lets you omit, send as `null`, or set is a `ba.Nullable[T]`: leave it zero to omit, `ba.Null[T]()` to clear, `ba.Value(v)` to set. A required field that the API accepts as `null`, such as `SpendingLimit` or `MerchantGuard.MeterID`, is a pointer with no omit rule, so `nil` sends `null`.
 
 ## Construct
 
@@ -78,7 +78,7 @@ Options:
 | `ba.WithObserver(fn)` | none | `func(ba.ResponseObservation)` called once per response, with `OperationID`, `Method`, `Path`, `Status`, `Duration`, `RequestID`, and `ClientRequestID` |
 | `ba.WithLogger(l)` | discard | A `*slog.Logger` that gets one Debug record per response and the backend-function runner's records; never bodies or headers |
 
-`client.WithClientRequestID("checkout-42")` returns a copy of the client that tags every request with your correlation ID; the original is unchanged. Every call also accepts per-call options: `ba.WithRequestTimeout(d)`, `ba.WithRequestHeader(name, value)`, `ba.WithClientRequestID(id)`, and `ba.CaptureResponse(&meta)`, which fills a `ba.ResponseMeta` (`OperationID`, `Status`, `Header`, `RequestID`, `ClientRequestID`) once headers arrive, on success and on an API error. The SDK retries transient claim and result submissions for backend functions; other requests do not retry on their own.
+`client.WithClientRequestID("checkout-42")` returns a `(*ba.Client, error)`: a copy of the client that tags every request with your correlation ID, or `ba.ErrInvalidHeader` when the ID is not printable ASCII without leading or trailing spaces. The original is unchanged. Every call also accepts per-call options: `ba.WithRequestTimeout(d)`, `ba.WithRequestHeader(name, value)`, `ba.WithClientRequestID(id)`, and `ba.CaptureResponse(&meta)`, which fills a `ba.ResponseMeta` (`OperationID`, `Status`, `Header`, `RequestID`, `ClientRequestID`) once headers arrive, on success and on an API error. The SDK retries transient claim and result submissions for backend functions; other requests do not retry on their own.
 
 ## Run Turns: generation methods
 
@@ -276,7 +276,7 @@ Every method is `(ctx, <path IDs>, params, opts...)`; only the arguments after `
 | `Generation.Completion(agentID, prompt, ba.GenerateParams{UserID, Metadata})` / `CompletionStream(...)` | `string` / `*ba.CompletionStream` |
 | `ba.Object(ctx, client.Generation, agentID, prompt, ba.ObjectParams[T]{Schema, UserID, Metadata})` / `ba.StreamObject(...)` | `T` / `*ba.ObjectStream[T]` |
 | `client.ForUser(userID)` | `*ba.UserClient` for one authenticated user |
-| `client.WithClientRequestID(id)` | A copy of the client, tagging every call |
+| `client.WithClientRequestID(id)` | `*ba.Client`, a copy tagging every call |
 
 ### `client.Agents` (both clients)
 
@@ -592,7 +592,7 @@ default:
 - `ForUser` returns an error: handle `ba.ErrInvalidUserID` instead of ignoring it for an ID taken from a request.
 - Agent and Prompt names can repeat. Read every page before resolving a name to an ID; reject multiple exact matches.
 - `Agents.Delete` takes `ba.DeleteAgentParams{IncludeArtifacts}` and `Sessions.Delete` takes `ba.DeleteSessionParams{DeleteArtifacts}`; the flag is always sent, so decide explicitly whether published files go too.
-- A `ba.Secret` prints as `[redacted]` everywhere, including `%v`, `%+v`, `slog`, and JSON. Two secrets never compare equal; compare `Reveal()` results instead. Never put a secret in a header, name, or URL field.
+- A `ba.Secret` prints as `[redacted]` everywhere, including `%v`, `%+v`, `slog`, and JSON. Two secrets compare equal only when one is a copy of the other; compare `Reveal()` results instead. Never put a secret in a header, name, or URL field.
 - Response integers are `int64` and timestamps are `time.Time`; request integers are `int`, so `new(25)` works for every `Limit`.
 - Enums are open string types and unions have an `Unknown` variant (`ba.UnknownSchedule`, `ba.UnknownToolReference`, ...) that round-trips unchanged, so a type switch over a union needs a default branch.
 

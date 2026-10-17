@@ -328,9 +328,9 @@ func listPending(client *ba.Client) http.HandlerFunc {
 			return
 		}
 		type pending struct {
-			ApprovalID ba.ApprovalID   `json:"approvalId"`
-			Tool       any             `json:"tool"`
-			Input      ba.Metadata     `json:"input"`
+			ApprovalID ba.ApprovalID `json:"approvalId"`
+			Tool       any           `json:"tool"`
+			Input      ba.Metadata   `json:"input"`
 		}
 		var items []pending
 		for _, item := range approvals.Data {
