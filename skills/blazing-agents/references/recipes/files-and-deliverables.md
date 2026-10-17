@@ -299,8 +299,7 @@ client
     .sessions()
     .delete("ag_0123456789abcdef", "ss_0123456789abcdef", true)
     .await?;
-let outcome = client.workspaces().delete("ws_0123456789abcdef").await?;
-println!("{outcome:?}"); // WorkspaceDeletion::Completed or Pending
+client.workspaces().delete("ws_0123456789abcdef").await?;
 ```
 
 ## Gotchas

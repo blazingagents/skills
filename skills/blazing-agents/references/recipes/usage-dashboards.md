@@ -494,7 +494,7 @@ def link_customer(app_user_id: str, customer_id: str) -> MerchantCustomerBinding
 ```rust
 let binding = client
     .merchant_bindings()
-    .set("app:user_123", "cus_0123456789")
+    .put("app:user_123", "cus_0123456789")
     .await?;
 println!("{} {}", binding.user_id, binding.customer_id);
 ```

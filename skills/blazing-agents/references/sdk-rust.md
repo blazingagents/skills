@@ -1,6 +1,6 @@
 # Rust SDK reference
 
-Use this page to call Blazing Agents from a Rust backend: install the crate, build a client, run Turns, and find the method for every operation. It matches the `blazing-agents` crate at rev `789a123` of the repository's main branch, the revision this skill's snippets compile against. The crate is not on crates.io yet, so install it from the repository.
+Use this page to call Blazing Agents from a Rust backend: install the crate, build a client, run Turns, and find the method for every operation. It matches the `blazing-agents` crate at rev `43b14ef` of the repository's main branch, the revision this skill's snippets compile against. The crate is not on crates.io yet, so install it from the repository.
 
 For the same surface in Python or TypeScript, read [Python SDK reference](sdk-python.md) or [TypeScript SDK reference](sdk-typescript.md). For end-to-end builds, start from a recipe such as [Add chat to your app](recipes/chat-in-your-app.md).
 
@@ -11,14 +11,14 @@ The snippets on this page assume a `client` built as shown in [Construct](#const
 The crate is `blazing-agents`; the import name is `blazing_agents`. It needs Rust 1.85 or newer and runs on Tokio.
 
 ```bash
-cargo add blazing-agents --git https://github.com/blazingagents/rust-sdk --rev 789a123
+cargo add blazing-agents --git https://github.com/blazingagents/rust-sdk --rev 43b14ef
 cargo add tokio --features macros,rt-multi-thread
 cargo add futures-util
 ```
 
 ```toml
 [dependencies]
-blazing-agents = { git = "https://github.com/blazingagents/rust-sdk", rev = "c4cb1f77bd6f030f423661687a860e5c56908519" }
+blazing-agents = { git = "https://github.com/blazingagents/rust-sdk", rev = "43b14efeec93214cbb644b3a04a35898a7e39282" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 futures-util = "0.3"
 ```
@@ -268,7 +268,7 @@ async fn list_my_agents(
 
 - Take the ID from the session your backend verified, never from a request body or query parameter.
 - The ID is 1 to 256 printable ASCII characters with no leading or trailing space. Anything else fails with `ConfigError::InvalidUserId`.
-- A `UserClient` has `agents()`, `artifacts()`, `memories()`, `prompts()`, `sessions()`, `tasks()`, `workspaces()`, `agent()`, the generation methods, and `usage()` with only `get()` and `sessions()`. Tenant administration (`providers()`, `mcp_connections()`, `chat_connections()`, `chat_deliveries()`, `tenant()`, the merchant resources) and `usage().overview()` / `usage().get_for_agent()` exist only on the tenant client; the compiler rejects them on a `UserClient`.
+- A `UserClient` has `agents()`, `artifacts()`, `memories()`, `prompts()`, `sessions()`, `tasks()`, `workspaces()`, `agent()`, the generation methods, and `usage()` with `get()`, `sessions()`, and `get_for_agent()`. Tenant administration (`providers()`, `mcp_connections()`, `chat_connections()`, `chat_deliveries()`, `tenant()`, the merchant resources), the agent spending limit methods, and `usage().overview()` exist only on the tenant client; the compiler rejects them on a `UserClient`.
 - `with_client_request_id()` on a `UserClient` keeps the scope.
 
 ## Operation map
@@ -302,9 +302,9 @@ Required inputs are arguments; optional inputs are setters on the returned `Call
 | `remove_avatar(agent_id)` | `Agent` |
 | `list_mcp_attachments(agent_id)` | `McpAttachmentList` |
 | `update_mcp_attachment(agent_id, mcp_connection_id)`, `.forward_user_id(...)`, `.forwarded_metadata_keys(...)` | `McpAttachment` |
-| `get_spending_limit(agent_id)` / `update_spending_limit(agent_id, Option<SpendingLimitInput>)` | `SpendingLimitStatus`. `None` disables the limit. See [model spending limits](recipes/usage-dashboards.md#model-spending-limits) |
+| `get_spending_limit(agent_id)` / `update_spending_limit(agent_id, Option<SpendingLimitInput>)` | `SpendingLimitStatus`. `None` disables the limit. Tenant client only. See [model spending limits](recipes/usage-dashboards.md#model-spending-limits) |
 
-`.model(provider_id, model)` sets both together on create. On update, `.model_on_current_provider(model)` changes only the model and `.model(provider_id, model)` changes Provider and model. `tools` is `AgentTool` values, each listed once, such as `AgentTool::Read`, `AgentTool::WriteTodos`, `AgentTool::SaveMemory`, or `AgentTool::WebSearch`. `agents::AGENT_TOOLS` lists each tool with `description`, `requires_workspace`, and `tags`, and `agents::AGENT_TOOL_GROUPS` names each group tag; filter on `tool.tags.contains(&AgentToolTag::FileRead)` for the read-only file tools. See [Built-in tools](concepts.md#built-in-tools).
+`.model(provider_id, model)` sets both together on create. On update, `.model_on_current_provider(model)` changes only the model and `.model(provider_id, model)` changes Provider and model. `tools` is `AgentTool` values, each listed once, such as `AgentTool::Read`, `AgentTool::WriteTodos`, `AgentTool::SaveMemory`, or `AgentTool::WebSearch`. `agents::AGENT_TOOLS` lists each tool with `description`, `requires_workspace`, `group` (an `AgentToolGroupTag`), and `file_access` (`Some(AgentToolFileAccessTag)` on file tools, otherwise `None`), and `agents::AGENT_TOOL_GROUPS` names each group; filter on `tool.file_access == Some(AgentToolFileAccessTag::FileRead)` for the read-only file tools. An approval override names a tool with `ToolReference::builtin(...)`, which takes an `AgentTool` or `BuiltinToolName::ActivateSkill`. See [Built-in tools](concepts.md#built-in-tools).
 
 ### `client.agent(agent_id).skills()`
 
@@ -370,7 +370,7 @@ An `Upload` comes from `Upload::bytes(...)`, `Upload::file(path).await`, or `Upl
 | `list()`, `.user_id(...)`, `.limit(...)` | `Page<Workspace>` |
 | `get(workspace_id)` | `Workspace` |
 | `update(workspace_id)`, `.name(...)`, `.clear_name()`, `.metadata(...)`, `.network_policy(...)` | `Workspace` |
-| `delete(workspace_id)` | `WorkspaceDeletion` (`Completed` when it is gone, `Pending` while cleanup continues in the background) |
+| `delete(workspace_id)` | `()` once the deletion is accepted; files are removed in the background |
 
 A network policy is `NetworkPolicy::Unrestricted`, `NetworkPolicy::allowlist(hosts)`, or `NetworkPolicy::Offline`.
 
@@ -485,7 +485,7 @@ Monetization: bill your end users through your own Polar or Dodo account. Setup,
 | `merchant_connection().update()`, `.credential(...)`, `.status(...)`, `.guard(...)` | `MerchantConnection` |
 | `merchant_connection().retire()` | `()`. Stops deliveries |
 | `merchant_bindings().list()`, `.user_id(...)`, `.limit(...)` | `BindingsPage`. Fails `merchant_connection_not_found` when there is no connection |
-| `merchant_bindings().set(user_id, customer_id)` | `MerchantBinding`. The API checks the customer exists at the provider |
+| `merchant_bindings().put(user_id, customer_id)` | `MerchantBinding`. The API checks the customer exists at the provider |
 | `merchant_bindings().delete(user_id)` | `()` |
 | `merchant_usage_events().list()`, `.status(...)`, `.limit(...)` | `UsageEventsPage` |
 | `merchant_usage_events().get(event_id)` | `MerchantUsageEvent` (`next_action` says what to do) |
