@@ -386,6 +386,11 @@ Run a saved Prompt with `client.chat(prompt_id=..., variables={...})` or the oth
 | `check_health(chat_connection_id)` | `ChatConnection` |
 | `enable(chat_connection_id)` / `disable(chat_connection_id)` | `ChatConnection` |
 | `delete(chat_connection_id)` | `None` |
+| `list_deliveries(chat_connection_id, *, cursor=..., limit=...)` | `ChatConnectionDeliveriesPage` (`data: list[ChatDelivery]`, `next_cursor`) |
+| `iter_deliveries(chat_connection_id, *, cursor=..., limit=...)` | `Iterator[ChatDelivery]` |
+| `repair_delivery(chat_connection_id, delivery_id, *, expected_attempt)` | `ChatDeliveryResult` (`status` is `confirmed`, `failed` or `ambiguous`) |
+
+`list_deliveries()` lists one connection's deliveries in every status, newest first. `repair_delivery()` sends a stuck reply or approval card again without running the agent. It always sends `previousSenderStopped` and `acceptDuplicateRisk` as `true`, so the message may appear twice. Pass the delivery's current `attempt` as `expected_attempt`; a changed attempt raises `invalid_request`.
 
 `platform` is `"slack"` or `"telegram"`. See [Put your agent in Slack or Telegram](recipes/slack-and-telegram.md).
 
@@ -396,7 +401,7 @@ Run a saved Prompt with `client.chat(prompt_id=..., variables={...})` or the oth
 | `list(*, status=..., since=..., cursor=..., limit=...)` | `ChatDeliveriesPage` |
 | `iter(*, status=..., since=..., cursor=..., limit=...)` | `Iterator[TenantChatDelivery]` |
 
-Failed and ambiguous deliveries across every connection, newest first (an attention feed, not full history). `status` is a sequence of `failed` and/or `ambiguous` (default both); pending/confirmed are rejected. One connection's full deliveries list and repair are REST-only, not in the SDK: `GET /v1/chat-connections/{id}/deliveries` and `POST /v1/chat-connections/{id}/deliveries/{deliveryId}/repair`.
+Failed and ambiguous deliveries across every connection, newest first (an attention feed, not full history). `status` is a sequence of `failed` and/or `ambiguous` (default both); pending/confirmed are rejected. For one connection's deliveries in every status, or to repair one, use `chat_connections.list_deliveries()` and `chat_connections.repair_delivery()`.
 
 ### `client.usage` and `client.tenant`
 
@@ -506,7 +511,7 @@ All SDK exceptions inherit from `BlazingAgentsError`. Import them from `blazing_
 | `ObjectJSONDecodeError` | Structured output is invalid JSON (subclass of `StreamError`) | `json_error` |
 | `ObjectValidationError` | Structured output does not match `output_type` (subclass of `StreamError`) | `validation_error` |
 
-The SDK raises plain `ValueError` or `TypeError` for invalid arguments before sending, for example both `message` and `prompt_id`, or `provider_id` without `model`.
+The SDK raises plain `ValueError` or `TypeError` for invalid arguments before sending, for example both `message` and `prompt_id`, or `provider_id` without `model`. A malformed Task `schedule` or tenant `quota` raises pydantic's `ValidationError`, a `ValueError`.
 
 ```python
 from blazing_agents import (
