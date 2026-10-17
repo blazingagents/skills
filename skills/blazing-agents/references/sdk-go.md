@@ -1,6 +1,6 @@
 # Go SDK reference
 
-Use this page to call Blazing Agents from a Go backend: install the module, build a client, run Turns, and find the method for every operation. It matches the module `github.com/blazingagents/golang-sdk` at commit `5c762cb` of the repository's main branch, the revision this skill's snippets compile against. The module has no tagged release yet, so install it by that commit's pseudo-version.
+Use this page to call Blazing Agents from a Go backend: install the module, build a client, run Turns, and find the method for every operation. It matches the module `github.com/blazingagents/golang-sdk` at v0.1.0, the release this skill's snippets compile against.
 
 For the same surface in TypeScript, Python, or Rust, read [TypeScript SDK reference](sdk-typescript.md), [Python SDK reference](sdk-python.md), or [Rust SDK reference](sdk-rust.md). For end-to-end builds, start from a recipe such as [Add chat to your app](recipes/chat-in-your-app.md).
 
@@ -11,7 +11,7 @@ The snippets on this page assume a `client` built as shown in [Construct](#const
 The module is `github.com/blazingagents/golang-sdk`, and its one package is `blazingagents`. The examples import it under the alias ba, as in `ba.NewClient()`. It needs Go 1.26 or newer and depends on the standard library only.
 
 ```bash
-go get github.com/blazingagents/golang-sdk@v0.0.0-20261017095851-5c762cba38a4
+go get github.com/blazingagents/golang-sdk@v0.1.0
 ```
 
 ```go
