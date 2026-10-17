@@ -37,7 +37,7 @@ pip install blazing-agents
 ```
 
 ```bash
-cargo add blazing-agents --git https://github.com/blazingagents/rust-sdk --rev 789a123
+cargo add blazing-agents --git https://github.com/blazingagents/rust-sdk --rev 43b14ef
 cargo add tokio --features macros,rt-multi-thread
 ```
 
