@@ -328,11 +328,11 @@ if err := client.ChatConnections.Delete(ctx, connectionID); err != nil {
 
 ## Watch for failed deliveries
 
-`chatDeliveries.list()` (Python `chat_deliveries.list()`, Rust `chat_deliveries().list()`, Go `client.ChatDeliveries.List()`) is an attention feed: it lists failed and ambiguous deliveries across every connection, newest first, optionally bounded by `since`. Use it for an operator status view; each entry carries `connectionId`, `agentId`, and `platform` so you can tell which bot is affected. BA sends a pending reply by itself, even after an interruption, so only failed and ambiguous deliveries need attention. For pending and confirmed deliveries, or to repair one, use REST: `GET /v1/chat-connections/{id}/deliveries` and `POST /v1/chat-connections/{id}/deliveries/{deliveryId}/repair`. The TypeScript and Python SDKs do not expose them; Rust has `chat_connections().deliveries()` and `repair_delivery()`, and Go has `client.ChatConnections.ListDeliveries()` and `RepairDelivery()`.
+`chatDeliveries.list()` (Python `chat_deliveries.list()`, Rust `chat_deliveries().list()`, Go `client.ChatDeliveries.List()`) is an attention feed: it lists failed and ambiguous deliveries across every connection, newest first, optionally bounded by `since`. Use it for an operator status view; each entry carries `connectionId`, `agentId`, and `platform` so you can tell which bot is affected. BA sends a pending reply by itself, even after an interruption, so only failed and ambiguous deliveries need attention. For pending and confirmed deliveries, or to repair one, use REST: `GET /v1/chat-connections/{id}/deliveries` and `POST /v1/chat-connections/{id}/deliveries/{deliveryId}/repair`. The TypeScript SDK does not expose them; Python has `chat_connections.list_deliveries()` and `repair_delivery()`, Rust has `chat_connections().deliveries()` and `repair_delivery()`, and Go has `client.ChatConnections.ListDeliveries()` and `RepairDelivery()`.
 
 ## Go deeper
 
 - [Slack and Telegram](https://docs.blazingagents.com/platform/chat-integrations)
 - [TypeScript chat connections](https://docs.blazingagents.com/sdk/typescript/chat-integrations) and [Python chat connections](https://docs.blazingagents.com/sdk/python/chat-integrations)
-- [Chat connections REST API](https://docs.blazingagents.com/api-reference/rest-api/chat-connections), including the REST-only per-connection deliveries list and repair for a finished reply that never appeared
+- [Chat connections REST API](https://docs.blazingagents.com/api-reference/rest-api/chat-connections), including the per-connection deliveries list and repair for a finished reply that never appeared
 - [Tool approvals](https://docs.blazingagents.com/agents/tools/tool-approvals)
