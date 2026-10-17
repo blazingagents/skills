@@ -18,7 +18,7 @@ cargo add futures-util
 
 ```toml
 [dependencies]
-blazing-agents = { git = "https://github.com/blazingagents/rust-sdk", rev = "789a12397333868577404b4d9bafaee89446e4d0" }
+blazing-agents = { git = "https://github.com/blazingagents/rust-sdk", rev = "c4cb1f77bd6f030f423661687a860e5c56908519" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 futures-util = "0.3"
 ```
