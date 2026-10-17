@@ -383,8 +383,8 @@ if err != nil {
 	return err
 }
 type dayUsage struct {
-	Day    *ba.Date `json:"day"`
-	Tokens int64    `json:"tokens"`
+	Day    *string `json:"day"`
+	Tokens int64   `json:"tokens"`
 }
 days := make([]dayUsage, 0, len(usage.Buckets))
 for _, bucket := range usage.Buckets {

@@ -78,8 +78,8 @@ println!("{} {}", agent.id, agent.workspace_id);
 ```go
 agent, err := client.Agents.Create(ctx, ba.CreateAgentParams{
 	Name:       "Report writer",
-	ProviderID: new(ba.ProviderID("prv_0123456789abcdef")),
-	Model:      new("openai/gpt-6-luna"),
+	ProviderID: ba.Value(ba.ProviderID("prv_0123456789abcdef")),
+	Model:      ba.Value("openai/gpt-6-luna"),
 	Instructions: new("Write reports as Markdown files. " +
 		"When a file is finished, publish it with publish_artifacts."),
 	WorkspaceTier: new(ba.WorkspaceTierPlus),
@@ -267,7 +267,7 @@ if err != nil {
 	return err
 }
 for _, artifact := range page.Data {
-	fmt.Println(artifact.ArtifactID, artifact.Filename, artifact.SizeBytes)
+	fmt.Println(artifact.ID, artifact.Filename, artifact.SizeBytes)
 }
 ```
 

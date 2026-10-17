@@ -42,7 +42,7 @@ cargo add tokio --features macros,rt-multi-thread
 ```
 
 ```bash
-go get github.com/blazingagents/golang-sdk
+go get github.com/blazingagents/golang-sdk@v0.0.0-20261017030624-3c7b00ef7385
 ```
 
 2. Check the connection. This lists the first page of Agents in your Tenant and changes nothing. A new Tenant already has 1 Agent, its admin Agent.
@@ -317,8 +317,8 @@ func main() {
 	} else {
 		agent, err = client.Agents.Create(ctx, ba.CreateAgentParams{
 			Name:       agentName,
-			ProviderID: new(providerID),
-			Model:      new("openai/gpt-6-luna"),
+			ProviderID: ba.Value(providerID),
+			Model:      ba.Value("openai/gpt-6-luna"),
 		})
 		if err != nil {
 			log.Fatal(err)

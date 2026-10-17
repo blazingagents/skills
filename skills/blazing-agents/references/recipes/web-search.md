@@ -75,8 +75,8 @@ println!("{}", agent.id);
 ```go
 agent, err := client.Agents.Create(ctx, ba.CreateAgentParams{
 	Name:       "Research assistant",
-	ProviderID: new(ba.ProviderID("prv_0123456789abcdef")),
-	Model:      new("openai/gpt-6-luna"),
+	ProviderID: ba.Value(ba.ProviderID("prv_0123456789abcdef")),
+	Model:      ba.Value("openai/gpt-6-luna"),
 	Instructions: new("Search the web only for facts that may have changed recently. " +
 		"Use at most three searches per answer. " +
 		"List the URLs you relied on at the end."),
