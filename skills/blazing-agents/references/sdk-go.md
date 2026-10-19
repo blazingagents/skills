@@ -11,7 +11,7 @@ The snippets on this page assume a `client` built as shown in [Construct](#const
 The module is `github.com/blazingagents/golang-sdk`, and its one package is `blazingagents`. The examples import it under the alias ba, as in `ba.NewClient()`. It needs Go 1.26 or newer and depends on the standard library only.
 
 ```bash
-go get github.com/blazingagents/golang-sdk@v0.2.0
+go get github.com/blazingagents/golang-sdk@v0.3.0
 ```
 
 ```go

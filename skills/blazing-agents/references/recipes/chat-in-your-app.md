@@ -21,7 +21,7 @@ npm install @blazingagents/sdk ai@^7 @ai-sdk/react zod
 # Python backend instead:
 pip install "blazing-agents>=0.17.0" fastapi uvicorn
 # Go backend instead:
-go get github.com/blazingagents/golang-sdk@v0.2.0
+go get github.com/blazingagents/golang-sdk@v0.3.0
 ```
 
 This recipe needs `@blazingagents/sdk` 0.34.0 or `blazing-agents` 0.17.0 or newer.
