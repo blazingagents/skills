@@ -18,7 +18,7 @@ cargo add futures-util
 
 ```toml
 [dependencies]
-blazing-agents = "0.2"
+blazing-agents = "0.3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 futures-util = "0.3"
 ```
