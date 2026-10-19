@@ -79,7 +79,7 @@ if err != nil {
 fmt.Println(connection.ID, connection.Status)
 ```
 
-2. If you chose `oauth_authorization_code`, finish sign-in in the dashboard. The Connection starts as `needs_auth`. A Tenant administrator opens MCP connections in the [dashboard](https://www.blazingagents.com/app), clicks **Connect**, and signs in to the server. If the server's authorization server asks for a redirect URL, register `https://api.blazingagents.com/v1/mcp/oauth/callback`. This sign-in needs a signed-in dashboard administrator, so no SDK can start it with an API key: the TypeScript and Python `connect()` method fails with `unauthorized`, and the Rust and Go SDKs have no such method.
+2. If you chose `oauth_authorization_code`, finish sign-in in the dashboard. The Connection starts as `needs_auth`. A Tenant administrator opens MCP connections in the [dashboard](https://www.blazingagents.com/app), clicks **Connect**, and signs in to the server. If the server's authorization server asks for a redirect URL, register `https://api.blazingagents.com/v1/mcp/oauth/callback`. This sign-in needs a signed-in dashboard administrator, so no SDK has a method for it, and the API answers an API key with `unauthorized`.
 
 3. Test the Connection, attach it to the Agent, and choose what end-user context the server receives. `mcpConnectionIds` replaces the Agent's whole list, so add to the current one.
 
