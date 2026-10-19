@@ -1,6 +1,6 @@
 # Python SDK reference
 
-Use this page to call Blazing Agents from a Python backend: install the package, pick a client, run Turns, and find the method for every operation. It matches `blazing-agents` 0.21.0, the floor the install command below pins. If the project pins an older version, upgrade it or check the installed package before using a method from this page.
+Use this page to call Blazing Agents from a Python backend: install the package, pick a client, run Turns, and find the method for every operation. It matches `blazing-agents` 0.28.0, the floor the install command below pins. If the project pins an older version, upgrade it or check the installed package before using a method from this page.
 
 For the same surface in TypeScript, Rust, or Go, read [TypeScript SDK reference](sdk-typescript.md), [Rust SDK reference](sdk-rust.md), or [Go SDK reference](sdk-go.md). For end-to-end builds, start from a recipe such as [Add chat to your app](recipes/chat-in-your-app.md).
 
@@ -9,9 +9,9 @@ For the same surface in TypeScript, Rust, or Go, read [TypeScript SDK reference]
 The PyPI package is `blazing-agents`. The import name is `blazing_agents`. It needs Python 3.11 or newer.
 
 ```bash
-pip install "blazing-agents>=0.21.0"
+pip install "blazing-agents>=0.28.0"
 # or
-uv add "blazing-agents>=0.21.0"
+uv add "blazing-agents>=0.28.0"
 ```
 
 Keep the Tenant API key in `BLAZING_AGENTS_API_KEY` on your backend. It can reach everything in your Tenant, so it never goes to a browser or mobile app.
@@ -241,7 +241,7 @@ Signatures below drop `extra_headers` and `timeout`, which every method accepts.
 | `get_spending_limit(agent_id)` | `SpendingLimitResponse`. Tenant client only. |
 | `update_spending_limit(agent_id, *, spending_limit)` | `SpendingLimitResponse`. `None` disables the limit. See [model spending limits](recipes/usage-dashboards.md#model-spending-limits). |
 
-`provider_id` and `model` go together on create. On update, `model` alone changes the model and `provider_id` needs `model`. `tools` is a list of built-in tool names (`AgentTool`), each listed once, such as `"read"`, `"write_todos"`, `"save_memory"`, or `"web_search"`. `AGENT_TOOLS` lists each tool with `description`, `requires_workspace`, and `tags`, and `AGENT_TOOL_GROUPS` names each group tag; `[tool.name for tool in AGENT_TOOLS if "file_read" in tool.tags]` gives the read-only file tools. See [Built-in tools](concepts.md#built-in-tools).
+`provider_id` and `model` go together on create. On update, `model` alone changes the model and `provider_id` needs `model`; the API rejects a mismatch with `validation_failed` (400). `tools` is a list of built-in tool names (`AgentTool`), each listed once, such as `"read"`, `"write_todos"`, `"save_memory"`, or `"web_search"`. `AGENT_TOOLS` lists each tool with `description`, `requires_workspace`, and `tags`, and `AGENT_TOOL_GROUPS` names each group tag; `[tool.name for tool in AGENT_TOOLS if "file_read" in tool.tags]` gives the read-only file tools. See [Built-in tools](concepts.md#built-in-tools).
 
 ### `client.agent(agent_id).skills`
 
@@ -455,7 +455,7 @@ with BlazingAgents() as client:
 ```
 
 - Supplied lists and dicts replace the old value completely. `tools`, `mcp_connection_ids`, `metadata`, and approval policies are not merged.
-- `agents.update()` with no fields raises `ValueError` before any request.
+- `agents.update()` with no fields sends the request, and the API rejects it with `APIStatusError` (400, `validation_failed`).
 - To forward optional values from your own input, build a `dict` of only the keys you have and pass it with `**`.
 
 ## Pagination
@@ -506,12 +506,13 @@ All SDK exceptions inherit from `BlazingAgentsError`. Import them from `blazing_
 | `APIStatusError` | The API returns an error status | `status_code`, `code`, `details`, `param`, `request_id`, `retry_after`, `headers`, `response_body` |
 | `APIConnectionError` | The network fails before a full response | |
 | `APITimeoutError` | The request times out (subclass of `APIConnectionError`) | |
+| `CredentialEchoError` | A Provider, MCP connection, chat connection, chat delivery, or merchant connection response carried credential material; the body was discarded | `request_id` |
 | `StreamError` | A stream fails after headers arrive, is read twice, or ends early | `status_code`, `request_id`, `retry_after`, `headers` |
 | `ObjectTruncationError` | Structured output ended with incomplete JSON (subclass of `StreamError`) | `json_error` |
 | `ObjectJSONDecodeError` | Structured output is invalid JSON (subclass of `StreamError`) | `json_error` |
 | `ObjectValidationError` | Structured output does not match `output_type` (subclass of `StreamError`) | `validation_error` |
 
-The SDK raises plain `ValueError` or `TypeError` for invalid arguments before sending, for example both `message` and `prompt_id`, or `provider_id` without `model`. A malformed Task `schedule` or tenant `quota` raises pydantic's `ValidationError`, a `ValueError`.
+The SDK raises plain `ValueError` or `TypeError` before sending only when it cannot build the request: an empty, `.` or `..` path ID, an invalid `for_user()` ID, an upload without a filename, or arguments that cannot form one request body, such as both `message` and `prompt_id`. The API checks every other rule, such as `provider_id` without `model`, an empty update, or a malformed Task `schedule` or tenant `quota`, and rejects it with `APIStatusError` (400, `validation_failed`).
 
 ```python
 from blazing_agents import (
@@ -537,7 +538,7 @@ with BlazingAgents() as client:
         print("Could not reach Blazing Agents")
 ```
 
-Response models carry the server request ID in `_request_id`. `Completion` and stream objects expose it as `request_id`. Include it when you contact support.
+`response_meta(model)` returns the HTTP `status`, server `request_id`, and `headers` of the response a client method decoded into `model`. `Completion` and stream objects expose the ID as `request_id`. Include it when you contact support.
 
 ## Gotchas
 

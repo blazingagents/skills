@@ -1,6 +1,6 @@
 # Go SDK reference
 
-Use this page to call Blazing Agents from a Go backend: install the module, build a client, run Turns, and find the method for every operation. It matches the module `github.com/blazingagents/golang-sdk` at v0.1.0, the release this skill's snippets compile against.
+Use this page to call Blazing Agents from a Go backend: install the module, build a client, run Turns, and find the method for every operation. It matches the module `github.com/blazingagents/golang-sdk` at v0.2.0, the release this skill's snippets compile against.
 
 For the same surface in TypeScript, Python, or Rust, read [TypeScript SDK reference](sdk-typescript.md), [Python SDK reference](sdk-python.md), or [Rust SDK reference](sdk-rust.md). For end-to-end builds, start from a recipe such as [Add chat to your app](recipes/chat-in-your-app.md).
 
@@ -11,7 +11,7 @@ The snippets on this page assume a `client` built as shown in [Construct](#const
 The module is `github.com/blazingagents/golang-sdk`, and its one package is `blazingagents`. The examples import it under the alias ba, as in `ba.NewClient()`. It needs Go 1.26 or newer and depends on the standard library only.
 
 ```bash
-go get github.com/blazingagents/golang-sdk@v0.1.0
+go get github.com/blazingagents/golang-sdk@v0.2.0
 ```
 
 ```go
@@ -293,7 +293,7 @@ Every method is `(ctx, <path IDs>, params, opts...)`; only the arguments after `
 | `ListMCPAttachments(agentID)` | `[]ba.MCPAttachment` |
 | `UpdateMCPAttachment(agentID, mcpConnectionID, ba.UpdateMCPAttachmentParams{ForwardUserID, ForwardedMetadataKeys})` | `*ba.MCPAttachment` |
 
-On `Create` and `Update`, `ProviderID` and `Model` are `ba.Nullable`. On `Create`, both are omitted, both set with `ba.Value(...)`, or both `ba.Null`. On `Update`, `ba.Value(...)` on both changes Provider and model, `ba.Value` on `Model` alone changes only the model, and `ba.Null` on both clears the model (the SDK then also clears the thinking level). A mismatch fails with `*ba.ArgumentError` before anything is sent, as does `WorkspaceID` together with `WorkspaceTier` on `Create`. `Tools` is `[]ba.AgentTool` values, each listed once, such as `ba.AgentToolRead`, `ba.AgentToolWriteTodos`, `ba.AgentToolSaveMemory`, or `ba.AgentToolWebSearch`; `nil` leaves the list unchanged and `[]ba.AgentTool{}` clears it. Agent spending limits live on `client.SpendingLimits`. See [Built-in tools](concepts.md#built-in-tools).
+On `Create` and `Update`, `ProviderID` and `Model` are `ba.Nullable`. On `Create`, both are omitted, both set with `ba.Value(...)`, or both `ba.Null`. On `Update`, `ba.Value(...)` on both changes Provider and model, `ba.Value` on `Model` alone changes only the model, and `ba.Null` on both clears the model (the SDK then also clears the thinking level). A mismatch fails with `*ba.ArgumentError` before anything is sent, as does `WorkspaceID` together with `WorkspaceTier` on `Create`. `Tools` is `[]ba.AgentTool` values, each listed once, such as `ba.AgentToolRead`, `ba.AgentToolWriteTodos`, `ba.AgentToolSaveMemory`, or `ba.AgentToolWebSearch`; `nil` leaves the list unchanged and `[]ba.AgentTool{}` clears it. `ba.AgentTools` lists each tool with `Description`, `RequiresWorkspace`, `Group` (a `ba.AgentToolGroupTag`), and `FileAccess` (a `ba.AgentToolFileAccessTag` on file tools, otherwise `""`), and `ba.AgentToolGroups` names each group; filter on `tool.FileAccess == ba.AgentToolFileAccessTagFileRead` for the read-only file tools. Agent spending limits live on `client.SpendingLimits`. See [Built-in tools](concepts.md#built-in-tools).
 
 ### `client.Skills` (both clients)
 

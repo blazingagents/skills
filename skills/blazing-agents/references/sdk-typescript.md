@@ -4,7 +4,7 @@ Use this page to write backend TypeScript that calls Blazing Agents: install the
 client, run chat, text, and structured output, call every resource method, page
 through lists, handle errors, and connect `useChat` to your own backend.
 
-This page matches `@blazingagents/sdk` 0.27.0. If the project pins an older
+This page matches `@blazingagents/sdk` 0.36.0. If the project pins an older
 version, upgrade it or check the installed types before using a method from
 this page.
 
@@ -92,7 +92,8 @@ const usage = await user.usage.sessions({ sessionIds: [sessionId] });
 ```
 
 `userId` must be printable ASCII, at most 256 characters, with no leading or
-trailing spaces. Authenticate before creating the scoped view; the Tenant API
+trailing spaces; anything else throws `BlazingAgentsError` with code
+`invalid_request`. Authenticate before creating the scoped view; the Tenant API
 key remains on the backend.
 
 ## Generate output
@@ -387,7 +388,6 @@ A `SessionInput` is a steer receipt: `requestId`, `sequence`, `message`, `state`
 | `update({ mcpConnectionId, ...body })` | `PATCH /v1/mcp-connections/{mcpConnectionId}` | `McpConnectionResponse` |
 | `delete({ mcpConnectionId })` | `DELETE /v1/mcp-connections/{mcpConnectionId}` | `void` |
 | `test({ mcpConnectionId })` | `POST /v1/mcp-connections/{mcpConnectionId}/test` | `McpConnectionTestResponse`, discriminated on `ok`. |
-| `connect({ mcpConnectionId })` | `POST /v1/mcp-connections/{mcpConnectionId}/connect` | `McpConnectionOauthConnectResponse`. Starts OAuth. |
 | `reconnect({ mcpConnectionId, ...body })` | `POST /v1/mcp-connections/{mcpConnectionId}/reconnect` | `McpConnectionReconnectResult`. Replaces credentials. |
 
 ### `client.chatConnections` (Slack and Telegram)
@@ -532,6 +532,7 @@ SDK-local codes:
 
 | Code | When |
 | --- | --- |
+| `credential_echo` | A Provider, MCP connection, chat connection, chat delivery, or merchant connection response contained a credential field. `details.field` names it; the body is discarded. |
 | `network_error` | `fetch` threw before any HTTP response. |
 | `request_aborted` | Your `abortSignal` fired. |
 | `invalid_response` | The server response did not match the expected shape. |

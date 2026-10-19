@@ -1,6 +1,6 @@
 # Rust SDK reference
 
-Use this page to call Blazing Agents from a Rust backend: install the crate, build a client, run Turns, and find the method for every operation. It matches the `blazing-agents` crate at 0.1.0 on crates.io, the release this skill's snippets compile against.
+Use this page to call Blazing Agents from a Rust backend: install the crate, build a client, run Turns, and find the method for every operation. It matches the `blazing-agents` crate at 0.2.0 on crates.io, the release this skill's snippets compile against.
 
 For the same surface in Python, TypeScript, or Go, read [Python SDK reference](sdk-python.md), [TypeScript SDK reference](sdk-typescript.md), or [Go SDK reference](sdk-go.md). For end-to-end builds, start from a recipe such as [Add chat to your app](recipes/chat-in-your-app.md).
 
@@ -18,7 +18,7 @@ cargo add futures-util
 
 ```toml
 [dependencies]
-blazing-agents = "0.1"
+blazing-agents = "0.2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 futures-util = "0.3"
 ```
@@ -304,7 +304,7 @@ Required inputs are arguments; optional inputs are setters on the returned `Call
 | `update_mcp_attachment(agent_id, mcp_connection_id)`, `.forward_user_id(...)`, `.forwarded_metadata_keys(...)` | `McpAttachment` |
 | `get_spending_limit(agent_id)` / `update_spending_limit(agent_id, Option<SpendingLimitInput>)` | `SpendingLimitStatus`. `None` disables the limit. Tenant client only. See [model spending limits](recipes/usage-dashboards.md#model-spending-limits) |
 
-`.model(provider_id, model)` sets both together on create. On update, `.model_on_current_provider(model)` changes only the model and `.model(provider_id, model)` changes Provider and model. `tools` is `AgentTool` values, each listed once, such as `AgentTool::Read`, `AgentTool::WriteTodos`, `AgentTool::SaveMemory`, or `AgentTool::WebSearch`. `agents::AGENT_TOOLS` lists each tool with `description`, `requires_workspace`, `group` (an `AgentToolGroupTag`), and `file_access` (`Some(AgentToolFileAccessTag)` on file tools, otherwise `None`), and `agents::AGENT_TOOL_GROUPS` names each group; filter on `tool.file_access == Some(AgentToolFileAccessTag::FileRead)` for the read-only file tools. An approval override names a tool with `ToolReference::builtin(...)`, which takes an `AgentTool` or `BuiltinToolName::ActivateSkill`. See [Built-in tools](concepts.md#built-in-tools).
+`.model(provider_id, model)` sets both together on create. On update, `.model_on_current_provider(model)` changes only the model and `.model(provider_id, model)` changes Provider and model. `tools` is `AgentTool` values, each listed once, such as `AgentTool::Read`, `AgentTool::WriteTodos`, `AgentTool::SaveMemory`, or `AgentTool::WebSearch`. `agent_tools::AGENT_TOOLS` lists each tool with `description`, `requires_workspace`, `group` (an `AgentToolGroupTag`), and `file_access` (`Some(AgentToolFileAccessTag)` on file tools, otherwise `None`), and `agent_tools::AGENT_TOOL_GROUPS` names each group; filter on `tool.file_access == Some(AgentToolFileAccessTag::FileRead)` for the read-only file tools. An approval override names a tool with `ToolReference::builtin(...)`, which takes an `AgentTool` or `agent_tools::BuiltinToolName::ActivateSkill`. See [Built-in tools](concepts.md#built-in-tools).
 
 ### `client.agent(agent_id).skills()`
 
