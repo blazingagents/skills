@@ -109,9 +109,9 @@ checksum = "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
 
 [[package]]
 name = "blazing-agents"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d1e90ff63478d76b721ce0ec88e7ccc175b185519cce64f3dc8f2d83ad2236d9"
+checksum = "31fad7b2836927048249dda25f69dfde99db14f9d9092ffa78e080d29f0d4697"
 dependencies = [
  "bytes",
  "futures-core",
