@@ -42,7 +42,7 @@ cargo add tokio --features macros,rt-multi-thread
 ```
 
 ```bash
-go get github.com/blazingagents/golang-sdk@v0.1.0
+go get github.com/blazingagents/golang-sdk@v0.2.0
 ```
 
 2. Check the connection. This lists the first page of Agents in your Tenant and changes nothing. A new Tenant already has 1 Agent, its admin Agent.

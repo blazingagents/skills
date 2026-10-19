@@ -113,7 +113,7 @@ The `Authorization` header is missing, or the key in it is revoked, expired, or 
 
 - Check that your backend reads `BLAZING_AGENTS_API_KEY` from the environment you expect, and that the full `ba_...` value was copied.
 - Create a new key in the dashboard at `https://www.blazingagents.com/app/keys`, deploy it, then revoke the old one. Blazing Agents cannot show an existing key again.
-- Dashboard-only operations, such as creating API keys, starting checkout, or `mcpConnections.connect()`, also return `unauthorized` with an API key. Do those in the dashboard.
+- Dashboard-only operations, such as creating API keys, starting checkout, or starting OAuth sign-in for an MCP connection, also return `unauthorized` with an API key. Do those in the dashboard.
 - Retrying unchanged fails the same way.
 
 ## 403 responses
@@ -277,7 +277,7 @@ if !test.OK {
 }
 ```
 
-- `needs_auth`: a tenant administrator opens the MCP connections page in the dashboard and clicks **Connect** to sign in. An API key cannot start this sign-in; `connect()` with an API key returns `unauthorized`.
+- `needs_auth`: a tenant administrator opens the MCP connections page in the dashboard and clicks **Connect** to sign in. An API key cannot start this sign-in, and no SDK has a method for it.
 - `MCP_CONNECTION_AUTHENTICATION_FAILED`: the server rejected the token or client secret. Get a new one and call `reconnect()`.
 - `MCP_CONNECTION_UNREACHABLE` or `MCP_CONNECTION_DISCOVERY_FAILED`: check that the server is up, reachable from the public internet, and implements tool listing.
 - To keep the Agent working while you fix it, remove the connection from the Agent's `mcpConnectionIds`. The list you send replaces the whole list.

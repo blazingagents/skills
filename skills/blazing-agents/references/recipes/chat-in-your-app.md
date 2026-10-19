@@ -21,10 +21,10 @@ npm install @blazingagents/sdk ai@^7 @ai-sdk/react zod
 # Python backend instead:
 pip install "blazing-agents>=0.17.0" fastapi uvicorn
 # Go backend instead:
-go get github.com/blazingagents/golang-sdk@v0.1.0
+go get github.com/blazingagents/golang-sdk@v0.2.0
 ```
 
-This recipe needs `@blazingagents/sdk` 0.23.0 or `blazing-agents` 0.17.0 or newer.
+This recipe needs `@blazingagents/sdk` 0.34.0 or `blazing-agents` 0.17.0 or newer.
 
 2. Add the backend. `chat` relays one Turn and `history` returns a Session's saved messages. Mount them as `POST /api/chat` and `GET /api/chat/history` in your framework. In the Next.js App Router, export them as `POST` and `GET` handlers. In Hono, call `chat(c.req.raw)`. Authenticate the user, select their Agent in backend code, validate the request body, then call the scoped client. `sessions.messages()` returns the native UIMessage page. Return its cursors with the messages for older-history controls.
 
