@@ -92,8 +92,10 @@ A private file system and shell (`/workspace`) attached to an agent. Several age
 
 Pick the tier when the workspace is created; it never changes:
 
-- **Core** (default, 1 GiB memory). Files are lost when the workspace stops. Use it for scratch work inside one conversation.
+- **Core** (default, 256 MiB memory, about 1.6 GB free disk). Files are lost when the workspace stops. Use it for scratch work inside one conversation.
 - **Plus** (4 GiB memory). Files are saved when the workspace stops while idle and come back on the next start. Use it when a later Session or Task run must find the files. Running processes do not come back, and a crash loses changes since the last idle stop. Saved files are discarded after 29 days without use.
+
+Both tiers start with Python 3.13, Node.js 24 with `tsc`, and common shell tools (bash, git, curl, jq, ripgrep, zip). There is no Go toolchain or C compiler; the agent installs anything else itself, and on Core it reinstalls after every stop.
 
 Creating an agent without `workspaceId` gives it a new Core workspace. Pass `workspaceTier: "plus"` (`workspace_tier` in Python, `.workspace_tier(workspaces::WorkspaceTier::Plus)` in Rust, `WorkspaceTier: new(ba.WorkspaceTierPlus)` in Go) to get Plus; it cannot be combined with `workspaceId`. To change tier, create a new workspace and attach it; files are not copied. Plus is a convenience, not storage: a failed save also starts the next run empty. Anything your app or users must keep belongs in an Artifact.
 
