@@ -7,7 +7,7 @@
  * each fragment's stdlib imports.
  *
  * To check against an unreleased SDK, point SNIPPETS_TYPESCRIPT_SDK at a tarball
- * or SNIPPETS_PYTHON_SDK at a wheel, such as one `rig run sdk:pack` built. The
+ * or SNIPPETS_PYTHON_SDK at a wheel, such as one `just sdk-pack` in ba-platform built. The
  * tarball is installed without saving; the next `npm ci --prefix snippets`
  * restores the pin.
  */
@@ -149,7 +149,7 @@ if (tsFiles.length) {
   if (tsc.status && !failures) failures++;
 }
 
-/** The pinned wheel, which `rig run sdk:pin` moves, unless SNIPPETS_PYTHON_SDK names another. */
+/** The pinned wheel, which `just sdk-pin` moves, unless SNIPPETS_PYTHON_SDK names another. */
 function pythonSdk() {
   const sdk = process.env.SNIPPETS_PYTHON_SDK;
   if (!sdk) return join(snippets, "vendor/blazing_agents-0.29.0-py3-none-any.whl");
