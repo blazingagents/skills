@@ -19,7 +19,7 @@ import {
 } from "../scripts/markdown.mjs";
 
 const root = resolve(import.meta.dirname, "..");
-/** The wheel `rig run sdk:pin` pins in `scripts/check-snippets.mjs`. */
+/** The wheel `just sdk-pin` pins in `scripts/check-snippets.mjs`. */
 const pinnedWheel = readFileSync(
   join(root, "scripts/check-snippets.mjs"),
   "utf8"
