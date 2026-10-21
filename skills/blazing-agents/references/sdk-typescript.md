@@ -451,7 +451,7 @@ These bill your own customers through your Polar or Dodo account.
 | `merchantConnection.create(body)` | `POST /v1/merchant-connection` | `MerchantConnectionResponse`. One per Tenant. |
 | `merchantConnection.get()` | `GET /v1/merchant-connection` | `MerchantConnectionResponse` |
 | `merchantConnection.update(body)` | `PATCH /v1/merchant-connection` | `MerchantConnectionResponse` |
-| `merchantConnection.retire()` | `DELETE /v1/merchant-connection` | `void`. Deliveries stop. |
+| `merchantConnection.retire()` | `DELETE /v1/merchant-connection` | `void`. New usage is no longer recorded against it. Recorded events keep being delivered; the credential is deleted once none can still be delivered or retried. |
 | `merchantBindings.list({ userId?, cursor?, limit? })` | `GET /v1/merchant-connection/bindings` | `{ bindings, nextCursor }` |
 | `merchantBindings.put({ userId, ...body })` | `PUT /v1/merchant-connection/bindings/{userId}` | `MerchantBindingResponse` |
 | `merchantBindings.delete({ userId })` | `DELETE /v1/merchant-connection/bindings/{userId}` | `void` |

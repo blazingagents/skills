@@ -483,7 +483,7 @@ Monetization: bill your end users through your own Polar or Dodo account. Setup,
 | `merchant_connection().get()` | `Option<MerchantConnection>` |
 | `merchant_connection().create(MerchantProvider, MerchantEnvironment, credential)`, `.guard(...)` | `MerchantConnection`. `MerchantProvider::Polar` or `Dodo`; `MerchantEnvironment::Sandbox` or `Live` |
 | `merchant_connection().update()`, `.credential(...)`, `.status(...)`, `.guard(...)` | `MerchantConnection` |
-| `merchant_connection().retire()` | `()`. Stops deliveries |
+| `merchant_connection().retire()` | `()`. New usage is no longer recorded against it. Recorded events keep being delivered; the credential is deleted once none can still be delivered or retried. |
 | `merchant_bindings().list()`, `.user_id(...)`, `.limit(...)` | `BindingsPage`. Fails `merchant_connection_not_found` when there is no connection |
 | `merchant_bindings().put(user_id, customer_id)` | `MerchantBinding`. The API checks the customer exists at the provider |
 | `merchant_bindings().delete(user_id)` | `()` |
