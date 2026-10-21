@@ -473,9 +473,9 @@ Monetization: bill your end users through your own Polar or Dodo account. Setup,
 | Method | Returns |
 | --- | --- |
 | `MerchantConnection.Get()` | `*ba.MerchantConnection`, or `nil, nil` when there is none: the one method where a successful call returns no model |
-| `MerchantConnection.Create(ba.CreateMerchantConnectionParams{Provider, Environment, Credential, Guard})` | `*ba.MerchantConnection`. `ba.MerchantProviderPolar` or `Dodo`; `ba.MerchantEnvironmentSandbox` or `Live` |
+| `MerchantConnection.Create(ba.CreateMerchantConnectionParams{Provider, Environment, Credential, Guard})` | `*ba.MerchantConnection`. `ba.MerchantProviderPolar` or `Dodo`; `ba.MerchantEnvironmentSandbox` or `Live`. Replaces the current connection; fails `merchant_connection_in_use` while a request admitted on it is still running |
 | `MerchantConnection.Update(ba.UpdateMerchantConnectionParams{Credential, Status, Guard})` | `*ba.MerchantConnection` |
-| `MerchantConnection.Retire()` | `error`. Stops deliveries |
+| `MerchantConnection.Retire()` | `error`. New usage is no longer recorded against it. Recorded events keep being delivered; the credential is deleted once none can still be delivered or retried. Fails `merchant_connection_in_use` (409) while a request admitted on the connection is still running. |
 | `MerchantBindings.List(ba.ListMerchantBindingsParams{UserID, Limit, Cursor})` / `All(...)` | `*ba.MerchantBindingList`. Fails `merchant_connection_not_found` when there is no connection |
 | `MerchantBindings.Set(userID string, ba.SetMerchantBindingParams{CustomerID})` | `*ba.MerchantBinding`. The API checks the customer exists at the provider |
 | `MerchantBindings.Delete(userID string)` | `error` |
