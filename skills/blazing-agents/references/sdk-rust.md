@@ -481,9 +481,9 @@ Monetization: bill your end users through your own Polar or Dodo account. Setup,
 | Method | Returns |
 | --- | --- |
 | `merchant_connection().get()` | `Option<MerchantConnection>` |
-| `merchant_connection().create(MerchantProvider, MerchantEnvironment, credential)`, `.guard(...)` | `MerchantConnection`. `MerchantProvider::Polar` or `Dodo`; `MerchantEnvironment::Sandbox` or `Live` |
+| `merchant_connection().create(MerchantProvider, MerchantEnvironment, credential)`, `.guard(...)` | `MerchantConnection`. `MerchantProvider::Polar` or `Dodo`; `MerchantEnvironment::Sandbox` or `Live`. Replaces the current connection; fails `merchant_connection_in_use` while a request admitted on it is still running |
 | `merchant_connection().update()`, `.credential(...)`, `.status(...)`, `.guard(...)` | `MerchantConnection` |
-| `merchant_connection().retire()` | `()`. New usage is no longer recorded against it. Recorded events keep being delivered; the credential is deleted once none can still be delivered or retried. |
+| `merchant_connection().retire()` | `()`. New usage is no longer recorded against it. Recorded events keep being delivered; the credential is deleted once none can still be delivered or retried. Fails `merchant_connection_in_use` (409) while a request admitted on the connection is still running. |
 | `merchant_bindings().list()`, `.user_id(...)`, `.limit(...)` | `BindingsPage`. Fails `merchant_connection_not_found` when there is no connection |
 | `merchant_bindings().put(user_id, customer_id)` | `MerchantBinding`. The API checks the customer exists at the provider |
 | `merchant_bindings().delete(user_id)` | `()` |

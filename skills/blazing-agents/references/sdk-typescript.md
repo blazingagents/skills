@@ -448,10 +448,10 @@ These bill your own customers through your Polar or Dodo account.
 
 | Method | HTTP | Returns / notes |
 | --- | --- | --- |
-| `merchantConnection.create(body)` | `POST /v1/merchant-connection` | `MerchantConnectionResponse`. One per Tenant. |
+| `merchantConnection.create(body)` | `POST /v1/merchant-connection` | `MerchantConnectionResponse`. One per Tenant; creating replaces the current connection and fails `merchant_connection_in_use` while a request admitted on it is still running. |
 | `merchantConnection.get()` | `GET /v1/merchant-connection` | `MerchantConnectionResponse` |
 | `merchantConnection.update(body)` | `PATCH /v1/merchant-connection` | `MerchantConnectionResponse` |
-| `merchantConnection.retire()` | `DELETE /v1/merchant-connection` | `void`. New usage is no longer recorded against it. Recorded events keep being delivered; the credential is deleted once none can still be delivered or retried. |
+| `merchantConnection.retire()` | `DELETE /v1/merchant-connection` | `void`. New usage is no longer recorded against it. Recorded events keep being delivered; the credential is deleted once none can still be delivered or retried. Fails `merchant_connection_in_use` (409) while a request admitted on the connection is still running. |
 | `merchantBindings.list({ userId?, cursor?, limit? })` | `GET /v1/merchant-connection/bindings` | `{ bindings, nextCursor }` |
 | `merchantBindings.put({ userId, ...body })` | `PUT /v1/merchant-connection/bindings/{userId}` | `MerchantBindingResponse` |
 | `merchantBindings.delete({ userId })` | `DELETE /v1/merchant-connection/bindings/{userId}` | `void` |
