@@ -105,12 +105,13 @@ For Telegram, pass `platform: "telegram"`, `credentials: { botToken }`, and opti
 
 ```text
 Slack:
-  - Bot scopes: app_mentions:read, chat:write, channels:history, groups:history,
-    im:history, mpim:history, users:read, channels:read, groups:read, im:read,
-    mpim:read. Reinstall the app after changing scopes.
+  - Bot scopes: chat:write, channels:history, groups:history, im:history,
+    mpim:history, users:read, channels:read, groups:read, im:read, mpim:read.
+    Reinstall the app after changing scopes.
   - Set BOTH Event Subscriptions and Interactivity Request URL to webhookUrl.
     Slack's URL check passes while the connection is disabled.
-  - Subscribe to app_mention, message.channels, message.groups, message.im, message.mpim.
+  - Subscribe to message.channels, message.groups, message.im, message.mpim.
+    A mention arrives as a message event; app_mention is not needed and is ignored.
   - Invite the bot to each channel it should serve.
 Telegram:
   - Nothing to paste. BA registers webhookUrl when you enable the connection.
@@ -313,7 +314,11 @@ if err := client.ChatConnections.Delete(ctx, connectionID); err != nil {
 - A health check `status` of `unknown` means BA could not tell. Verify that platform setting by hand.
 - The bot stays silent. Confirm the connection and its Agent are both enabled, your plan is active, and the bot is in the channel, then run a fresh health check. See [Troubleshooting](../troubleshooting.md#chat-connection-health-unknown).
 - `create()` for the Admin Agent fails with `admin_agent_managed` (409), and the dashboard leaves the Admin Agent out of the bot form. Connect one of your own Agents.
-- If a Turn fails or stops before BA saves its reply, for example after a model error, a refused Turn, or an interruption inside BA such as a deploy, the bot posts "Your message was received, but the reply was interrupted before it was saved. Please send it again." BA does not run the Turn again, because Tools may already have run. An interrupted approval round says the action was interrupted and asks the user to ask again.
+- If BA refuses a Turn before it starts, nothing runs and the bot tells the user why in plain words chosen by the Turn's error code: for example `agent_disabled`, `provider_required`, `subscription_required`, `usage_credit_required`, `model_spending_limit_exceeded`, `quota_exceeded`, `rate_limited`, or the end user's `merchant_subscription_required` and `merchant_balance_required`. Account and setup reasons ask the user to contact your team, so fix the cause rather than telling users to resend. A refused approval round is cancelled.
+- If a Turn fails or stops after it starts and before BA saves its reply, for example after a model error or an interruption inside BA such as a deploy, the bot posts "Your message was received, but the reply was interrupted before it was saved. Please send it again." BA does not run the Turn again, because Tools may already have run. An interrupted approval round says the action was interrupted and asks the user to ask again.
+- If something else keeps the conversation busy for about two minutes, such as a long Turn your backend started through the API on that Session, the bot says "I'm still working on your previous message. Send this again once I've replied." and does not run the message.
+- Messages from bots are ignored, your own bot's included, even when they mention your bot. Another bot cannot start or continue a conversation. Telegram shows anonymous group admins and members posting as a channel as bot accounts, so their messages are ignored too.
+- Replies are posted exactly as the Agent writes them. In Slack, a mention such as `<!channel>`, a link, or formatting in a reply takes effect, so instruct the Agent how to format replies and remember that content it reads can steer what it writes. Approval cards show Tool input as plain text.
 - A message sent while a Tool approval waits for its decision is not run. The bot says the request must be approved or rejected first, and the user sends the message again after deciding, or sends `/new` if the request is lost.
 - A message with no text, such as a photo without a caption, is ignored. In a channel, a message that does not mention the bot is answered only in a thread the bot is already part of.
 - `/new` in a chat starts a new conversation at once, even while the current one is answering. Send `/new` in a Telegram private chat, `/new@BotName` in a Telegram group, or `@bot /new` in a Slack channel, because Slack never delivers a bare `/new` to the bot. The old Session stays in history. After you delete a conversation's Session, the next message that addresses the bot starts a new conversation without `/new`. Any other slash command, such as Telegram's `/start`, reaches the Agent as an ordinary message.
