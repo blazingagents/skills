@@ -11,9 +11,11 @@ If you instead want chat inside your own web or mobile app, read [Add chat to yo
 
 A Chat Connection links one bot to one Agent. You create it from your backend with the bot's credentials, and BA returns a `webhookUrl` that the platform must send events to. For Slack you paste that URL into your Slack app. For Telegram, BA registers it with Telegram when you enable the connection. Each direct message, shared thread, and Telegram forum topic gets its own Session. The connection's Agent and bot are fixed; to change either, create a new connection.
 
-BA answers one message at a time in each conversation, in arrival order. A message sent while the Agent is answering waits and is answered next, and nothing is dropped. Different conversations, including different Telegram forum topics, do not wait for each other. If the platform redelivers an event, the Agent answers once. In a Telegram private chat the reply appears as a draft that grows while the Agent works, then as the final message. Slack and group chats show only the final message.
+A message sent while the Agent is answering is steered into that answer, and one reply covers both (see Gotchas for the exceptions). Different conversations, including different Telegram forum topics, do not wait for each other. If the platform redelivers an event, the Agent answers once. In a Telegram private chat the reply appears as a draft that grows while the Agent works, then as the final message. Slack and group chats show only the final message.
 
 ## Build it
+
+For a Python, Rust, or Go backend, read the code for these steps in [Python](slack-and-telegram.python.md), [Rust](slack-and-telegram.rust.md), [Go](slack-and-telegram.go.md).
 
 1. Create the connection with intake disabled, so no message arrives before setup is done. Save the returned `id` and `webhookUrl` in your config; neither is secret.
 
@@ -38,65 +40,6 @@ const connection = await client.chatConnections.create({
   configuration: { channelIds: ["C0123456789"] },
 });
 console.log(connection.id, connection.webhookUrl);
-```
-
-```python
-import os
-
-from blazing_agents import BlazingAgents
-
-client = BlazingAgents()
-
-connection = client.chat_connections.create(
-    name="Support on Slack",
-    agent_id="ag_0123456789abcdef",
-    platform="slack",
-    enabled=False,
-    credentials={
-        "bot_token": os.environ["SLACK_BOT_TOKEN"],
-        "signing_secret": os.environ["SLACK_SIGNING_SECRET"],
-    },
-    configuration={"channel_ids": ["C0123456789"]},
-)
-print(connection.id, connection.webhook_url)
-```
-
-```rust
-use blazing_agents::chat_connections::{NewSlackConnection, SlackCredentials};
-
-let connection = client
-    .chat_connections()
-    .create(
-        NewSlackConnection::new(
-            "ag_0123456789abcdef",
-            "Support on Slack",
-            SlackCredentials::new(
-                std::env::var("SLACK_BOT_TOKEN")?,
-                std::env::var("SLACK_SIGNING_SECRET")?,
-            ),
-        )
-        .enabled(false)
-        .channel_ids(["C0123456789"]),
-    )
-    .await?;
-println!("{} {}", connection.id, connection.webhook_url);
-```
-
-```go
-connection, err := client.ChatConnections.Create(ctx, ba.SlackConnection{
-	AgentID:    agentID,
-	Name:       "Support on Slack",
-	Enabled:    new(false),
-	ChannelIDs: []string{"C0123456789"},
-	Credentials: ba.SlackCredentials{
-		BotToken:      ba.NewSecret(os.Getenv("SLACK_BOT_TOKEN")),
-		SigningSecret: ba.NewSecret(os.Getenv("SLACK_SIGNING_SECRET")),
-	},
-})
-if err != nil {
-	return err
-}
-fmt.Println(connection.ID, connection.WebhookURL)
 ```
 
 For Telegram, pass `platform: "telegram"`, `credentials: { botToken }`, and optionally `configuration: { chatIds, businessMode }`. Set `businessMode: true` only for a Telegram Business bot.
@@ -138,77 +81,6 @@ const webhook = health.checks.find(({ code }) => code === "webhook_url");
 if (webhook?.status !== "pass") console.warn("Webhook not confirmed", health.checks);
 ```
 
-```python
-from blazing_agents import BlazingAgents
-
-
-def go_live(client: BlazingAgents, chat_connection_id: str) -> None:
-    before = client.chat_connections.check_health(chat_connection_id)
-    if not (before.health.token_valid and before.health.identity_verified):
-        raise RuntimeError("Bot credentials rejected; fix them before enabling")
-
-    client.chat_connections.enable(chat_connection_id)
-
-    health = client.chat_connections.check_health(chat_connection_id).health
-    webhook = next((c for c in health.checks if c.code == "webhook_url"), None)
-    if webhook is None or webhook.status != "pass":
-        print("Webhook not confirmed", health.checks)
-```
-
-```rust
-use blazing_agents::chat_connections::ChatHealthCheckStatus;
-
-let chat_connection_id = "cc_0123456789abcdef";
-let before = client
-    .chat_connections()
-    .check_health(chat_connection_id)
-    .await?;
-if !(before.health.token_valid && before.health.identity_verified) {
-    return Err("Bot credentials rejected; fix them before enabling".into());
-}
-
-client.chat_connections().enable(chat_connection_id).await?;
-
-let health = client
-    .chat_connections()
-    .check_health(chat_connection_id)
-    .await?
-    .health;
-let webhook = health.checks.iter().find(|check| check.code == "webhook_url");
-if webhook.is_none_or(|check| check.status != ChatHealthCheckStatus::Pass) {
-    println!("Webhook not confirmed {:?}", health.checks);
-}
-```
-
-```go
-connectionID := ba.ChatConnectionID("cc_0123456789abcdef")
-before, err := client.ChatConnections.CheckHealth(ctx, connectionID)
-if err != nil {
-	return err
-}
-if !before.Health.TokenValid || !before.Health.IdentityVerified {
-	return errors.New("bot credentials rejected; fix them before enabling")
-}
-
-if _, err := client.ChatConnections.Enable(ctx, connectionID); err != nil {
-	return err
-}
-
-after, err := client.ChatConnections.CheckHealth(ctx, connectionID)
-if err != nil {
-	return err
-}
-webhookConfirmed := false
-for _, check := range after.Health.Checks {
-	if check.Code == "webhook_url" && check.Status == ba.ChatHealthCheckStatusPass {
-		webhookConfirmed = true
-	}
-}
-if !webhookConfirmed {
-	fmt.Println("Webhook not confirmed", after.Health.Checks)
-}
-```
-
 4. Rotate credentials by sending the complete set for the same bot or Slack installation. Sessions stay attached.
 
 ```ts
@@ -226,40 +98,6 @@ const rotated = await client.chatConnections.rotateCredentials({
 console.log(rotated.credentialVersion, rotated.credentialFragment);
 ```
 
-```python
-from blazing_agents import BlazingAgents
-
-
-def rotate(client: BlazingAgents, chat_connection_id: str, new_bot_token: str) -> None:
-    rotated = client.chat_connections.rotate_credentials(
-        chat_connection_id,
-        platform="telegram",
-        credentials={"bot_token": new_bot_token},
-    )
-    print(rotated.credential_version, rotated.credential_fragment)
-```
-
-```rust
-use blazing_agents::chat_connections::ChatCredentials;
-
-let new_bot_token = "123456:telegram-token";
-let rotated = client
-    .chat_connections()
-    .rotate_credentials("cc_0123456789abcdef", ChatCredentials::telegram(new_bot_token))
-    .await?;
-println!("{} {}", rotated.credential_version, rotated.credential_fragment);
-```
-
-```go
-newBotToken := "123456:telegram-token"
-rotated, err := client.ChatConnections.RotateCredentials(ctx, ba.ChatConnectionID("cc_0123456789abcdef"),
-	ba.TelegramCredentials{BotToken: ba.NewSecret(newBotToken)})
-if err != nil {
-	return err
-}
-fmt.Println(rotated.CredentialVersion, rotated.CredentialFragment)
-```
-
 5. Pause or remove the connection. `disable()` stops new messages and approval clicks; work already running may finish, and missed messages are not replayed on `enable()`. `delete()` disconnects the bot and keeps its Sessions readable. BA clears the Telegram webhook it set; uninstall a Slack app yourself.
 
 ```ts
@@ -272,40 +110,11 @@ await client.chatConnections.disable({ chatConnectionId });
 await client.chatConnections.delete({ chatConnectionId });
 ```
 
-```python
-from blazing_agents import BlazingAgents
-
-
-def remove(client: BlazingAgents, chat_connection_id: str) -> None:
-    client.chat_connections.disable(chat_connection_id)
-    client.chat_connections.delete(chat_connection_id)
-```
-
-```rust
-let chat_connection_id = "cc_0123456789abcdef";
-client
-    .chat_connections()
-    .disable(chat_connection_id)
-    .await?;
-client
-    .chat_connections()
-    .delete(chat_connection_id)
-    .await?;
-```
-
-```go
-connectionID := ba.ChatConnectionID("cc_0123456789abcdef")
-if _, err := client.ChatConnections.Disable(ctx, connectionID); err != nil {
-	return err
-}
-if err := client.ChatConnections.Delete(ctx, connectionID); err != nil {
-	return err
-}
-```
-
 ## Gotchas
 
 - Anyone who can reach the bot can talk to it, and anyone who can see an approval card can approve or deny it. Choose where you add the bot and which Tools need approval (`approvalInChat` on the Agent) with that in mind.
+- Bot Turns run with full authority and no End-user scope, so give the Agent only Tools that are safe for every participant. Each conversation's Session `userId` is a JSON array naming the platform, the connection, and the person in a direct message, but the thread in a shared conversation. Per-user usage, billing, and MCP `userId` forwarding therefore see one user per thread. All conversations share the Agent's Workspace files.
+- Disabling the connection or rotating its credentials does not stop a running Turn: it finishes and keeps its reply in the Session, but the bot posts neither the reply nor its approval cards, and messages waiting behind it in that conversation are dropped without a notice. Do both when conversations are quiet.
 - `channelIds` and `chatIds` only tell health checks where to look. They are not allowlists.
 - If `create()` times out, `list()` connections before retrying so you do not create two.
 - Enabling a Telegram bot that already points at another webhook fails with `chat_webhook_conflict` (409). Remove the old webhook, then enable again.

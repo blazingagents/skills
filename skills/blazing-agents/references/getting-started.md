@@ -12,37 +12,26 @@ Your backend talks to BA through the TypeScript, Python, Rust, or Go SDK, authen
 
 ## What you need
 
-- A BA account and a Tenant API key. Create it in the dashboard at [API keys](https://www.blazingagents.com/app/keys) and copy the full `ba_...` value. It is shown only once.
+- A BA account and a full-access Tenant API key (`ba_full_...`), because this setup creates a Provider and an Agent. Create it in the dashboard at [API keys](https://www.blazingagents.com/app/keys) and copy the full value; it is shown only once. Give the backend that later serves your users a read key (`ba_read_...`) if it only chats and reads.
 - A backend on Node.js 24+, Python 3.11+, Rust 1.85+ with Tokio, or Go 1.26+. The SDK runs on the server only.
 - An OpenRouter API key.
 
 ```bash
-export BLAZING_AGENTS_API_KEY="ba_..."
+export BLAZING_AGENTS_API_KEY="ba_full_..."
 export OPENROUTER_API_KEY="sk-or-..."
 ```
 
-One-off Tenant setup, such as creating the Provider and Agent, can also be done in the [dashboard](https://www.blazingagents.com/app/providers) or with the `ba-admin` skill. Do it in code, as below, when the app must create them itself or you want the setup checked in.
+One-off Tenant setup can also be done elsewhere: the Provider in the [dashboard](https://www.blazingagents.com/app/providers), and the Agent in the dashboard, through the BA MCP server, or with the `ba-admin` skill. Do it in code, as below, when the app must create them itself or you want the setup checked in.
 
 ## Build it
 
-1. Install the SDK. TypeScript needs the `ai` package next to it.
+For a Python, Rust, or Go backend, read the code for these steps in [Python](getting-started.python.md), [Rust](getting-started.rust.md), [Go](getting-started.go.md).
+
+1. Install the SDK. TypeScript needs the `ai` and `zod` packages next to it.
 
 ```bash
 npm pkg set type=module
-npm install @blazingagents/sdk ai@^7
-```
-
-```bash
-pip install blazing-agents
-```
-
-```bash
-cargo add blazing-agents
-cargo add tokio --features macros,rt-multi-thread
-```
-
-```bash
-go get github.com/blazingagents/golang-sdk@v0.3.0
+npm install @blazingagents/sdk ai@^7 zod
 ```
 
 2. Check the connection. This lists the first page of Agents in your Tenant and changes nothing. A new Tenant already has 1 Agent, its admin Agent.
@@ -56,30 +45,6 @@ if (!apiKey) throw new Error("Set BLAZING_AGENTS_API_KEY");
 const client = new BlazingAgents({ apiKey });
 const page = await client.agents.list();
 console.log(`Connected. First page has ${page.data.length} agents.`);
-```
-
-```python
-from blazing_agents import BlazingAgents
-
-client = BlazingAgents()  # reads BLAZING_AGENTS_API_KEY
-page = client.agents.list()
-print(f"Connected. First page has {len(page.data)} agents.")
-```
-
-```rust
-use blazing_agents::Client;
-
-let client = Client::from_env()?; // reads BLAZING_AGENTS_API_KEY
-let page = client.agents().list().await?;
-println!("Connected. First page has {} agents.", page.data.len());
-```
-
-```go
-page, err := client.Agents.List(ctx, ba.ListAgentsParams{})
-if err != nil {
-	return err
-}
-fmt.Printf("Connected. First page has %d agents.\n", len(page.Data))
 ```
 
 3. Create the Provider and Agent, then stream a first reply. The program checks every Agent page and rejects duplicate name matches. Run setup once at a time and save the resulting IDs; concurrent setup or a lost create response still requires reconciliation.
@@ -139,214 +104,12 @@ for await (const chunk of result.toStream()) {
 // Raw AI SDK UI message stream: relay it, store it, or render it as you like.
 ```
 
-```python
-import os
-import sys
-import uuid
-
-from blazing_agents import BlazingAgents
-
-client = BlazingAgents()
-
-provider_name = "Quickstart OpenRouter"
-providers = client.providers.list().providers
-provider = next(
-    (p for p in providers if p.name == provider_name), None
-) or client.providers.create(
-    name=provider_name,
-    provider_type="openrouter",
-    base_url=None,
-    api_key=os.environ["OPENROUTER_API_KEY"],
-)
-
-agent_name = "Quickstart agent"
-page = client.agents.list(limit=100)
-matches = [a for a in page.data if a.name == agent_name]
-while page.next_cursor is not None:
-    page = client.agents.list(limit=100, cursor=page.next_cursor)
-    matches.extend(a for a in page.data if a.name == agent_name)
-if len(matches) > 1:
-    raise ValueError("Multiple Agents match. Choose an ID.")
-agent = matches[0] if matches else client.agents.create(
-    name=agent_name,
-    provider_id=provider.id,
-    model="openai/gpt-6-luna",
-)
-
-message = {
-    "id": str(uuid.uuid4()),
-    "role": "user",
-    "parts": [{"type": "text", "text": "Say hello in one short sentence."}],
-}
-with client.chat(agent_id=agent.id, message=message) as stream:
-    print(f"Session: {stream.session_id}")
-    for chunk in stream:
-        sys.stdout.buffer.write(chunk)
-    # Raw AI SDK UI message stream: relay it, store it, or render it as you like.
-```
-
-```rust
-use blazing_agents::messages::UserMessage;
-use blazing_agents::providers::ProviderType;
-use blazing_agents::Client;
-use futures_util::TryStreamExt;
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let client = Client::from_env()?;
-    let openrouter_key = std::env::var("OPENROUTER_API_KEY")?;
-
-    let provider_name = "Quickstart OpenRouter";
-    let provider_id = match client
-        .providers()
-        .list()
-        .await?
-        .providers
-        .iter()
-        .find(|provider| provider.name == provider_name)
-    {
-        Some(provider) => provider.id.clone(),
-        None => {
-            client
-                .providers()
-                .create(provider_name, ProviderType::OpenRouter, openrouter_key)
-                .await?
-                .id
-        }
-    };
-
-    let agent_name = "Quickstart agent";
-    let mut matches = Vec::new();
-    let mut cursor = None;
-    loop {
-        let mut call = client.agents().list().limit(100);
-        if let Some(cursor) = cursor {
-            call = call.cursor(cursor);
-        }
-        let page = call.await?;
-        matches.extend(page.data.into_iter().filter(|a| a.name == agent_name));
-        match page.next_cursor {
-            Some(next) => cursor = Some(next),
-            None => break,
-        }
-    }
-    if matches.len() > 1 {
-        return Err("Multiple Agents match. Choose an ID.".into());
-    }
-    let agent = match matches.into_iter().next() {
-        Some(agent) => agent,
-        None => {
-            client
-                .agents()
-                .create(agent_name)
-                .model(provider_id, "openai/gpt-6-luna")
-                .await?
-        }
-    };
-
-    let mut stream = client
-        .chat(agent.id, UserMessage::text("Say hello in one short sentence."))
-        .await?;
-    println!("Session: {}", stream.session_id());
-    while let Some(chunk) = stream.try_next().await? {
-        print!("{}", String::from_utf8_lossy(&chunk));
-    }
-    // Raw AI SDK UI message stream: relay it, store it, or render it as you like.
-    Ok(())
-}
-```
-
-```go
-package main
-
-import (
-	"context"
-	"fmt"
-	"log"
-	"os"
-
-	ba "github.com/blazingagents/golang-sdk"
-)
-
-func main() {
-	ctx := context.Background()
-	client, err := ba.NewClient() // reads BLAZING_AGENTS_API_KEY
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	providerName := "Quickstart OpenRouter"
-	providers, err := client.Providers.List(ctx)
-	if err != nil {
-		log.Fatal(err)
-	}
-	var providerID ba.ProviderID
-	for _, provider := range providers {
-		if provider.Name == providerName {
-			providerID = provider.ID
-		}
-	}
-	if providerID == "" {
-		provider, err := client.Providers.Create(ctx, ba.CreateProviderParams{
-			Name:         providerName,
-			ProviderType: ba.ProviderTypeOpenRouter,
-			APIKey:       ba.NewSecret(os.Getenv("OPENROUTER_API_KEY")),
-		})
-		if err != nil {
-			log.Fatal(err)
-		}
-		providerID = provider.ID
-	}
-
-	agentName := "Quickstart agent"
-	var matches []ba.Agent
-	for agent, err := range client.Agents.All(ctx, ba.ListAgentsParams{Limit: new(100)}) {
-		if err != nil {
-			log.Fatal(err)
-		}
-		if agent.Name == agentName {
-			matches = append(matches, agent)
-		}
-	}
-	if len(matches) > 1 {
-		log.Fatal("Multiple Agents match. Choose an ID.")
-	}
-	var agent *ba.Agent
-	if len(matches) == 1 {
-		agent = &matches[0]
-	} else {
-		agent, err = client.Agents.Create(ctx, ba.CreateAgentParams{
-			Name:       agentName,
-			ProviderID: ba.Value(providerID),
-			Model:      ba.Value("openai/gpt-6-luna"),
-		})
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
-
-	stream, err := client.Chat.Send(ctx, agent.ID,
-		ba.Messages(ba.TextMessage("Say hello in one short sentence.")), ba.ChatParams{})
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer stream.Close()
-	fmt.Println("Session:", stream.SessionID())
-	for event, err := range stream.Events() {
-		if err != nil {
-			log.Fatal(err)
-		}
-		os.Stdout.Write(event)
-	}
-	// Raw AI SDK UI message stream: relay it, store it, or render it as you like.
-}
-```
-
 4. Hand off to your app. In a web backend, return `result.toResponse()` (TypeScript), the stream in a streaming response (Python), `Body::from_stream(stream)` in a Rust framework such as axum, or `stream.WriteTo(w)` in a Go `net/http` handler instead of printing it, and save the Session ID so the next message continues the conversation. [Add chat to your app](recipes/chat-in-your-app.md) walks through the endpoint, sign-in, user scope, and the `useChat` UI.
 
 ## Gotchas
 
 - The Tenant API key reaches every Agent in the Tenant. Keep it in backend configuration. Browser and mobile code call your backend, never BA.
+- This program is trusted Tenant setup with no signed-in user, so it uses the unscoped client. In your app, run every call made for a signed-in user on the End-user scoped client: `client.forUser(verifiedUserId)` in TypeScript, `client.for_user(verified_user_id)` in Python, `client.for_user(user_id)?` in Rust, `client.ForUser(userID)` in Go. Create that user's Agent and Workspace with the same `userId`. See [multi-user apps](recipes/multi-user-apps.md).
 - `providers.create` stores the OpenRouter key without checking it. A bad key surfaces at `agents.create` as `model_validation_unavailable` (503). The same code can mean OpenRouter was briefly unreachable, so retry once after a short wait. If it persists, fix the key, delete the Provider (`client.providers.delete({ providerId })`, `client.providers.delete(provider_id)` in Python, `client.providers().delete(provider_id)` in Rust, `client.Providers.Delete(ctx, providerID, ba.DeleteProviderParams{})` in Go), and run again.
 - `model_not_found` at `agents.create` means the model ID is not offered by that Provider. List valid IDs with `client.providers.listModels({ providerId })`, `client.providers.list_models(provider_id=...)` in Python, `client.providers().list_models(provider_id)` in Rust, or `client.Providers.ListModels(ctx, providerID)` in Go.
 - Each `chat()` without a Session ID starts a new Session with no memory of earlier calls. Pass `sessionId` (`session_id` in Python, `.session(session_id)` on the call in Rust, `SessionID` in `ba.ChatParams` in Go) to continue one.
