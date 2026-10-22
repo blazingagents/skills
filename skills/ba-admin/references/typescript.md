@@ -108,8 +108,8 @@ const agentId = matches[0].id;
   that key was deleted.
 - `client.sessions.delete({ agentId, sessionId, deleteArtifacts })` has the same
   explicit Artifact-choice requirement.
-- Workspace deletion may return `"pending"`; report it as accepted cleanup,
-  not completed deletion.
+- Workspace deletion finishes before the call returns, so report the
+  Workspace as deleted.
 - Skill uploads accept zip or tar archives through the SDK's current typed
   input. Use binary values, not credentials or shell interpolation.
 - For `client.tasks.create({ agentId, name, prompt, submit: true,
@@ -136,15 +136,14 @@ before editing and after saving. The installed SDK types define the exact body.
 The configuration contains `amountUsd`, `resetStartDate` (a UTC date), and
 `resetInterval` (`daily`, `weekly`, `biweekly` for every fourteen days, or
 `monthly`). Resets happen at midnight UTC. Saving takes effect immediately and
-never clears money already spent or reserved in the current period. Set
+never clears money already spent in the current period. Set
 `spendingLimit: null` only when the user asks to disable that scope; the agent
 and account limits are independent.
 
-After saving, report `amountUsd`, `nextResetAt`, and the period's `spentUsd`,
-`reservedUsd`, and `availableUsd` from the response. Tell the user the allowance
-is an estimate of model-token cost only: it excludes BA platform charges, and a
-request that costs more than estimated can exceed it. A non-zero `reservedUsd`
-with nothing running is released at the next reset.
+After saving, report `amountUsd`, `nextResetAt`, and the period's `spentUsd`
+and `availableUsd` from the response. Tell the user the allowance is an
+estimate of model-token cost only: it excludes BA platform charges, and each
+running turn may finish one model request past the limit.
 
 If a call returns `model_spending_limit_exceeded`, report its scope, reason, and
 next reset. Do not automatically retry, raise the limit, disable enforcement,

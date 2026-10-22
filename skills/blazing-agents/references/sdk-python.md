@@ -217,7 +217,7 @@ def list_my_agents(verified_user_id: str):
 
 - Take the ID from the session your backend verified, never from a request body or query parameter.
 - The ID is 1 to 256 printable ASCII characters with no leading or trailing space. Anything else raises `ValueError`.
-- A `UserClient` has `agents`, `artifacts`, `memories`, `prompts`, `sessions`, `tasks`, `workspaces`, `agent()`, the generation methods, and `usage` with `get()`, `sessions()`, and `get_for_agent()`. Tenant administration (`providers`, `mcp_connections`, `chat_connections`, `chat_deliveries`, `tenant`, the merchant resources), `usage.overview()`, and `agents.get_spending_limit()` / `agents.update_spending_limit()` stay on the tenant client.
+- A `UserClient` has `agents`, `artifacts`, `memories`, `prompts`, `sessions`, `tasks`, `workspaces`, `agent()`, the generation methods, and `usage` with `get()`, `sessions()`, and `get_for_agent()`. Tenant administration (`providers`, `mcp_connections`, `chat_connections`, `tenant`, the merchant resources), `usage.overview()`, and `agents.get_spending_limit()` / `agents.update_spending_limit()` stay on the tenant client.
 - `with_options()` on a `UserClient` keeps the scope.
 
 ## Operation map
@@ -278,7 +278,7 @@ Signatures below drop `extra_headers` and `timeout`, which every method accepts.
 
 `fork()` requires `message_id` and `idempotency_key`. `forked_from` is a `SessionForkedFrom` with `session_id` and `message_id`, or `None` for an ordinary Session. Fork eligibility, retries, child contents, and error codes are in [Add a requested fork](recipes/chat-in-your-app.md#add-a-requested-fork).
 
-While a Turn runs, `chat()` raises `session_busy`; steer with `submit_input()` or hold the message in your own client. A Turn that stopped responding raises `session_turn_unresponsive`; wait `error.retry_after` seconds, read history, then send again under a new message ID. `submit_input()` saves a steer receipt under your `request_id` (1 to 128 characters, not `.` or `..`) before returning. Retry with the same `request_id` and message; a changed payload raises `input_idempotency_conflict`. A receipt's `state` is `accepted`, `delivered`, `committed`, `not_placed`, or `uncertain`. Poll `inputs()` without `cursor` for changes; pass `include_completed=True` to see terminal receipts. `stop()` takes `stream.turn_id` in the client that started the Turn, or the `turn_id` from `activity` anywhere else; an unknown `turn_id` raises `not_found`. All methods accept `extra_headers` for user scope. What each receipt state means and how the client-held queue works are in [Add chat to your app](recipes/chat-in-your-app.md#how-it-works).
+While a Turn runs, `chat()` raises `session_busy`; steer with `submit_input()` or hold the message in your own client. A Turn that stopped responding raises `session_turn_unresponsive`; wait `error.retry_after` seconds, read history, then send again under a new message ID. `submit_input()` saves a steer receipt under your `request_id` (1 to 128 characters, not `.` or `..`) before returning. Retry with the same `request_id` and message; a changed payload raises `input_idempotency_conflict`. A receipt's `state` is `accepted`, `committed`, or `not_placed`. Poll `inputs()` without `cursor` for changes; pass `include_completed=True` to see terminal receipts. `stop()` takes `stream.turn_id` in the client that started the Turn, or the `turn_id` from `activity` anywhere else; an unknown `turn_id` raises `not_found`. All methods accept `extra_headers` for user scope. What each receipt state means and how the client-held queue works are in [Add chat to your app](recipes/chat-in-your-app.md#how-it-works).
 
 ### `client.tasks`
 
@@ -310,7 +310,7 @@ While a Turn runs, `chat()` raises `session_busy`; steer with `submit_input()` o
 | `iter(*, cursor=..., limit=..., user_id=...)` | `Iterator[Workspace]` |
 | `get(*, workspace_id)` | `Workspace` |
 | `update(*, workspace_id, name=..., metadata=..., network_policy=...)` | `Workspace` |
-| `delete(*, workspace_id)` | `"completed"` or `"pending"` |
+| `delete(*, workspace_id)` | `None`, once the Workspace and its files are deleted |
 
 ### `client.providers`
 
@@ -386,22 +386,8 @@ Run a saved Prompt with `client.chat(prompt_id=..., variables={...})` or the oth
 | `check_health(chat_connection_id)` | `ChatConnection` |
 | `enable(chat_connection_id)` / `disable(chat_connection_id)` | `ChatConnection` |
 | `delete(chat_connection_id)` | `None` |
-| `list_deliveries(chat_connection_id, *, cursor=..., limit=...)` | `ChatConnectionDeliveriesPage` (`data: list[ChatDelivery]`, `next_cursor`) |
-| `iter_deliveries(chat_connection_id, *, cursor=..., limit=...)` | `Iterator[ChatDelivery]` |
-| `repair_delivery(chat_connection_id, delivery_id, *, expected_attempt)` | `ChatDeliveryResult` (`status` is `confirmed`, `failed` or `ambiguous`) |
-
-`list_deliveries()` lists one connection's deliveries in every status, newest first. `repair_delivery()` sends a stuck reply or approval card again without running the agent. It always sends `previousSenderStopped` and `acceptDuplicateRisk` as `true`, so the message may appear twice. Pass the delivery's current `attempt` as `expected_attempt`; a changed attempt raises `invalid_request`.
 
 `platform` is `"slack"` or `"telegram"`. See [Put your agent in Slack or Telegram](recipes/slack-and-telegram.md).
-
-### `client.chat_deliveries`
-
-| Method | Returns |
-| --- | --- |
-| `list(*, status=..., since=..., cursor=..., limit=...)` | `ChatDeliveriesPage` |
-| `iter(*, status=..., since=..., cursor=..., limit=...)` | `Iterator[TenantChatDelivery]` |
-
-Failed and ambiguous deliveries across every connection, newest first (an attention feed, not full history). `status` is a sequence of `failed` and/or `ambiguous` (default both); pending/confirmed are rejected. For one connection's deliveries in every status, or to repair one, use `chat_connections.list_deliveries()` and `chat_connections.repair_delivery()`.
 
 ### `client.usage` and `client.tenant`
 
@@ -424,18 +410,18 @@ Monetization: bill your end users through your own Polar or Dodo account. Setup,
 | Method | Returns |
 | --- | --- |
 | `merchant_connection.get()` | `MerchantConnectionResponse` (`connection` is `None` when none exists) |
-| `merchant_connection.create(*, provider, environment, credential, guard=...)` | `MerchantConnectionResponse`. `provider` is `"polar"` or `"dodo"`; `environment` is `"sandbox"` or `"live"`. Replaces the current connection; fails `merchant_connection_in_use` while a request admitted on it is still running. |
-| `merchant_connection.update(*, credential=..., status=..., guard=...)` | `MerchantConnectionResponse` |
-| `merchant_connection.retire()` | `None`. New usage is no longer recorded against it. Recorded events keep being delivered; the credential is deleted once none can still be delivered or retried. Fails `merchant_connection_in_use` (409) while a request admitted on the connection is still running. |
+| `merchant_connection.create(*, provider, environment, credential, guard=...)` | `MerchantConnectionResponse`. `provider` is `"polar"` or `"dodo"`; `environment` is `"sandbox"` or `"live"`. Replaces the current connection; fails `merchant_connection_in_use` (409) while a request admitted on it is still running or one of its usage events is `pending`. |
+| `merchant_connection.update(*, credential=..., guard=...)` | `MerchantConnectionResponse` |
+| `merchant_connection.retire()` | `None`. New usage is no longer recorded against it. Fails `merchant_connection_in_use` (409) while a request admitted on the connection is still running or one of its usage events is `pending`. On success its `failed` events are discarded and the credential is deleted at once, so nothing more is delivered through it. |
 | `merchant_bindings.list(*, user_id=..., cursor=..., limit=...)` / `iter(...)` | `MerchantBindingsPage` / `Iterator[MerchantCustomerBinding]`. Raises `merchant_connection_not_found` when there is no connection. |
 | `merchant_bindings.put(user_id, *, customer_id)` | `MerchantBindingResponse`. The API checks the customer exists at the provider. |
 | `merchant_bindings.delete(user_id)` | `None` |
 | `merchant_usage_events.list(*, status=..., cursor=..., limit=...)` / `iter(...)` | `MerchantUsageEventsPage` / `Iterator[MerchantUsageEvent]` |
 | `merchant_usage_events.get(event_id)` | `MerchantUsageEventResponse` (`event.next_action` says what to do) |
 | `merchant_usage_events.summary(*, days=...)` | `MerchantUsageSummaryResponse` (status counts and a daily window; `days` 1 to 90, default 14) |
-| `merchant_usage_events.retry(event_id)` / `release(event_id)` / `discard(event_id)` | `MerchantUsageEventResponse` |
+| `merchant_usage_events.retry(event_id)` / `discard(event_id)` | `MerchantUsageEventResponse` |
 
-`guard` is a dict with exactly `enabled`, `product_ids`, and `meter_id`. Turn billing on with `tenant.update(monetization_enabled=True)` after the connection exists.
+`guard` is a dict with exactly `enabled`, `product_ids`, and `meter_id`. Turn billing on with `tenant.update(monetization_enabled=True)` after the connection exists, and off with `monetization_enabled=False` to pause it. To switch providers without losing charges, retry the `failed` events you still want billed, wait until no event is `pending`, then replace the connection.
 
 ## Partial updates: omit to keep, `None` to clear
 
@@ -506,7 +492,7 @@ All SDK exceptions inherit from `BlazingAgentsError`. Import them from `blazing_
 | `APIStatusError` | The API returns an error status | `status_code`, `code`, `details`, `param`, `request_id`, `retry_after`, `headers`, `response_body` |
 | `APIConnectionError` | The network fails before a full response | |
 | `APITimeoutError` | The request times out (subclass of `APIConnectionError`) | |
-| `CredentialEchoError` | A Provider, MCP connection, chat connection, chat delivery, or merchant connection response carried credential material; the body was discarded | `request_id` |
+| `CredentialEchoError` | A Provider, MCP connection, chat connection, or merchant connection response carried credential material; the body was discarded | `request_id` |
 | `StreamError` | A stream fails after headers arrive, is read twice, or ends early | `status_code`, `request_id`, `retry_after`, `headers` |
 | `ObjectTruncationError` | Structured output ended with incomplete JSON (subclass of `StreamError`) | `json_error` |
 | `ObjectJSONDecodeError` | Structured output is invalid JSON (subclass of `StreamError`) | `json_error` |

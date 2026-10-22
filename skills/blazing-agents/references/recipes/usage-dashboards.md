@@ -27,10 +27,10 @@ A settings form needs `amountUsd`, `resetStartDate`, and a `resetInterval` of
 `daily`, `weekly`, `biweekly`, or `monthly` (snake_case in Python, a `ResetInterval` variant in Rust, a `ba.ResetInterval` constant in Go). Saving
 applies immediately and keeps the current period's spend.
 
-Render `period.spentUsd`, `period.reservedUsd`, `period.availableUsd`, and
-`nextResetAt` as separate values, and label the amount as an estimated
-model-token allowance, not an invoice total. Reserved money belongs to running
-or unresolved work and is released by the next reset at the latest. In chat,
+Render `period.spentUsd`, `period.availableUsd`, and `nextResetAt` as separate
+values, and label the amount as an estimated model-token allowance, not an
+invoice total. Each running Turn may finish one model request past the limit,
+so `spentUsd` can end slightly above `amountUsd`. In chat,
 handle stops as described in [chat in your app](chat-in-your-app.md). Never
 automatically retry `model_spending_limit_exceeded` or change a limit the user
 did not ask to change.
@@ -672,7 +672,7 @@ fmt.Println(binding.UserID, binding.CustomerID)
 
 Use the exact `userId` you pass on chat, generation, and Task calls. Blazing Agents checks that the customer exists in your provider.
 
-7. Optionally require a paid plan or positive balance before each Turn, and watch delivery. Release events that were held because a user had no linked customer.
+7. Optionally require a paid plan or positive balance before each Turn, and watch delivery. Retry `failed` events that BA suggests retrying.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
@@ -686,20 +686,19 @@ await client.merchantConnection.update({
 });
 
 const { summary } = await client.merchantUsageEvents.summary({ days: 7 });
-console.log(summary.counts.accepted, summary.counts.unmapped, summary.counts.failed);
+console.log(summary.counts.accepted, summary.counts.failed);
 
-const { events } = await client.merchantUsageEvents.list({ status: "unmapped" });
+const { events } = await client.merchantUsageEvents.list({ status: "failed" });
 for (const event of events) {
-  console.log(event.userId, event.totalTokens, event.nextAction);
-}
-
-export async function releaseAfterLinking(eventId: string) {
-  return await client.merchantUsageEvents.release({ eventId });
+  console.log(event.userId, event.lastErrorCode, event.nextAction);
+  if (event.nextAction === "retry") {
+    await client.merchantUsageEvents.retry({ eventId: event.id });
+  }
 }
 ```
 
 ```python
-from blazing_agents import BlazingAgents, MerchantUsageEventResponse
+from blazing_agents import BlazingAgents
 
 client = BlazingAgents()
 
@@ -708,18 +707,16 @@ client.merchant_connection.update(
 )
 
 counts = client.merchant_usage_events.summary(days=7).summary.counts
-print(counts.accepted, counts.unmapped, counts.failed)
+print(counts.accepted, counts.failed)
 
-for event in client.merchant_usage_events.iter(status="unmapped"):
-    print(event.user_id, event.total_tokens, event.next_action)
-
-
-def release_after_linking(event_id: str) -> MerchantUsageEventResponse:
-    return client.merchant_usage_events.release(event_id)
+for event in client.merchant_usage_events.iter(status="failed"):
+    print(event.user_id, event.last_error_code, event.next_action)
+    if event.next_action == "retry":
+        client.merchant_usage_events.retry(event.id)
 ```
 
 ```rust
-use blazing_agents::merchant::{MerchantGuard, MerchantUsageEventStatus};
+use blazing_agents::merchant::{MerchantGuard, MerchantNextAction, MerchantUsageEventStatus};
 use futures_util::TryStreamExt;
 
 client
@@ -729,21 +726,19 @@ client
     .await?;
 
 let counts = client.merchant_usage_events().summary().days(7).await?.counts;
-println!("{} {} {}", counts.accepted, counts.unmapped, counts.failed);
+println!("{} {}", counts.accepted, counts.failed);
 
 let mut events = client
     .merchant_usage_events()
     .list()
-    .status(MerchantUsageEventStatus::Unmapped)
+    .status(MerchantUsageEventStatus::Failed)
     .items();
 while let Some(event) = events.try_next().await? {
-    println!("{} {} {:?}", event.user_id, event.total_tokens, event.next_action);
+    println!("{} {:?} {:?}", event.user_id, event.last_error_code, event.next_action);
+    if event.next_action == MerchantNextAction::Retry {
+        client.merchant_usage_events().retry(event.id).await?;
+    }
 }
-
-let released = client
-    .merchant_usage_events()
-    .release("mev_0123456789abcdef")
-    .await?;
 ```
 
 ```go
@@ -758,24 +753,25 @@ summary, err := client.MerchantUsageEvents.Summary(ctx, ba.MerchantUsageSummaryP
 if err != nil {
 	return err
 }
-fmt.Println(summary.Counts.Accepted, summary.Counts.Unmapped, summary.Counts.Failed)
+fmt.Println(summary.Counts.Accepted, summary.Counts.Failed)
 
-unmapped := ba.ListMerchantUsageEventsParams{Status: new(ba.MerchantUsageEventStatusUnmapped)}
-for event, err := range client.MerchantUsageEvents.All(ctx, unmapped) {
+failed := ba.ListMerchantUsageEventsParams{Status: new(ba.MerchantUsageEventStatusFailed)}
+for event, err := range client.MerchantUsageEvents.All(ctx, failed) {
 	if err != nil {
 		return err
 	}
-	fmt.Println(event.UserID, event.TotalTokens, event.NextAction)
+	fmt.Println(event.UserID, event.NextAction)
+	if event.NextAction == ba.MerchantUsageEventActionRetry {
+		if _, err := client.MerchantUsageEvents.Retry(ctx, event.ID); err != nil {
+			return err
+		}
+	}
 }
-
-released, err := client.MerchantUsageEvents.Release(ctx, ba.MerchantUsageEventID("mev_0123456789abcdef"))
-if err != nil {
-	return err
-}
-fmt.Println(released.Status)
 ```
 
-`productIds` requires an active subscription to one of those products; `meterId` (a Polar meter or a Dodo credit entitlement) requires a balance above zero; set both to require both. Each event has a suggested `nextAction` such as `retry`, `bind_and_release`, or `discard`.
+`productIds` requires an active subscription to one of those products; `meterId` (a Polar meter or a Dodo credit entitlement) requires a balance above zero; set both to require both. Each event has a suggested `nextAction` such as `retry` or `discard`. A retry is safe because your provider drops duplicates by the event ID.
+
+Link each user in step 6 before their first Turn. A Turn whose user has no linked customer records its event once as `discarded`, with `lastErrorCode` `MERCHANT_CUSTOMER_UNMAPPED`, and that usage is never billed, even after you link the user. To refuse such a Turn instead, turn on the guard: the Turn then fails with `merchant_customer_unmapped`.
 
 ## Exact usage for a Session list
 
@@ -859,7 +855,7 @@ Send 1 to 100 distinct IDs per request. The response preserves their order and r
 - The quota and guard checks run before a Turn starts, so concurrent or long Turns can overshoot a ceiling or balance. Alert well before the limit.
 - A `blocked` Task run did not execute. Do not retry it in a loop; the next scheduled fire runs normally once the quota allows.
 - `subscription_required` and `usage_credit_required` are about your own Blazing Agents plan. `merchant_*` codes are about your end user's plan in your provider. Show them different messages.
-- A Turn with no `userId`, or a `userId` you never linked, is held as `unmapped` and never billed as zero. Link the user in step 6 before their first Turn, and release held events afterwards.
+- A Turn with no `userId`, or a `userId` you never linked, records its event as `discarded` with `lastErrorCode` `MERCHANT_CUSTOMER_UNMAPPED`, and that usage is never billed. Link the user in step 6 before their first Turn, or turn on the guard so such a Turn fails with `merchant_customer_unmapped`.
 - Turning `monetizationEnabled` off discards every event your provider has not accepted yet, and turning it back on does not backfill them.
 - Keep usage queries and billing calls on your backend. A customer view must filter by the signed-in user's `userId`, never one sent by the browser.
 
@@ -870,7 +866,7 @@ Send 1 to 100 distinct IDs per request. The response preserves their order and r
 - Call `usage.overview()` with a 7-day range. `daily` has exactly 7 buckets, including days with zero usage.
 - Set a very low quota on a test account, then start a chat. Your app shows the `quota_exceeded` message, and a submitted Task run ends as `blocked`.
 - With a sandbox connection, link a test user and run one chat as them. `merchantUsageEvents.list()` shows an `accepted` event with the Turn's tokens, and the event appears on the customer in your provider.
-- Run a chat as a user you never linked. Its event shows as `unmapped`; link the user, call `release`, and it is delivered and ends as `accepted`.
+- Run a chat as a user you never linked. Its event is `discarded` with `lastErrorCode` `MERCHANT_CUSTOMER_UNMAPPED`.
 
 ## Go deeper
 

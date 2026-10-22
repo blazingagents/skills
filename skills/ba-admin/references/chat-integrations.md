@@ -14,8 +14,6 @@ report only IDs, enabled state, and safe health results.
 The resource provides list, get, create, update, credential rotation, health checks,
 enable, disable, and delete. Update accepts only `name` and `configuration`;
 BA generates `webhookUrl`. Changing the Agent or bot requires a new connection.
-`client.chatDeliveries` is an attention feed: failed and ambiguous replies and
-approval cards across every connection.
 
 - Create: resolve the Agent, which must be one of the Tenant's own Agents and
   never the Admin Agent (`create` fails with `admin_agent_managed`, 409),
@@ -26,9 +24,6 @@ approval cards across every connection.
   reply. Platform registration is separate from BA connection creation.
 - Inspect: list/get connections, then run health if fresh evidence is needed.
   `unknown` requires manual verification; token validity does not prove delivery.
-- Inspect deliveries: read-only. List the tenant-wide feed, which returns
-  only failed and ambiguous deliveries, optionally bounded by `since`;
-  report IDs, connection, status, and diagnostic. Do not repair.
 - Rotate: replace the complete credentials for the same installation. Preserve
   Sessions.
 - Disable/delete: explain that disable stops new intake while admitted work may
@@ -60,8 +55,14 @@ Relay these runtime behaviors when a user asks why a bot answered as it did:
 - A message sent while a Tool approval waits is not run. The bot asks the user
   to approve or reject the request first, then send the message again, or to
   send `/new` if the request is lost.
-- BA sends a saved reply that it had not yet sent when it was interrupted, with
-  no repair needed. Only failed and ambiguous deliveries need attention.
+- BA posts each reply and approval card at least once, with a few retries, so
+  a reply can rarely appear twice. A reply that still fails to post stays in
+  the Session transcript, and nothing sends it again; read the Session's
+  messages to see it. An approval card that failed to post is posted again
+  when the person sends their next message, with a note asking them to decide
+  it first.
+- A Turn started through the API on a chat Session does not post to Slack or
+  Telegram.
 - A message with no text is ignored. In a channel, a message that does not
   mention the bot is answered only in a thread the bot already joined.
 - In a Telegram private chat the reply appears as a growing draft, then as the
