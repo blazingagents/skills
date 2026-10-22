@@ -11,7 +11,7 @@ If you instead want chat inside your own web or mobile app, read [Add chat to yo
 
 A Chat Connection links one bot to one Agent. You create it from your backend with the bot's credentials, and BA returns a `webhookUrl` that the platform must send events to. For Slack you paste that URL into your Slack app. For Telegram, BA registers it with Telegram when you enable the connection. Each direct message, shared thread, and Telegram forum topic gets its own Session. The connection's Agent and bot are fixed; to change either, create a new connection.
 
-BA answers one message at a time in each conversation, in arrival order. A message sent while the Agent is answering waits and is answered next, and nothing is dropped. Different conversations, including different Telegram forum topics, do not wait for each other. If the platform redelivers an event, the Agent answers once. In a Telegram private chat the reply appears as a draft that grows while the Agent works, then as the final message. Slack and group chats show only the final message.
+A message sent while the Agent is answering is steered into that answer, and one reply covers both (see Gotchas for the exceptions). Different conversations, including different Telegram forum topics, do not wait for each other. If the platform redelivers an event, the Agent answers once. In a Telegram private chat the reply appears as a draft that grows while the Agent works, then as the final message. Slack and group chats show only the final message.
 
 ## Build it
 
@@ -113,6 +113,8 @@ await client.chatConnections.delete({ chatConnectionId });
 ## Gotchas
 
 - Anyone who can reach the bot can talk to it, and anyone who can see an approval card can approve or deny it. Choose where you add the bot and which Tools need approval (`approvalInChat` on the Agent) with that in mind.
+- Bot Turns run with full authority and no End-user scope, so give the Agent only Tools that are safe for every participant. Each conversation's Session `userId` is a JSON array naming the platform, the connection, and the person in a direct message, but the thread in a shared conversation. Per-user usage, billing, and MCP `userId` forwarding therefore see one user per thread. All conversations share the Agent's Workspace files.
+- Disabling the connection or rotating its credentials does not stop a running Turn: it finishes and keeps its reply in the Session, but the bot posts neither the reply nor its approval cards, and messages waiting behind it in that conversation are dropped without a notice. Do both when conversations are quiet.
 - `channelIds` and `chatIds` only tell health checks where to look. They are not allowlists.
 - If `create()` times out, `list()` connections before retrying so you do not create two.
 - Enabling a Telegram bot that already points at another webhook fails with `chat_webhook_conflict` (409). Remove the old webhook, then enable again.

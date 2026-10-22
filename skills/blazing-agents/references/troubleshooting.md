@@ -46,7 +46,8 @@ Use `BlazingAgentsError.isInstance(error)` instead of `instanceof`, which fails 
 | `model_spending_limit_exceeded` (429), a `data-ba-error` part with that code in a chat stream, or a Task run ends `blocked` with a spending-limit `error` | The Agent's or the account's model spending limit has nothing left this period. | [Wait for the reset or change the limit](#quota-blocked). |
 | `subscription_required` or `usage_credit_required` (402) | No active plan, or no usage credit left. | [Fix billing](#quota-blocked). |
 | `rate_limited` (429) | Too many interactive turns at once, or resources created too fast. | [Back off](#quota-blocked). |
-| `session_busy` (409) | A tool approval is pending, an approval continuation is running, or another turn holds the Session. | [Decide approvals, then resend](#session-busy). |
+| `session_busy` (409) | Read `details.reason`: `turn_running` (another turn holds the Session), `approval_pending`, or `continuation_waiting`. | [Steer or wait for `turn_running`; decide the approval round for the others](#session-busy). |
+| `tenant_deleting` (409) | Account deletion is scheduled. New turns and Task runs are refused and queued runs are cancelled. | Cancel the deletion in the dashboard within 24 hours to resume service. |
 | `session_turn_unresponsive` (409) | The Session's previous turn stopped responding and still holds the Session. The Session frees within a minute. | [Wait for `Retry-After`, read the history, then resend under a new message ID](#session-busy). |
 | Chat paused for approval never continues after the decisions | Nothing runs until a client sends the complete round's decisions; a partial set fails `validation_failed`. | Send the whole round in one `continueChat`/`continue_chat` call, with the chat's `functions`; see [backend functions](recipes/backend-functions.md). |
 | `tool_approval_continuation_settled` (409) on a continuation call | The approval round already ran to a terminal state. | Read the Session's messages instead of deciding again. |
@@ -123,15 +124,18 @@ To fix it:
 
 ## Session busy
 
-`session_busy` (409) means the Session cannot take a new turn yet. A tool approval is waiting for a decision, an approval continuation is still running, or another turn holds the Session. Regeneration and deletion wait too.
+`session_busy` (409) means the Session cannot take a new turn yet. Regeneration and deletion wait too. `error.details.reason` says why, and only the first reason clears by waiting:
 
-- List the Session's pending tool approvals and decide the round. See [human approval](recipes/human-approval.md).
+- `turn_running`: another turn holds the Session, or an approval continuation is running. Steer it with `sessions.submitInput()`, or hold the message until the Session is idle.
+- `approval_pending`: a tool approval waits for a decision. List the Session's pending tool approvals and decide the round with `continueChat`. See [human approval](recipes/human-approval.md).
+- `continuation_waiting`: the round is decided but its continuation has not run. Call `continueChat` with the same decisions.
+- Some `session_busy` responses carry no reason. Treat them as `turn_running`.
 - Show the error to your user, keep their draft, and let them send again once the work settles.
 - `session_version_mismatch` (409) means two turns ran on the same Session at once and this one was not saved. Read the Session's messages to see what was saved, then resend if needed.
 - To prevent both, steer the running turn with `sessions.submitInput()` or hold new messages in your client until the Session is idle, and send one chat turn at a time per Session.
 - Deleting a Session returns `session_busy` while any turn runs, or `session_turn_unresponsive` when the last turn stopped responding.
 - `session_turn_unresponsive` (409) means the Session's previous turn stopped responding, for example because the platform restarted, and still holds the Session. The Session frees within a minute. A `session_busy` can come first while the stopped turn still looks busy. New chat, regeneration, approval continuations, and deletes all return the new code.
-  - Wait for the `Retry-After` header (`error.headers` in TypeScript, `error.retry_after` in Python, `error.retry_after()` in Rust, `apiErr.RetryAfter` in Go). It holds whole seconds, at most a minute, and `error.details.retryAfterSeconds` repeats the value. Sending earlier fails the same way.
+  - Wait for the `Retry-After` header (`error.headers` in TypeScript). It holds whole seconds, at most a minute, and `error.details.retryAfterSeconds` repeats the value. Sending earlier fails the same way.
   - Read the Session's messages before you resend, because the stopped turn may have saved its work.
   - Send a chat turn again under a new message ID. Repeat an approval continuation with the same decisions, which stay recorded. Repeat a delete as it was.
 

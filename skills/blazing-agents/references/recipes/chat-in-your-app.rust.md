@@ -2,6 +2,14 @@
 
 The Rust code for the steps of [Add chat to your app](chat-in-your-app.md). Read that file first: it explains each step, its decisions, and its gotchas. Sections here match its steps and headings.
 
+## Step 1: Install the crates
+
+```bash
+cargo add blazing-agents axum serde serde_json tokio --features tokio/full,serde/derive
+```
+
+`client.for_user(user_id)?` returns a `UserClient` that sends the scope on every request. Relay the `ChatStream` bytes unchanged and copy the `Location` header on the first Turn. The SDK percent-encodes every path segment and rejects an empty, `.`, or `..` value as `Error::InvalidArgument`, so a browser ID cannot leave its segment.
+
 ## Step 2: Add the backend
 
 ```rust

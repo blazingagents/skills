@@ -2,6 +2,13 @@
 
 The Rust code for the steps of [Get started with Blazing Agents](getting-started.md). Read that file first: it explains each step, its decisions, and its gotchas. Sections here match its steps and headings.
 
+## Step 1: Install the SDK
+
+```bash
+cargo add blazing-agents futures-util
+cargo add tokio --features macros,rt-multi-thread
+```
+
 ## Step 2: Check the connection
 
 ```rust

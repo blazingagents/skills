@@ -12,39 +12,26 @@ Your backend talks to BA through the TypeScript, Python, Rust, or Go SDK, authen
 
 ## What you need
 
-- A BA account and a Tenant API key. Create it in the dashboard at [API keys](https://www.blazingagents.com/app/keys) and copy the full `ba_...` value. It is shown only once.
+- A BA account and a full-access Tenant API key (`ba_full_...`), because this setup creates a Provider and an Agent. Create it in the dashboard at [API keys](https://www.blazingagents.com/app/keys) and copy the full value; it is shown only once. Give the backend that later serves your users a read key (`ba_read_...`) if it only chats and reads.
 - A backend on Node.js 24+, Python 3.11+, Rust 1.85+ with Tokio, or Go 1.26+. The SDK runs on the server only.
 - An OpenRouter API key.
 
 ```bash
-export BLAZING_AGENTS_API_KEY="ba_..."
+export BLAZING_AGENTS_API_KEY="ba_full_..."
 export OPENROUTER_API_KEY="sk-or-..."
 ```
 
-One-off Tenant setup, such as creating the Provider and Agent, can also be done in the [dashboard](https://www.blazingagents.com/app/providers) or with the `ba-admin` skill. Do it in code, as below, when the app must create them itself or you want the setup checked in.
+One-off Tenant setup can also be done elsewhere: the Provider in the [dashboard](https://www.blazingagents.com/app/providers), and the Agent in the dashboard, through the BA MCP server, or with the `ba-admin` skill. Do it in code, as below, when the app must create them itself or you want the setup checked in.
 
 ## Build it
 
 For a Python, Rust, or Go backend, read the code for these steps in [Python](getting-started.python.md), [Rust](getting-started.rust.md), [Go](getting-started.go.md).
 
-1. Install the SDK. TypeScript needs the `ai` package next to it.
+1. Install the SDK. TypeScript needs the `ai` and `zod` packages next to it.
 
 ```bash
 npm pkg set type=module
-npm install @blazingagents/sdk ai@^7
-```
-
-```bash
-pip install blazing-agents
-```
-
-```bash
-cargo add blazing-agents
-cargo add tokio --features macros,rt-multi-thread
-```
-
-```bash
-go get github.com/blazingagents/golang-sdk@v0.3.0
+npm install @blazingagents/sdk ai zod
 ```
 
 2. Check the connection. This lists the first page of Agents in your Tenant and changes nothing. A new Tenant already has 1 Agent, its admin Agent.

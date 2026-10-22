@@ -96,7 +96,7 @@ await skills.putFile({
 });
 ```
 
-4. Store Memory for one End-user and turn on injection so every Turn of theirs starts with the newest notes it can see, general and that user's (up to 4,000 words). Turning on injection is Agent configuration on the unscoped client. The Memory calls run on that user's End-user scoped client, which sets `userId` and sees only their notes, so the Agent must belong to that user. Use list with `search`, `update()`, and `delete()` to curate them.
+4. Store Memory for one End-user and turn on injection so every Turn of theirs starts with the newest notes it can see, up to 4,000 words. A scoped Turn sees only that user's notes; an unscoped Turn whose Session has a `userId` sees the Agent's general notes plus that user's. Turning on injection is Agent configuration on the unscoped client. The Memory calls run on that user's End-user scoped client, which sets `userId` and sees only their notes, so the Agent must belong to that user. Use list with `search`, `update()`, and `delete()` to curate them.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
@@ -144,8 +144,8 @@ await client.agents.enable({ agentId });
 - Deleting an Agent deletes its linked Prompts. Set the Prompt's `agentId` to `null` first to keep it.
 - Uploading a Skill whose `name` already exists on the Agent fails with `skill_name_conflict`. Edit it with `putFile()` / `replace_file()` / `Skills.ReplaceFile()`, or delete it and upload again.
 - Skills and Memory use their current content; the saved Agent configuration holds neither file contents nor notes.
-- Memory `userId` labels notes. Use the verified user scope from [multi-user apps](multi-user-apps.md) for user-owned Memory and Turns. A scoped Turn sees that user's notes. An unscoped Turn retains the Tenant's general Memory behavior.
-- Memory search matches words, not meaning. Each Agent keeps up to 500 notes and evicts the least recently used one when full.
+- Memory `userId` labels notes. Use the verified user scope from [multi-user apps](multi-user-apps.md) for user-owned Memory and Turns. A scoped Turn sees only that user's notes, never the general ones. An unscoped Turn sees the general notes plus those of its Session's `userId`.
+- Memory search matches words, not meaning. Each Agent keeps up to 500 notes in one pool shared by all its End-users, and evicts the least recently used one silently when full, so busy users can push out other users' notes. Each note is at most 10 KiB, and notes are deleted with the Agent.
 - A disabled Agent rejects new Turns with `agent_disabled`, and scheduled Task runs are skipped, not queued.
 
 ## Check it works

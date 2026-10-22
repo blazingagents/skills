@@ -1,6 +1,6 @@
 # Go SDK reference
 
-Use this page to call Blazing Agents from a Go backend: install the module, build a client, run Turns, and find the method for every operation. It matches the module `github.com/blazingagents/golang-sdk` at v0.2.0, the release this skill's snippets compile against.
+Use this page to call Blazing Agents from a Go backend: install the module, build a client, run Turns, and find the method for every operation. Check the installed version's types when a method here is missing.
 
 For the same surface in TypeScript, Python, or Rust, read [TypeScript SDK reference](sdk-typescript.md), [Python SDK reference](sdk-python.md), or [Rust SDK reference](sdk-rust.md). For end-to-end builds, start from a recipe such as [Add chat to your app](recipes/chat-in-your-app.md).
 
@@ -11,7 +11,7 @@ The snippets on this page assume a `client` built as shown in [Construct](#const
 The module is `github.com/blazingagents/golang-sdk`, and its one package is `blazingagents`. The examples import it under the alias ba, as in `ba.NewClient()`. It needs Go 1.26 or newer and depends on the standard library only.
 
 ```bash
-go get github.com/blazingagents/golang-sdk@v0.3.0
+go get github.com/blazingagents/golang-sdk@latest
 ```
 
 ```go
@@ -73,7 +73,7 @@ Options:
 | `ba.WithConnectTimeout(d)` | 10 seconds | Dial timeout of the default transport. Not allowed together with `WithTransport` |
 | `ba.WithStreamIdleTimeout(d)` | off | Longest gap between two reads of a stream or download body |
 | `ba.WithTransport(rt)` | a clone of `http.DefaultTransport` | Proxies, TLS, tracing, or a test double |
-| `ba.WithHeader(name, value)` | none | Header sent on every request. SDK-owned headers (`Authorization`, `X-BA-User-Id`, `X-Request-Id`, `X-Client-Request-Id`, `Content-Type`, `Idempotency-Key`) fail with `ba.ErrInvalidHeader` |
+| `ba.WithHeader(name, value)` | none | Header sent on every request. SDK-owned headers (`Authorization`, `X-BA-User-Id`, `X-Request-Id`, `X-Client-Request-Id`, `Content-Type`, `Content-Length`, `Idempotency-Key`, `Host`) fail with `ba.ErrInvalidHeader` |
 | `ba.WithUserAgent(ua)` | none | Appended to `blazing-agents-go/<Version>` |
 | `ba.WithObserver(fn)` | none | `func(ba.ResponseObservation)` called once per response, with `OperationID`, `Method`, `Path`, `Status`, `Duration`, `RequestID`, and `ClientRequestID` |
 | `ba.WithLogger(l)` | discard | A `*slog.Logger` that gets one Debug record per response and the backend-function runner's records; never bodies or headers |
@@ -351,7 +351,7 @@ A `ba.Upload` comes from `ba.UploadFile(path)`, `ba.UploadBytes(name, b)`, or `b
 
 `Fork` sends `IdempotencyKey` as the `Idempotency-Key` header and fails client-side with `*ba.ArgumentError` on an empty or non-header-safe key. Reuse the original key after a lost response; a retry returns the same child, and `ba.CaptureResponse` shows `Status` 200 for a replay and 201 for a new child. The child's `ForkedFrom` names the source Session and message. Fork eligibility, retries, and error codes are in [Add a requested fork](recipes/chat-in-your-app.md#add-a-requested-fork).
 
-`ListMessages` returns the newest page in chronological order; pass `NextCursor` back as `Cursor` for earlier pages, and save `LatestCursor` to pass as `After` later for messages that arrived since. Setting both fails with `*ba.ArgumentError`. `AllMessages` keeps the direction: with `After` set it follows newer pages, otherwise older ones. While a Turn runs, `Chat.Send` fails with `session_busy`; steer with `SubmitInput` or hold the message in your own client. A Turn that stopped responding fails `session_turn_unresponsive`; wait out the error's `RetryAfter`, read history, then send again under a new message ID.
+`ListMessages` returns the newest page in chronological order; pass `NextCursor` back as `Cursor` for earlier pages, and save `LatestCursor` to pass as `After` later for messages that arrived since. Setting both fails with `*ba.ArgumentError`. `AllMessages` keeps the direction: with `After` set it follows newer pages, otherwise older ones. While a Turn runs, `Chat.Send` fails with `session_busy`. Read `Details["reason"]` on the `*ba.APIError`: `turn_running` clears when the Turn ends, so steer with `SubmitInput` or hold the message in your own client. `approval_pending` and `continuation_waiting` need an approval decision through `Chat.Continue` first, so retrying never clears them. A Turn that stopped responding fails `session_turn_unresponsive`; wait out the error's `RetryAfter`, read history, then send again under a new message ID.
 
 `SubmitInput` saves a steer receipt under your `RequestID` before returning, so retry with the same `RequestID` and message; a changed payload fails `input_idempotency_conflict`. Receipt `State` is `accepted` (the running Turn may still read and save it, so wait), `committed` (in history), or `not_placed` (the Turn ended without saving it; send it again as chat, which can repeat Tool calls if the Turn read it before it failed). `ListInputs` lists receipts; `IncludeCompleted: new(true)` adds terminal ones, and `Activity` (`idle`, `running`, `stopping`, `approval` with `TurnID`) says what the Session is doing. `Stop` takes `stream.TurnID()` in the client that started the Turn, or `Activity.TurnID` read from `ListInputs`. What each receipt state means and how the client-held queue works are in [Add chat to your app](recipes/chat-in-your-app.md#how-it-works).
 
@@ -366,7 +366,7 @@ A `ba.Upload` comes from `ba.UploadFile(path)`, `ba.UploadBytes(name, b)`, or `b
 | `Delete(taskID)` | `error`. A queued or running run blocks it |
 | `Submit(taskID, ba.SubmitTaskParams{IdempotencyKey})` | `*ba.CreatedTaskRun` (`RunID`) |
 | `ListRuns(taskID, ba.ListTaskRunsParams{Limit, Cursor})` / `AllRuns(...)` | `*ba.Page[ba.TaskRun]` |
-| `GetRun(taskID, runID)` | `*ba.TaskRun` with `AgentConfig` saved when queued |
+| `GetRun(taskID, runID)` | `*ba.TaskRun` with `AgentConfig` saved when queued. `ErrorCode` (`*ba.ErrorCode`) says why a `blocked` or `failed` run ended, such as `ba.ErrorCodeUsageCreditRequired`, and is `nil` otherwise; `Error` holds the message |
 | `ListRunMessages(taskID, runID, ba.ListTaskRunMessagesParams{Cursor, After, Limit})` / `AllRunMessages(...)` | `*ba.TaskRunMessageList` (`Data`, `NextCursor`, `LatestCursor`, `Status`, `Error`, `FinishedAt`) |
 | `CancelRun(taskID, runID)` | `error` |
 
@@ -424,7 +424,7 @@ A network policy is `ba.NetworkPolicyUnrestricted{}`, `ba.NetworkPolicyAllowlist
 | `Update(agentID, memoryID, ba.UpdateMemoryParams{Text})` | `*ba.Memory` |
 | `Delete(agentID, memoryID)` | `error` |
 
-A `ba.Memory` carries `ID`, `UserID` (empty for a general memory), `Text`, and timestamps including `LastAccessedAt`; `Get` does not touch `LastAccessedAt`, `Update` does. An agent holds at most 500 memories.
+A `ba.Memory` carries `ID`, `UserID` (empty for a general memory), `Text`, and timestamps including `LastAccessedAt`; `Get` does not touch `LastAccessedAt`, `Update` does. An Agent holds at most 500 memories, shared by all its End-users. When it is full, creating one evicts the least recently used.
 
 ### `client.Prompts` (both clients)
 
@@ -477,7 +477,7 @@ Every bot token and signing secret is a `ba.Secret` built with `ba.NewSecret`. S
 | `SpendingLimits.GetTenant()` / `SpendingLimits.UpdateTenant(ba.UpdateSpendingLimitParams{SpendingLimit})` | `*ba.ModelSpendingLimitStatus` |
 | `SpendingLimits.GetAgent(agentID)` / `SpendingLimits.UpdateAgent(agentID, ba.UpdateSpendingLimitParams{SpendingLimit})` | `*ba.ModelSpendingLimitStatus`. See [model spending limits](recipes/usage-dashboards.md#model-spending-limits) |
 
-`GroupBy` is `ba.UsageGroupByDay`, `Agent`, `Model`, `Session`, or `User`. `DateRange` is an embedded `*ba.DateRange{From, To}` of `ba.Date{Year, Month, Day}` values; `nil` sends neither bound. `SessionID` and `UserID` filters are `*string`, and `new("")` sends an empty filter that matches usage with no label. `Quota` is a `ba.Nullable[ba.QuotaInput]`; `ba.QuotaInput{ResetDay, MonthlyTokenLimit, MonthlyRequestLimit}` sends `null` for a limit you leave `nil`, which means unlimited, and `ba.Null[ba.QuotaInput]()` removes the quota. `SpendingLimit` is a `*ba.ModelSpendingLimit{AmountUSD, ResetStartDate, ResetInterval}`; `nil` removes the limit.
+`GroupBy` is `ba.UsageGroupByDay`, `Agent`, `Model`, `Session`, or `User`. `DateRange` is an embedded `*ba.DateRange{From, To}` of `ba.Date{Year, Month, Day}` values; `nil` sends neither bound. `SessionID` and `UserID` filters are `*string`, and `new("")` sends an empty filter that matches usage with no label. `Quota` is a `ba.Nullable[ba.QuotaInput]`; `ba.QuotaInput{ResetDay, MonthlyTokenLimit, MonthlyRequestLimit}` needs at least one limit set, and sends `null` for a limit you leave `nil`, which means unlimited. `ba.Null[ba.QuotaInput]()` sends `null` for the whole quota and removes it. `SpendingLimit` is a `*ba.ModelSpendingLimit{AmountUSD, ResetStartDate, ResetInterval}`; `nil` removes the limit.
 
 ### `client.MerchantConnection`, `client.MerchantBindings`, `client.MerchantUsageEvents`
 
@@ -486,9 +486,9 @@ Monetization: bill your end users through your own Polar or Dodo account. Setup,
 | Method | Returns |
 | --- | --- |
 | `MerchantConnection.Get()` | `*ba.MerchantConnection`, or `nil, nil` when there is none: the one method where a successful call returns no model |
-| `MerchantConnection.Create(ba.CreateMerchantConnectionParams{Provider, Environment, Credential, Guard})` | `*ba.MerchantConnection`. `ba.MerchantProviderPolar` or `Dodo`; `ba.MerchantEnvironmentSandbox` or `Live`. Replaces the current connection; fails `merchant_connection_in_use` (409) while a request admitted on it is still running or one of its usage events is `pending` |
+| `MerchantConnection.Create(ba.CreateMerchantConnectionParams{Provider, Environment, Credential, Guard})` | `*ba.MerchantConnection`. `ba.MerchantProviderPolar` or `Dodo`; `ba.MerchantEnvironmentSandbox` or `Live`. Replaces the current connection; fails `merchant_connection_in_use` (409) while a request that started on it is still running or one of its usage events is `pending` |
 | `MerchantConnection.Update(ba.UpdateMerchantConnectionParams{Credential, Guard})` | `*ba.MerchantConnection` |
-| `MerchantConnection.Retire()` | `error`. New usage is no longer recorded against it. Fails `merchant_connection_in_use` (409) while a request admitted on the connection is still running or one of its usage events is `pending`. On success its `failed` events are discarded and the credential is deleted at once, so nothing more is delivered through it. |
+| `MerchantConnection.Retire()` | `error`. New usage is no longer recorded against it. Fails `merchant_connection_in_use` (409) while a request that started on the connection is still running or one of its usage events is `pending`. On success its `failed` events are discarded and the credential is deleted at once, so nothing more is delivered through it. |
 | `MerchantBindings.List(ba.ListMerchantBindingsParams{UserID, Limit, Cursor})` / `All(...)` | `*ba.MerchantBindingList`. Fails `merchant_connection_not_found` when there is no connection |
 | `MerchantBindings.Set(userID string, ba.SetMerchantBindingParams{CustomerID})` | `*ba.MerchantBinding`. The API checks the customer exists at the provider |
 | `MerchantBindings.Delete(userID string)` | `error` |
@@ -497,7 +497,7 @@ Monetization: bill your end users through your own Polar or Dodo account. Setup,
 | `MerchantUsageEvents.Summary(ba.MerchantUsageSummaryParams{Days})` | `*ba.MerchantUsageSummary` (status counts and a daily window; `Days` 1 to 90, default 14) |
 | `MerchantUsageEvents.Retry(eventID)` / `Discard(eventID)` | `*ba.MerchantUsageEvent` |
 
-`Credential` is a `ba.Secret`. `Guard` is a `*ba.MerchantGuard{Enabled, ProductIDs, MeterID}`; a nil `ProductIDs` is sent as `[]`. Turn billing on with `client.Tenant.Update(ctx, ba.UpdateTenantParams{MonetizationEnabled: new(true)})` after the connection exists, and off with `MonetizationEnabled: new(false)` to pause it. To switch providers without losing charges, retry the `failed` events you still want billed, wait until no event is `pending`, then replace the connection.
+`Credential` is a `ba.Secret`. `Guard` is a `*ba.MerchantGuard{Enabled, ProductIDs, MeterID}`; a nil `ProductIDs` is sent as `[]`. Turn billing on with `client.Tenant.Update(ctx, ba.UpdateTenantParams{MonetizationEnabled: new(true)})` after the connection exists, and off with `MonetizationEnabled: new(false)` to pause it. To switch providers without losing charges, retry each `failed` event you still want billed and each `pending` event whose `NextAction` is `retry` (automatic delivery stopped), wait until no event is `pending`, then replace the connection. Details: [Bill your users for model tokens](https://docs.blazingagents.com/platform/monetization).
 
 ## Partial updates: nil keeps, `Null` sends null
 

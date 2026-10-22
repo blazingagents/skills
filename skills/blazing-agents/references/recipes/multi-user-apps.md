@@ -12,6 +12,8 @@ Your backend authenticates the user and selects their scope. `tenant.forUser(ver
 
 The API key still grants Tenant authority. Keep it on the backend. A body or list filter `userId` alone is only Attribution; an unscoped client retains access across the Tenant. Keep Tenant administration on that unscoped client in trusted code.
 
+Scope decides how many Agents you run. A scoped request reaches only an Agent and a Workspace owned by the same user, so every user needs their own Agent, Workspace, and Skill copies, created lazily on first use because creation is rate limited (see [Limits](../limits.md)). The alternative is one shared Agent on the unscoped client, where your backend checks which user owns which Session. A shared Agent shares one Workspace across all its users: one user's Turn can read files another user's Turn wrote, and its 500-note Memory pool is shared too. [Choose a design](../choosing.md#how-many-agents-one-shared-one-per-end-user-or-one-per-job) compares the two.
+
 ## Build it
 
 For a Python, Rust, or Go backend, read the code for these steps in [Python](multi-user-apps.python.md), [Rust](multi-user-apps.rust.md), [Go](multi-user-apps.go.md).
@@ -66,7 +68,7 @@ await client.tasks.create({
 });
 ```
 
-Python currently supports idempotency on `tasks.submit()`, not Task creation. Read [Background work](background-and-scheduled.md) for retry behavior.
+All four SDKs take the idempotency key on Task creation. Read [Background work](background-and-scheduled.md) for retry behavior.
 
 3. Use the scoped client for chat, history, approvals, downloads, Memory, and usage. BA checks referenced resource IDs, so these calls do not need a separate Session ownership table. Keep any additional product permissions in your backend.
 
@@ -93,10 +95,32 @@ List responses expose `data` and `nextCursor`. Pass the cursor back until it is 
 - Never forward a browser-supplied `X-BA-User-Id` as proof of identity. Derive it from verified sign-in.
 - Tenant-owned or another user's Agent cannot serve a scoped request. Create the Agent and its user-owned dependencies for that user.
 - Scope is immutable for each client. Do not store one user's scoped client in a global variable reused by other requests.
-- Tasks retain the scope selected at creation. A Task created without that scope cannot later be enabled or run through a scoped client; create it through the user scope from the start.
+- Tasks retain the scope selected at creation. A Task created without that scope, or under another user's scope, fails with `forbidden` (403) when a scoped client runs or changes it; create it through the user scope from the start.
 - A body `userId` that disagrees with the scope fails. Omit it when the scope already supplies the value.
-- Every scoped client omits Tenant administration (Providers, MCP and Chat Connections, spending limits, quotas, merchant settings) and the usage overview across users. Use scoped `usage.get()`, `usage.getForAgent()`, or `usage.sessions()` for a user's dashboard (`get_for_agent` in Python and Rust, `ForAgent` in Go).
-- A raw request that sends the scope header to a Tenant administration route fails with `forbidden` (403). Make that call from the unscoped client in trusted code; never drop the scope from an End-user operation to make it succeed.
+- Use scoped `usage.get()`, `usage.getForAgent()`, or `usage.sessions()` for a user's dashboard. Never drop the scope from an End-user operation to make it succeed.
+
+## Tenant administration
+
+A scoped client cannot reach these; make the calls from the unscoped client in trusted backend code:
+
+- Providers, their models, and thinking levels.
+- MCP Connections: create, update, test, reconnect, delete. A scoped client can still list and toggle the MCP attachments of the user's own Agent.
+- Chat Connections (Slack and Telegram).
+- The merchant connection, customer bindings, and merchant usage events.
+- Tenant settings and the quota.
+- Tenant and Agent model spending limits.
+- The usage overview across all users.
+- The Admin Agent.
+
+## When a scoped call fails
+
+| Error | Cause | Fix |
+| --- | --- | --- |
+| `not_found` (404) | The Agent, Session, Artifact, or other record is Tenant-level or belongs to another user. | Create the Agent for this user, or check the user ID passed to `forUser`. |
+| `workspace_not_found` (404) | The user's Agent is attached to a Workspace the user does not own. | Create the Workspace with this user's `userId`, or let `agents.create` on the scoped client make one. |
+| `forbidden` (403) | A Tenant administration call, or a Task created under another scope. | Call it from the unscoped client in trusted code, or recreate the Task through this scope. |
+| `invalid_request` (400) | A body `userId` differs from the scope. | Omit `userId`; the scope supplies it. |
+| `insufficient_scope` (403) | The API key is read-only and the call creates, changes, or deletes something. | Use a full key for setup code; keep the read key for chat and reads. |
 - On sign-out or account switch, stop streams, discard pending responses, clear user caches, and remount the chat transport. Namespace persisted Session IDs by the authenticated user.
 
 ## Check it works

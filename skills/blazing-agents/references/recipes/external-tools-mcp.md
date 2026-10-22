@@ -110,7 +110,9 @@ console.log(sessionId, called ? "MCP tool was called" : "MCP tool was not called
 - Forwarded `userId` and metadata are information for the server, not authorization. Your MCP server must still check what that user may do. Forward only what the server needs.
 - Tools are discovered live every Turn. Rerun `test()` after you change credentials or deploy the server.
 - `reconnect()` swaps URL and credentials under the same ID, which also changes what existing Sessions and Task runs use. Detach a Connection from every Agent before you delete it.
-- MCP tools follow the Agent's approval policies. Target one with `{ type: "mcp", connectionId, name }` using the original tool name; see [human-approval.md](human-approval.md).
+- MCP tools follow the Agent's approval policies. Target one with `{ type: "mcp", connectionId, name }` using the original tool name; see [human-approval.md](human-approval.md). If the server later renames or removes a tool that an approval override names, every Turn of that Agent fails with `mcp_connection_discovery_failed` until you remove the override, so change overrides and server deploys together.
+- An MCP Connection is Tenant administration: create, test, reconnect, and delete it on the unscoped client. A scoped client can only list and toggle the attachments of the user's own Agent.
+- Limits: 50 Connections per Tenant, 10 per Agent, 128 tools per Connection, 256 tools per Turn (more fails the Turn), 1 MiB per tool result, and 60 seconds per tool call. See [Limits](../limits.md).
 
 ## Check it works
 

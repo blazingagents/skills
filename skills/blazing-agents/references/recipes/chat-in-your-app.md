@@ -12,21 +12,26 @@ Your browser talks only to your backend. The backend authenticates the user and 
 
 BA holds no queue. A message sent while the Session is busy either steers the running Turn or waits in your client's own queue. When the Turn settles, your client sends the waiting messages as ordinary chat, one per Turn or several in one Turn with the scoped client's `chat({ messages: [...] })`. `sessions.submitInput()` steers: it takes your `requestId` and the message, binds it to the running Turn, and returns a receipt. Retry with the same `requestId` and message until the outcome is known. `steer_not_available` (409) means no Turn can take a steer because the Session is idle, stopping, or waiting on an approval, so the message stays queued locally. `sessions.inputs()` returns the steer receipts and the Session's `activity`; poll it while the Session is busy. A receipt is `accepted` while the running Turn may still read and save it, so wait. `committed` means it is saved in history. `not_placed` means the Turn ended, or BA lost it, without saving the message, so send it again as ordinary chat. If the Turn read it and then failed, the resend may repeat Tool calls, as any resend can. `sessions.stop()` records cancellation for a Turn ID and returns immediately; keep reading the existing stream until the Turn settles.
 
+## Must handle
+
+Every chat integration handles these, whatever its UI:
+
+- Every request runs on `client.forUser(verifiedUserId)`, so BA answers `404` for another user's Session or Agent.
+- Every user message carries a stable `id`. Sending an ID already in history returns `message_id_conflict` (409); reload history instead of resending.
+- A failure after streaming starts arrives as an error chunk in the stream, not an HTTP error. The transcript stays as it was, and the Turn is still metered.
+- A dropped connection does not prove the Turn failed. Reload history before telling the user their message was lost.
+- Stop calls `sessions.stop()` with the running Turn's ID, from `ChatResult.turnId` or the `X-BA-Turn-Id` response header, and keeps reading the stream until the Turn ends.
+- `session_busy` (409) carries `details.reason`. Only `turn_running` clears by itself; `approval_pending` and `continuation_waiting` need the approval round decided first.
+
 ## Build it
 
 For a Python, Rust, or Go backend, read the code for these steps in [Python](chat-in-your-app.python.md), [Rust](chat-in-your-app.rust.md), [Go](chat-in-your-app.go.md).
 
-1. Install the packages. Your backend needs `@blazingagents/sdk` (or `blazing-agents`, the Python package or the Rust crate, or the Go module). Your React frontend needs `@blazingagents/sdk`, `ai`, and `@ai-sdk/react`.
+1. Install the packages. Your backend needs `@blazingagents/sdk`. Your React frontend needs `@blazingagents/sdk`, `ai`, and `@ai-sdk/react`.
 
 ```bash
-npm install @blazingagents/sdk ai@^7 @ai-sdk/react zod
-# Python backend instead:
-pip install "blazing-agents>=0.17.0" fastapi uvicorn
-# Go backend instead:
-go get github.com/blazingagents/golang-sdk@v0.3.0
+npm install @blazingagents/sdk ai @ai-sdk/react zod
 ```
-
-This recipe needs `@blazingagents/sdk` 0.34.0 or `blazing-agents` 0.17.0 or newer.
 
 2. Add the backend. `chat` relays one Turn and `history` returns a Session's saved messages. Mount them as `POST /api/chat` and `GET /api/chat/history` in your framework. In the Next.js App Router, export them as `POST` and `GET` handlers. In Hono, call `chat(c.req.raw)`. Authenticate the user, select their Agent in backend code, validate the request body, then call the scoped client. `sessions.messages()` returns the native UIMessage page. Return its cursors with the messages for older-history controls.
 
@@ -146,7 +151,7 @@ export async function history(request: Request): Promise<Response> {
 
 The authentication hook returns the verified user's ID and their Agent ID from trusted backend state. Provision that Agent, and its Workspace, for the same user. `createChatRelay` scopes each request the same way and needs no ownership table; use it instead when your client sends one message per Turn and never a `messages` batch ([the TypeScript SDK reference](../sdk-typescript.md)).
 
-In Python, `client.for_user(user_id)` returns the End-user scoped client; a Rust `UserClient` and a Go `*ba.UserClient` work the same way. Each sends the verified scope on every request it makes, so the calls need no `user_id`. The SDK returns the raw stream bytes; relay them unchanged and copy the `Location` header on the first Turn so the frontend learns the Session ID. In Go, `stream.SetRelayHeaders(w.Header())` sets the stream headers and `stream.WriteTo(w)` relays and flushes each event.
+Relay the stream unchanged, and on the first Turn copy the `Location` header so the frontend learns the Session ID.
 
 3. Add the Session endpoints. `GET /api/chat/session` returns the Session's steer receipts and activity. `POST /api/chat/steer` submits one message as a steer to the running Turn. `POST /api/chat/stop` stops the running Turn by its `turnId`. Every call goes through the same verified user scope as `chat`. Deleting a queued message needs no endpoint: the queue lives in the browser, so the client just drops the row.
 
@@ -227,7 +232,7 @@ export async function stop(request: Request): Promise<Response> {
 }
 ```
 
-Mount `session` as `GET /api/chat/session`, `steer` as `POST /api/chat/steer`, and `stop` as `POST /api/chat/stop`. In Python, add three routes to the FastAPI app from step 2; the first lines repeat its client and sign-in hooks:
+Mount `session` as `GET /api/chat/session`, `steer` as `POST /api/chat/steer`, and `stop` as `POST /api/chat/stop`.
 
 4. Add the React chat. `ChatPage` loads saved history for the stored Session, then mounts `Chat`. `Chat` keeps a copy of the last successful conversation and restores it after an error or Stop, putting the sent text back in the box for an edited or unchanged resend. While the Session is busy, the composer's button reads Stop until the user types, then Send; a send adds the message to the local `queue`. The `queue` block above the composer lists each waiting message on one line with Send (steer the running Turn now) and Delete (drop it; it was never sent). `Chat` polls `GET /api/chat/session` while the Session is busy or a steer is pending. When the Session is idle and messages wait, `Chat` shows that batch of user messages and calls `resumeStream()`, which posts them to `/api/chat` through a second AI SDK transport as a `messages` array and streams the answer; after that Turn ends it reloads saved history. `Chat` sends each set of waiting messages once; after a failed send, it waits for the user. A steer whose submit response was lost shows Retry, which submits it again under the same `requestId`, so a steer that was saved returns its existing receipt. A batch that contains a message already in history returns `message_id_conflict`, and `Chat` reloads history and requeues only the messages history lacks.
 
@@ -699,7 +704,7 @@ Handle these errors:
 ## Gotchas
 
 - **History lives in BA.** Send only new user messages: one `message`, or a `messages` batch of the ones that waited. A client that posts the whole conversation gets a 400: the handler accepts user messages, or one answered assistant message that carries an approval round.
-- **Validate every ID before it reaches a URL.** The browser sends `sessionId`, `turnId`, and `requestId`, and the SDK places them in request paths. A value such as `../../ag_other/sessions/ss_x` or `..` would make the request reach another route. Check them at your relay as the handlers do: `sessionIdSchema` and `sessionInputRequestIdSchema` from `@blazingagents/sdk/contracts` in TypeScript, and the same patterns in Python. The Rust SDK percent-encodes every path segment and rejects an empty, `.`, or `..` value client-side as `Error::InvalidArgument`, so `../../ag_other/sessions/ss_x` can never leave its segment. The Go SDK does the same and reports the rejected value as `*ba.ArgumentError`. A `requestId` of `.` or `..` is invalid.
+- **Validate every ID before it reaches a URL.** The browser sends `sessionId`, `turnId`, and `requestId`, and the SDK places them in request paths. A value such as `../../ag_other/sessions/ss_x` or `..` would make the request reach another route. Check them at your relay as the handlers do, with `sessionIdSchema` and `sessionInputRequestIdSchema` from `@blazingagents/sdk/contracts`. A `requestId` of `.` or `..` is invalid.
 - **Derive scope from verified sign-in.** BA enforces ownership when you use `forUser()`: another user's Session or Agent returns `not_found` (404). A body `userId` alone grants no access.
 - **Save the Session ID.** The transport receives it before the answer streams. Keep it even when the first Turn fails or is stopped; the Session exists and is simply empty.
 - **Keep one transport per conversation.** `useChat` ignores a new transport after mount. To switch Session or user, remount `Chat` with a new `key`, as `ChatPage` does. Clear persisted user data on sign-out and abort requests from the old account.
@@ -708,8 +713,8 @@ Handle these errors:
 - **Tool effects can repeat.** Stop cancels the Turn but cannot undo a Tool call that already ran, and a resend can run it again (for example, a second email). Make side-effecting Tools safe to repeat or gate them with [human approval](human-approval.md).
 - **A lost response may already be saved.** A dropped connection is not proof of failure. Reload history before telling the user their message was lost.
 - **Regenerate only after a successful answer.** A prompt that failed was never saved, so there is nothing to regenerate. If regeneration fails or is stopped, the old answer stays.
-- **`session_busy` (HTTP 409)** from `chat` means a Tool approval is pending, a continuation is running, or another Turn holds the Session, for example one started from another tab. Steer the running Turn, or hold the message in the queue and let the next dispatch send it.
-- **`session_turn_unresponsive` (HTTP 409)** means the Session's previous Turn stopped responding, so the Session is not free yet. It frees within a minute. Keep the message queued, wait the whole seconds in the `Retry-After` header (`error.headers` in TypeScript, `error.retry_after` in Python, `error.retry_after()` in Rust, `apiErr.RetryAfter` in Go), and send again under a new message ID.
+- **`session_busy` (HTTP 409)** from `chat` means another Turn holds the Session, for example one started from another tab (`details.reason` is `turn_running`), a Tool approval is pending (`approval_pending`), or a continuation waits (`continuation_waiting`). For `turn_running`, steer the running Turn or hold the message in the queue and let the next dispatch send it. For the other two, the approval round must be decided first; waiting never clears them.
+- **`session_turn_unresponsive` (HTTP 409)** means the Session's previous Turn stopped responding, so the Session is not free yet. It frees within a minute. Keep the message queued, wait the whole seconds in the `Retry-After` header, and send again under a new message ID.
 - **A cut Turn sends `turn_interrupted`.** When the platform cuts a Turn after the stream started, the stream sends a transient `data-ba-error` part (`data.code` is `turn_interrupted`), then an `error` chunk, with status 200. The Turn may have saved its work, so reload history before restoring the draft. The Session can stay busy for up to a minute afterward.
 - **Queue only after the Session exists.** The first message creates the Session through `chat`. Steers and batches need a Session ID, which the transport receives before the answer streams.
 - **The queue is yours.** It lives in client state, such as `useState`, localStorage, or your own store. Take a message out before sending it (a queued row means "not sent"), never auto-retry a send whose outcome is unknown, and never rebuild the queue from receipts or history. A send containing any message ID already in history returns `message_id_conflict` (409) before model or Tool work: the message is already saved, so reload history instead of resending. Regeneration may reuse IDs.

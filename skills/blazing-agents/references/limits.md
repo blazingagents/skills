@@ -40,7 +40,7 @@ current value on that page.
 | Skills per Agent ([row][skills]) | 100 | Each per-user Agent needs its own copies. |
 | One Skill ([row][skill-bundle]) | 100 files, 10 MiB | Split large reference sets across Skills. |
 | Skill copy ([row][skill-copy]) | 1 to 30 destination Agents per request | Copying to many per-user Agents takes many requests. |
-| Memories per Agent ([row][memories]) | 500, shared by all End-users of the Agent | The least recently used note is evicted silently. On a shared Agent, busy users push out other users' notes. |
+| Memories per Agent ([row][memories]) | 500, shared by all End-users of the Agent | The least recently used note is evicted silently. On a shared Agent, busy users push out other users' notes. A `forUser` save evicts only that user's notes and fails with `invalid_request` (400) when other users hold the pool. |
 | One Memory ([row][memory-text]) | 10 KiB | Memory is for short facts, not documents. |
 | Memory injection | Newest notes first, up to 4,000 words per Turn | Older notes reach the Agent only through the memory tools. |
 | MCP Connections per Agent ([row][mcp-per-agent]) | 10 | |

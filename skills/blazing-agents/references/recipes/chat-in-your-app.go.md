@@ -2,6 +2,14 @@
 
 The Go code for the steps of [Add chat to your app](chat-in-your-app.md). Read that file first: it explains each step, its decisions, and its gotchas. Sections here match its steps and headings.
 
+## Step 1: Install the module
+
+```bash
+go get github.com/blazingagents/golang-sdk@latest
+```
+
+`client.ForUser(userID)` returns a `*ba.UserClient` that sends the scope on every request. `stream.SetRelayHeaders(w.Header())` sets the stream headers and `stream.WriteTo(w)` relays and flushes each event; copy the `Location` header yourself on the first Turn. The SDK rejects an empty, `.`, or `..` path value as `*ba.ArgumentError`, so a browser ID cannot leave its path segment.
+
 ## Step 2: Add the backend
 
 ```go

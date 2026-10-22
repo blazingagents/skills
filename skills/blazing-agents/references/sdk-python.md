@@ -1,6 +1,6 @@
 # Python SDK reference
 
-Use this page to call Blazing Agents from a Python backend: install the package, pick a client, run Turns, and find the method for every operation. It matches `blazing-agents` 0.28.0, the floor the install command below pins. If the project pins an older version, upgrade it or check the installed package before using a method from this page.
+Use this page to call Blazing Agents from a Python backend: install the package, pick a client, run Turns, and find the method for every operation. Check the installed version's types when a method here is missing.
 
 For the same surface in TypeScript, Rust, or Go, read [TypeScript SDK reference](sdk-typescript.md), [Rust SDK reference](sdk-rust.md), or [Go SDK reference](sdk-go.md). For end-to-end builds, start from a recipe such as [Add chat to your app](recipes/chat-in-your-app.md).
 
@@ -9,9 +9,9 @@ For the same surface in TypeScript, Rust, or Go, read [TypeScript SDK reference]
 The PyPI package is `blazing-agents`. The import name is `blazing_agents`. It needs Python 3.11 or newer.
 
 ```bash
-pip install "blazing-agents>=0.28.0"
+pip install blazing-agents
 # or
-uv add "blazing-agents>=0.28.0"
+uv add blazing-agents
 ```
 
 Keep the Tenant API key in `BLAZING_AGENTS_API_KEY` on your backend. It can reach everything in your Tenant, so it never goes to a browser or mobile app.
@@ -69,7 +69,7 @@ Constructor options (all keyword-only):
 
 ## Run Turns: root generation methods
 
-The client itself has five generation methods. Each call runs one metered Turn. Give each call exactly one input: a literal `message` or `prompt`, or a saved Prompt through `prompt_id` with optional `variables`. `chat()` alone also takes `messages`, a list of user messages run in one Turn in order. Use it for messages your client held while the Session was busy. Every method also accepts `user_id` plus `metadata` for Attribution to your end user.
+The client itself has five generation methods. Each call runs one metered Turn. Give each call exactly one input: a literal `message` or `prompt`, or a saved Prompt through `prompt_id` with optional `variables`. `chat()` alone also takes `messages`, a list of user messages run in one Turn in order. Use it for messages your client held while the Session was busy. Each of these five also accepts `user_id` plus `metadata` for Attribution to your end user.
 
 | Method | Returns | Use it for |
 | --- | --- | --- |
@@ -79,7 +79,7 @@ The client itself has five generation methods. Each call runs one metered Turn. 
 | `object(...)` | Your `output_type` instance, or `JsonValue` | Structured output, validated |
 | `object_stream(...)` | `ObjectStream` of raw JSON text deltas | Structured output, streamed. `get_final_object()` validates at the end |
 
-`continue_chat(...)` is not a generation method: it decides a Session's complete approval round, with backend functions attached, and returns a `ChatStream` for the continuing Turn. See [Backend functions](#backend-functions).
+`continue_chat(...)` is not a generation method: it decides a Session's complete approval round, with backend functions attached, and returns a `ChatStream` for the continuing Turn. It takes no `user_id` or `metadata`. See [Backend functions](#backend-functions).
 
 ### Chat returns raw SSE bytes and a Session ID
 
@@ -340,10 +340,9 @@ What each receipt state means and how the client-held queue works are in [Add ch
 | `update(mcp_connection_id, *, name)` | `McpConnection` |
 | `delete(mcp_connection_id)` | `None` |
 | `test(mcp_connection_id)` | `McpConnectionTestResult` |
-| `connect(mcp_connection_id)` | `McpConnectionAuthorization` (OAuth sign-in URL) |
 | `reconnect(mcp_connection_id, *, url, auth_type, bearer_token=..., client_id=..., client_secret=..., scope=...)` | `McpConnectionReconnectResult` |
 
-`auth_type` is `"none"`, `"bearer"` (needs `bearer_token`), `"oauth_client_credentials"` (needs `client_id` and `client_secret`), or `"oauth_authorization_code"`. Attach a connection to an Agent through `agents.create/update(mcp_connection_ids=[...])`.
+`auth_type` is `"none"`, `"bearer"` (needs `bearer_token`), `"oauth_client_credentials"` (needs `client_id` and `client_secret`), or `"oauth_authorization_code"`. Attach a connection to an Agent through `agents.create/update(mcp_connection_ids=[...])`. OAuth sign-in for an `oauth_authorization_code` connection happens in the dashboard: a Tenant administrator opens MCP connections, clicks **Connect**, and signs in to the server. The connection stays `needs_auth` until then, and an API key cannot start this sign-in.
 
 ### `client.memories`
 
@@ -414,9 +413,9 @@ Monetization: bill your end users through your own Polar or Dodo account. Setup,
 | Method | Returns |
 | --- | --- |
 | `merchant_connection.get()` | `MerchantConnectionResponse` (`connection` is `None` when none exists) |
-| `merchant_connection.create(*, provider, environment, credential, guard=...)` | `MerchantConnectionResponse`. `provider` is `"polar"` or `"dodo"`; `environment` is `"sandbox"` or `"live"`. Replaces the current connection; fails `merchant_connection_in_use` (409) while a request admitted on it is still running or one of its usage events is `pending`. |
+| `merchant_connection.create(*, provider, environment, credential, guard=...)` | `MerchantConnectionResponse`. `provider` is `"polar"` or `"dodo"`; `environment` is `"sandbox"` or `"live"`. Replaces the current connection; fails `merchant_connection_in_use` (409) while a request that started on it is still running or one of its usage events is `pending`. |
 | `merchant_connection.update(*, credential=..., guard=...)` | `MerchantConnectionResponse` |
-| `merchant_connection.retire()` | `None`. New usage is no longer recorded against it. Fails `merchant_connection_in_use` (409) while a request admitted on the connection is still running or one of its usage events is `pending`. On success its `failed` events are discarded and the credential is deleted at once, so nothing more is delivered through it. |
+| `merchant_connection.retire()` | `None`. New usage is no longer recorded against it. Fails `merchant_connection_in_use` (409) while a request that started on the connection is still running or one of its usage events is `pending`. On success its `failed` events are discarded and the credential is deleted at once, so nothing more is delivered through it. |
 | `merchant_bindings.list(*, user_id=..., cursor=..., limit=...)` / `iter(...)` | `MerchantBindingsPage` / `Iterator[MerchantCustomerBinding]`. Raises `merchant_connection_not_found` when there is no connection. |
 | `merchant_bindings.put(user_id, *, customer_id)` | `MerchantBindingResponse`. The API checks the customer exists at the provider. |
 | `merchant_bindings.delete(user_id)` | `None` |
@@ -425,7 +424,7 @@ Monetization: bill your end users through your own Polar or Dodo account. Setup,
 | `merchant_usage_events.summary(*, days=...)` | `MerchantUsageSummaryResponse` (status counts and a daily window; `days` 1 to 90, default 14) |
 | `merchant_usage_events.retry(event_id)` / `discard(event_id)` | `MerchantUsageEventResponse` |
 
-`guard` is a dict with exactly `enabled`, `product_ids`, and `meter_id`. Turn billing on with `tenant.update(monetization_enabled=True)` after the connection exists, and off with `monetization_enabled=False` to pause it. To switch providers without losing charges, retry the `failed` events you still want billed, wait until no event is `pending`, then replace the connection.
+`guard` is a dict with exactly `enabled`, `product_ids`, and `meter_id`. Turn billing on with `tenant.update(monetization_enabled=True)` after the connection exists, and off with `monetization_enabled=False` to pause it. To switch providers without losing charges, retry each `failed` event you still want billed and each `pending` event whose `event.next_action` is `retry` (automatic delivery stopped), wait until no event is `pending`, then replace the connection. Details: [Bill your users for model tokens](https://docs.blazingagents.com/platform/monetization).
 
 ## Partial updates: omit to keep, `None` to clear
 

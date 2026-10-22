@@ -92,7 +92,7 @@ export async function continueAfterDecisions(): Promise<Response> {
 - Never trust a user ID the model supplies as an argument; build handlers after authenticating and query with the verified ID.
 - Backend functions follow `approvalInChat.default`; per-tool `overrides` name built-in and MCP tools only.
 - Messages that waited while the Session was busy go out through your own `chat()` calls, so attach the same `functions` map to each one, including a multi-message `chat({ messages: [...] })`. See [chat in your app](chat-in-your-app.md).
-- The saved schema wins on the continuation. A missing handler or invalid input reaches the agent as a tool error, so keep the continued handlers compatible with what chat advertised.
+- Nothing about a function is saved. The continuation uses the `functions` you pass to `continueChat`, so keep their names and schemas compatible with the paused call. A missing handler or invalid input reaches the agent as a tool error.
 - Each call has a 60-second deadline, including claim time. Cancellation is cooperative (pass `signal`, check `cancelled` in a synchronous Python handler, or honor the handler's `ctx` in Go) and cannot undo a side effect that already happened.
 - The idempotency key marks one execution. A user resend gets a fresh key, so payments and other business operations need your own stable transaction ID.
 - The SDK retries transient claim and result failures without rerunning your handler. If the connection drops after a side effect, the outcome can be unknown; check your own records before repeating it.

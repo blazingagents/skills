@@ -2,6 +2,16 @@
 
 The Python code for the steps of [Add chat to your app](chat-in-your-app.md). Read that file first: it explains each step, its decisions, and its gotchas. Sections here match its steps and headings.
 
+## Step 1: Install the packages
+
+```bash
+pip install blazing-agents fastapi uvicorn
+```
+
+`client.for_user(verified_user_id)` returns the End-user scoped client; it sends the scope on every request, so the calls need no `user_id`. The SDK returns the raw stream bytes. Relay them unchanged and copy the `Location` header on the first Turn. Validate browser IDs with the same patterns the TypeScript handlers use.
+
+For step 3, add three routes to the FastAPI app from step 2; the first lines repeat its client and sign-in hooks.
+
 ## Step 2: Add the backend
 
 ```python

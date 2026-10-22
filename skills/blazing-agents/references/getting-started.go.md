@@ -2,6 +2,12 @@
 
 The Go code for the steps of [Get started with Blazing Agents](getting-started.md). Read that file first: it explains each step, its decisions, and its gotchas. Sections here match its steps and headings.
 
+## Step 1: Install the SDK
+
+```bash
+go get github.com/blazingagents/golang-sdk@latest
+```
+
 ## Step 2: Check the connection
 
 ```go

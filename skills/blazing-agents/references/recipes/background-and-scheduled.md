@@ -89,7 +89,7 @@ export async function startWeeklyReport(verifiedUserId: string, week: string): P
 
 Save the `tr_...` run ID with the Task ID, then return from your request.
 
-For a new Task that should run immediately, TypeScript, Rust, and Go can create both in one retry-safe request:
+For a new Task that should run immediately, every SDK can create both in one retry-safe request:
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
@@ -175,7 +175,7 @@ Cancel asks the run to stop at its next safe point. Keep polling until a final s
 
 ## Gotchas
 
-- In TypeScript, pass `idempotencyKey` to `tasks.create()`, including when `submit: true`; in Rust, chain `.submit(true).idempotency_key(...)`; in Go, set `Submit: new(true)` and `IdempotencyKey` together. The same key and original input return the same Task and initial run. Changed input or a deleted Task returns `idempotency_conflict` (409). Without a key, a retry creates another Task. Python currently supports keys on `submit()` only; reconcile Task creation before retrying it.
+- Pass an idempotency key to `tasks.create()`, including when `submit: true`. The same key and original input return the same Task and initial run. Changed input or a deleted Task returns `idempotency_conflict` (409). Without a key, a retry creates another Task.
 - A run keeps the `userId`, `metadata`, and Agent configuration (including `approvalInTasks`) captured when it was queued; read it with `getRun()`. Editing the Task or Agent changes later runs only. `agentId` and `userId` cannot change; create a new Task instead.
 - Designing a Task around `manual` approval does not work: the call is denied and the run continues without it. Grant the tools it needs with `full` in `approvalInTasks`, or move the step to chat.
 - Starting a run with a new key while another run is active returns `task_active_run_exists` (HTTP 409). Scheduled times that fall during an active run are skipped, and missed times are not caught up.

@@ -41,6 +41,25 @@ def start_weekly_report(
         raise
 ```
 
+For a new Task that should run immediately:
+
+```python
+from blazing_agents import BlazingAgents
+
+
+def create_daily_report(
+    tenant: BlazingAgents, verified_user_id: str, agent_id: str, report_date: str
+) -> str | None:
+    created = tenant.for_user(verified_user_id).tasks.create(
+        agent_id=agent_id,
+        name="Daily report",
+        prompt=f"Summarize activity for {report_date}.",
+        submit=True,
+        idempotency_key=f"daily-report:{report_date}",
+    )
+    return created.run_id
+```
+
 ## Step 4: Check the run later through the user's scoped client
 
 ```python

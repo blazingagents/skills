@@ -18,19 +18,22 @@ Do not present usage numbers as your Blazing Agents bill. BA charges its own exe
 
 For dollar allowances, use `tenant.getSpendingLimit` and
 `tenant.updateSpendingLimit` for the account, or the corresponding
-`agents` methods with `agentId`. Python provides `get_spending_limit` and
-`update_spending_limit`. Go groups them on `client.SpendingLimits` as
-`GetTenant`, `UpdateTenant`, `GetAgent`, and `UpdateAgent`. These operations
-require unscoped Tenant authority.
+`agents` methods with `agentId` (each SDK page gives its spelling). These
+operations require unscoped Tenant authority.
 
 A settings form needs `amountUsd`, `resetStartDate`, and a `resetInterval` of
-`daily`, `weekly`, `biweekly`, or `monthly` (snake_case in Python, a `ResetInterval` variant in Rust, a `ba.ResetInterval` constant in Go). Saving
+`daily`, `weekly`, `biweekly`, or `monthly`. Saving
 applies immediately and keeps the current period's spend.
 
 Render `period.spentUsd`, `period.availableUsd`, and `nextResetAt` as separate
 values, and label the amount as an estimated model-token allowance, not an
 invoice total. Each running Turn may finish one model request past the limit,
-so `spentUsd` can end slightly above `amountUsd`. In chat,
+so `spentUsd` can end slightly above `amountUsd`. While a limit applies, a model
+with no known price is refused as `unpriced` before any request, and a response that reports no
+cost stops the Turn the same way; custom Providers and bring-your-own-key
+responses without an upstream cost hit this, so test a limit with the exact
+Provider and model first. Web search is billed as Usage credit and is not
+capped by spending limits. In chat,
 handle stops as described in [chat in your app](chat-in-your-app.md). Never
 automatically retry `model_spending_limit_exceeded` or change a limit the user
 did not ask to change.
@@ -176,7 +179,7 @@ export async function runStatus(verifiedUserId: string, taskId: string, runId: s
 }
 ```
 
-5. Connect your Polar or Dodo account, then turn on the billing switch. Start in `sandbox`. For Polar, use an Organization Access Token with only `organizations:read`, `customers:read`, and `events:write`; for Dodo, an API key in the matching mode.
+5. Connect your Polar or Dodo account, then turn on the billing switch. Start in `sandbox`. For Polar, use an Organization Access Token with only `organizations:read`, `customers:read`, and `events:write`, plus `products:read` and `meters:read` if you turn on the guard in step 7; for Dodo, an API key in the matching mode.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
@@ -269,6 +272,7 @@ Send 1 to 100 distinct IDs per request. The response preserves their order and r
 
 ## Gotchas
 
+- Going live replaces the `sandbox` connection with a `production` one. Replacing needs no `pending` events, discards `failed` ones, and drops every customer binding, because bindings belong to a connection. Link every user again; until then their Turns record `discarded` events that are never billed.
 - In `usage.overview()`, `byAgent`, `byUser`, and the top models are capped at `limit` (1 to 20, default 5). Read totals from `totals` and the Agent count from `activeAgentCount`, not from a ranking. Render the model remainder bucket as "Other models" instead of dropping it, or `byModel` no longer adds up to `totals`.
 - `userId: ""` in a bucket is real usage with no user label. `userId: null` means the query was not grouped by user. Show `""` as a row such as "No user".
 - `from` and `to` are inclusive UTC dates. Pass both or neither (the default is the last 30 days), and keep the range to 31 days or fewer, or the call fails with `validation_failed`. Page longer periods month by month.

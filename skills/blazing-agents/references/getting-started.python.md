@@ -2,6 +2,12 @@
 
 The Python code for the steps of [Get started with Blazing Agents](getting-started.md). Read that file first: it explains each step, its decisions, and its gotchas. Sections here match its steps and headings.
 
+## Step 1: Install the SDK
+
+```bash
+pip install blazing-agents
+```
+
 ## Step 2: Check the connection
 
 ```python
