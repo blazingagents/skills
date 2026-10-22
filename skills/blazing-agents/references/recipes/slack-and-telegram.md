@@ -331,13 +331,16 @@ if err := client.ChatConnections.Delete(ctx, connectionID); err != nil {
 - If the Agent has a Tool that requires approval, trigger it and click the card. The Turn continues.
 - After `disable()`, a new message gets no reply. After `enable()`, the next message does.
 
-## Watch for failed deliveries
+## What to expect from delivery
 
-`chatDeliveries.list()` (Python `chat_deliveries.list()`, Rust `chat_deliveries().list()`, Go `client.ChatDeliveries.List()`) is an attention feed: it lists failed and ambiguous deliveries across every connection, newest first, optionally bounded by `since`. Use it for an operator status view; each entry carries `connectionId`, `agentId`, and `platform` so you can tell which bot is affected. BA sends a pending reply by itself, even after an interruption, so only failed and ambiguous deliveries need attention. For pending and confirmed deliveries, or to repair one, use REST: `GET /v1/chat-connections/{id}/deliveries` and `POST /v1/chat-connections/{id}/deliveries/{deliveryId}/repair`. The TypeScript SDK does not expose them; Python has `chat_connections.list_deliveries()` and `repair_delivery()`, Rust has `chat_connections().deliveries()` and `repair_delivery()`, and Go has `client.ChatConnections.ListDeliveries()` and `RepairDelivery()`.
+- BA posts each reply and approval card at least once, with a few retries. A reply can rarely appear twice.
+- A reply that still fails to post stays in the Session transcript, and nothing sends it again. Read the Session's messages to see it.
+- An approval card that failed to post is posted again when the person sends their next message, with a note asking them to decide it first.
+- A Turn you start through the API on a chat Session does not post to Slack or Telegram.
 
 ## Go deeper
 
 - [Slack and Telegram](https://docs.blazingagents.com/platform/chat-integrations)
 - [TypeScript chat connections](https://docs.blazingagents.com/sdk/typescript/chat-integrations) and [Python chat connections](https://docs.blazingagents.com/sdk/python/chat-integrations)
-- [Chat connections REST API](https://docs.blazingagents.com/api-reference/rest-api/chat-connections), including the per-connection deliveries list and repair for a finished reply that never appeared
+- [Chat connections REST API](https://docs.blazingagents.com/api-reference/rest-api/chat-connections)
 - [Tool approvals](https://docs.blazingagents.com/agents/tools/tool-approvals)

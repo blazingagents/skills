@@ -268,7 +268,7 @@ async fn list_my_agents(
 
 - Take the ID from the session your backend verified, never from a request body or query parameter.
 - The ID is 1 to 256 printable ASCII characters with no leading or trailing space. Anything else fails with `ConfigError::InvalidUserId`.
-- A `UserClient` has `agents()`, `artifacts()`, `memories()`, `prompts()`, `sessions()`, `tasks()`, `workspaces()`, `agent()`, the generation methods, and `usage()` with `get()`, `sessions()`, and `get_for_agent()`. Tenant administration (`providers()`, `mcp_connections()`, `chat_connections()`, `chat_deliveries()`, `tenant()`, the merchant resources), the agent spending limit methods, and `usage().overview()` exist only on the tenant client; the compiler rejects them on a `UserClient`.
+- A `UserClient` has `agents()`, `artifacts()`, `memories()`, `prompts()`, `sessions()`, `tasks()`, `workspaces()`, `agent()`, the generation methods, and `usage()` with `get()`, `sessions()`, and `get_for_agent()`. Tenant administration (`providers()`, `mcp_connections()`, `chat_connections()`, `tenant()`, the merchant resources), the agent spending limit methods, and `usage().overview()` exist only on the tenant client; the compiler rejects them on a `UserClient`.
 - `with_client_request_id()` on a `UserClient` keeps the scope.
 
 ## Operation map
@@ -341,7 +341,7 @@ An `Upload` comes from `Upload::bytes(...)`, `Upload::file(path).await`, or `Upl
 
 `messages()` returns the newest page in chronological order; pass `next_cursor` back as `.cursor(...)` for earlier pages, and save `latest_cursor` to pass as `.after(...)` later for messages that arrived since (never `cursor` and `after` together). While a Turn runs, `chat()` fails with `session_busy`; steer with `submit_input()` or hold the message in your own client. A Turn that stopped responding fails `session_turn_unresponsive`; wait out the error's `retry_after()`, read history, then send again under a new message ID.
 
-`submit_input()` saves a steer receipt under your `request_id` before returning, so retry with the same `request_id` and message; a changed payload fails `input_idempotency_conflict`. Receipt `state` is `accepted`, `delivered`, `committed` (in history), `not_placed` (never ran, safe to resend as chat), or `uncertain` (may have run; never resend automatically). `inputs()` lists receipts; `.include_completed(true)` adds terminal ones, and `activity` (`idle`, `running`, `stopping`, `approval` with `turn_id`) says what the Session is doing. `stop()` takes `stream.turn_id()` in the client that started the Turn, or `activity.turn_id` read from `inputs()`. What each receipt state means and how the client-held queue works are in [Add chat to your app](recipes/chat-in-your-app.md#how-it-works).
+`submit_input()` saves a steer receipt under your `request_id` before returning, so retry with the same `request_id` and message; a changed payload fails `input_idempotency_conflict`. Receipt `state` is `accepted` (the running Turn may still read and save it, so wait), `committed` (in history), or `not_placed` (the Turn ended without saving it; send it again as chat, which can repeat Tool calls if the Turn read it before it failed). `inputs()` lists receipts; `.include_completed(true)` adds terminal ones, and `activity` (`idle`, `running`, `stopping`, `approval` with `turn_id`) says what the Session is doing. `stop()` takes `stream.turn_id()` in the client that started the Turn, or `activity.turn_id` read from `inputs()`. What each receipt state means and how the client-held queue works are in [Add chat to your app](recipes/chat-in-your-app.md#how-it-works).
 
 ### `client.tasks()`
 
@@ -370,7 +370,7 @@ An `Upload` comes from `Upload::bytes(...)`, `Upload::file(path).await`, or `Upl
 | `list()`, `.user_id(...)`, `.limit(...)` | `Page<Workspace>` |
 | `get(workspace_id)` | `Workspace` |
 | `update(workspace_id)`, `.name(...)`, `.clear_name()`, `.metadata(...)`, `.network_policy(...)` | `Workspace` |
-| `delete(workspace_id)` | `()` once the deletion is accepted; files are removed in the background |
+| `delete(workspace_id)` | `()`, once the Workspace and its files are deleted |
 
 A network policy is `NetworkPolicy::Unrestricted`, `NetworkPolicy::allowlist(hosts)`, or `NetworkPolicy::Offline`.
 
@@ -447,18 +447,8 @@ Run a saved Prompt with `client.chat(agent_id, SavedPrompt::new(prompt_id).var("
 | `check_health(chat_connection_id)` | `ChatConnection` |
 | `enable(chat_connection_id)` / `disable(chat_connection_id)` | `ChatConnection` |
 | `delete(chat_connection_id)` | `()` |
-| `deliveries(chat_connection_id)`, `.limit(...)` | `Page<ChatDelivery>` |
-| `repair_delivery(chat_connection_id, delivery_id, expected_attempt)` | `ChatDeliveryResult` |
 
-`repair_delivery` confirms the previous sender has stopped and accepts that the repaired reply may post twice. `NewSlackConnection` and `NewTelegramConnection` also take `.enabled(...)`, `.channel_ids(...)`, `.chat_ids(...)`, and `.business_mode(...)` where they apply. See [Put your agent in Slack or Telegram](recipes/slack-and-telegram.md).
-
-### `client.chat_deliveries()`
-
-| Method | Returns |
-| --- | --- |
-| `list()`, `.status(...)`, `.since(...)`, `.limit(...)` | `Page<TenantChatDelivery>` |
-
-Failed and ambiguous deliveries across every connection, newest first (an attention feed, not full history). `.status()` takes `ChatDeliveryListStatus::Failed` and/or `Ambiguous` (default both); pending and confirmed are rejected. `since` is an inclusive `Timestamp` lower bound.
+`NewSlackConnection` and `NewTelegramConnection` also take `.enabled(...)`, `.channel_ids(...)`, `.chat_ids(...)`, and `.business_mode(...)` where they apply. See [Put your agent in Slack or Telegram](recipes/slack-and-telegram.md).
 
 ### `client.usage()` and `client.tenant()`
 
@@ -481,18 +471,18 @@ Monetization: bill your end users through your own Polar or Dodo account. Setup,
 | Method | Returns |
 | --- | --- |
 | `merchant_connection().get()` | `Option<MerchantConnection>` |
-| `merchant_connection().create(MerchantProvider, MerchantEnvironment, credential)`, `.guard(...)` | `MerchantConnection`. `MerchantProvider::Polar` or `Dodo`; `MerchantEnvironment::Sandbox` or `Live`. Replaces the current connection; fails `merchant_connection_in_use` while a request admitted on it is still running |
-| `merchant_connection().update()`, `.credential(...)`, `.status(...)`, `.guard(...)` | `MerchantConnection` |
-| `merchant_connection().retire()` | `()`. New usage is no longer recorded against it. Recorded events keep being delivered; the credential is deleted once none can still be delivered or retried. Fails `merchant_connection_in_use` (409) while a request admitted on the connection is still running. |
+| `merchant_connection().create(MerchantProvider, MerchantEnvironment, credential)`, `.guard(...)` | `MerchantConnection`. `MerchantProvider::Polar` or `Dodo`; `MerchantEnvironment::Sandbox` or `Live`. Replaces the current connection; fails `merchant_connection_in_use` (409) while a request admitted on it is still running or one of its usage events is `pending` |
+| `merchant_connection().update()`, `.credential(...)`, `.guard(...)` | `MerchantConnection` |
+| `merchant_connection().retire()` | `()`. New usage is no longer recorded against it. Fails `merchant_connection_in_use` (409) while a request admitted on the connection is still running or one of its usage events is `pending`. On success its `failed` events are discarded and the credential is deleted at once, so nothing more is delivered through it. |
 | `merchant_bindings().list()`, `.user_id(...)`, `.limit(...)` | `BindingsPage`. Fails `merchant_connection_not_found` when there is no connection |
 | `merchant_bindings().put(user_id, customer_id)` | `MerchantBinding`. The API checks the customer exists at the provider |
 | `merchant_bindings().delete(user_id)` | `()` |
 | `merchant_usage_events().list()`, `.status(...)`, `.limit(...)` | `UsageEventsPage` |
 | `merchant_usage_events().get(event_id)` | `MerchantUsageEvent` (`next_action` says what to do) |
 | `merchant_usage_events().summary()`, `.days(...)` | `MerchantUsageSummary` (status counts and a daily window; `days` 1 to 90, default 14) |
-| `merchant_usage_events().retry(event_id)` / `release(event_id)` / `discard(event_id)` | `MerchantUsageEvent` |
+| `merchant_usage_events().retry(event_id)` / `discard(event_id)` | `MerchantUsageEvent` |
 
-`guard` is `MerchantGuard::new(enabled)` with `.product_ids(...)` and `.meter_id(...)`. Turn billing on with `tenant().update().monetization_enabled(true)` after the connection exists.
+`guard` is `MerchantGuard::new(enabled)` with `.product_ids(...)` and `.meter_id(...)`. Turn billing on with `tenant().update().monetization_enabled(true)` after the connection exists, and off with `.monetization_enabled(false)` to pause it. To switch providers without losing charges, retry the `failed` events you still want billed, wait until no event is `pending`, then replace the connection.
 
 ## Partial updates: unset keeps, `clear_*` sends null
 
