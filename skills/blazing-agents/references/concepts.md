@@ -12,7 +12,7 @@ Not the same as: an end user of your app. BA has no end-user accounts; you label
 
 ### API key
 
-The bearer credential your backend uses to call BA. One key can reach everything in your tenant: every agent, session, and file. Create, name, and revoke keys in the dashboard; an API key cannot list, create, or revoke keys, including itself. Read it from `BLAZING_AGENTS_API_KEY` on your server and never ship it to a browser or mobile app.
+The bearer credential your backend uses to call BA. Without `forUser`, a key reaches everything in your tenant: every agent, session, and file. Each key has an access level chosen at creation that never changes. A read key (`ba_read_...`) can read everything and run agents, chat, and Tasks, but cannot create, change, or delete anything; it still spends credit and creates sessions. A full key (`ba_full_...`) can do everything. A write with a read key fails with `insufficient_scope` (403). Create, name, and revoke keys in the dashboard (at most 5); an API key cannot list, create, or revoke keys, including itself. Read it from `BLAZING_AGENTS_API_KEY` on your server and never ship it to a browser or mobile app.
 
 Not the same as: a Provider key (your model account key) or a per-user token. BA has no key that is safe in client code, so your backend decides which user may reach which agent.
 
@@ -32,7 +32,7 @@ Not the same as: a Session. The agent is configuration; a session is one convers
 
 ### Agent configuration snapshot
 
-The Agent settings saved with a Session at its first Turn or with a Task run when queued. It includes the model, instructions, tools, approval policies, and compaction settings. Later Agent edits affect new work; existing Sessions and queued runs keep their saved settings. Read `agentConfig` with `sessions.get()` or `tasks.getRun()` (`sessions().get()` or `tasks().get_run()` in Rust, `client.Sessions.Get()` or `client.Tasks.GetRun()` in Go), including before a Task run has a Session.
+The Agent settings saved with a Session at its first Turn or with a Task run when queued. It includes the model, instructions, tools, approval policies, and compaction settings. Later Agent edits affect new work; existing Sessions and queued runs keep their saved settings. Read `agentConfig` with `sessions.get()` or `tasks.getRun()`, including before a Task run has a Session.
 
 Not the same as a copy of every dependency. Provider keys, MCP credentials and connection details, Workspace attachment, Skills, and Memories use their current state. Local callback functions come from each SDK request; pass them again on the approval continuation call.
 
@@ -52,7 +52,7 @@ Not the same as: a Session. A session holds many turns; one-off generation runs 
 
 ### Session
 
-One stored conversation with one agent, identified by `ss_...`. BA returns the ID on the first chat call; pass it on the next call and the agent continues with the saved conversation context, so your backend never stores or replays messages. You need sessions for chat. A session keeps the [Agent configuration](#agent-configuration-snapshot) from its first Turn. When you delete a session you choose whether its Artifacts go too (`deleteArtifacts`, `delete_artifacts` in Python, a `delete_artifacts: bool` argument in Rust, `ba.DeleteSessionParams{DeleteArtifacts: true}` in Go).
+One stored conversation with one agent, identified by `ss_...`. BA returns the ID on the first chat call; pass it on the next call and the agent continues with the saved conversation context, so your backend never stores or replays messages. You need sessions for chat. A session keeps the [Agent configuration](#agent-configuration-snapshot) from its first Turn. When you delete a session you choose whether its Artifacts go too (`deleteArtifacts`).
 
 Not the same as: Memory. A session is one conversation; memories carry facts across conversations.
 
@@ -76,28 +76,28 @@ Not the same as: the agent's instructions (system prompt). Instructions shape ev
 
 ### Skill (runtime Skill)
 
-A folder with a `SKILL.md` and optional supporting files that teaches one agent one workflow, such as drafting release notes. The agent sees only each skill's name and description until a task matches, then loads the full instructions. Use skills to add long, specialized instructions without paying for them in every prompt. A skill is attached to exactly one agent; copying it to another agent makes an independent copy.
+A folder with a `SKILL.md` and optional supporting files that teaches one agent one workflow, such as drafting release notes. The agent sees only each skill's name and description until a task matches, then loads the full instructions. Use skills to add long, specialized instructions without paying for them in every prompt. A skill is attached to exactly one agent; copying it to another agent makes an independent copy. Skill files never appear in the Workspace, so `bash` and the file tools cannot reach them; the agent opens them with `activate_skill` and `read`. Up to 100 skills per agent; see [Limits](limits.md).
 
 Not the same as: this coding-agent skill. This document is a skill for your coding agent (Claude Code, Codex, Cursor) so it can build on BA. Runtime Skills are uploaded to BA and used by your BA agents while they serve your users. Also not the same as a tool: a skill teaches how, a tool acts.
 
 ### Memory
 
-A short text note an agent keeps across sessions, such as "prefers concise status updates". A note can be general to the agent or scoped to one end user by `userId`. The agent saves and searches notes itself with memory tools such as `save_memory` and `search_memories`, or you turn on `memoryInjectionEnabled` so relevant notes start every turn. Each agent has a capped pool; the least recently used notes are evicted when it is full.
+A short text note an agent keeps across sessions, such as "prefers concise status updates". A note can be general to the agent or scoped to one end user by `userId`. The agent saves and searches notes itself with memory tools such as `save_memory` and `search_memories`, or you turn on `memoryInjectionEnabled` so the newest notes, up to 4,000 words, start every turn. Each agent has one pool of 500 notes shared by all its end users; the least recently used notes are evicted silently when it is full, and the notes are deleted with the agent. An unscoped turn with a `userId` sees the general notes plus that user's; a `forUser` turn sees only that user's notes.
 
 Not the same as: session history, a knowledge base, or files. Memory is small facts, not documents.
 
 ### Workspace
 
-A private file system and shell (`/workspace`) attached to an agent. Several agents can share one. The agent uses it only through the file tools you turn on, such as `read`, `write`, and `bash`. Compute starts on the first file or shell operation, and the workspace stops after about 10 minutes without one.
+A file system and shell (`/workspace`) attached to an agent. Several agents can share one, and every session of every attached agent runs in the same `/workspace`, with no separation per session or per end user. On a shared agent without `forUser`, one end user's turn can read files another end user's turn wrote. Give users their own agent and Workspace when they must not see each other's files. The agent uses it only through the file tools you turn on, such as `read`, `write`, and `bash`. Compute starts on the first file or shell operation and is billed while the workspace runs; creating one is free. The workspace stops after about 10 minutes without an operation. Each shell command is killed after 30 seconds.
 
 Pick the tier when the workspace is created; it never changes:
 
-- **Core** (default, 256 MiB memory, about 1.6 GB free disk). Files are lost when the workspace stops. Use it for scratch work inside one conversation.
+- **Core** (default, 256 MiB memory, about 1.3 GB free disk). Files are lost when the workspace stops. Use it for scratch work inside one conversation.
 - **Plus** (4 GiB memory). Files are saved when the workspace stops while idle and come back on the next start. Use it when a later Session or Task run must find the files. Running processes do not come back, and a crash loses changes since the last idle stop. Saved files are discarded after 29 days without use.
 
 Both tiers start with Python 3.13, Node.js 24 with `tsc`, and common shell tools (bash, git, curl, jq, ripgrep, zip). There is no Go toolchain or C compiler; the agent installs anything else itself, and on Core it reinstalls after every stop.
 
-Creating an agent without `workspaceId` gives it a new Core workspace. Pass `workspaceTier: "plus"` (`workspace_tier` in Python, `.workspace_tier(workspaces::WorkspaceTier::Plus)` in Rust, `WorkspaceTier: new(ba.WorkspaceTierPlus)` in Go) to get Plus; it cannot be combined with `workspaceId`. To change tier, create a new workspace and attach it; files are not copied. Plus is a convenience, not storage: a failed save also starts the next run empty. Anything your app or users must keep belongs in an Artifact.
+Creating an agent without `workspaceId` gives it a new Core workspace. Pass `workspaceTier: "plus"` to get Plus; it cannot be combined with `workspaceId`. To change tier, create a new workspace and attach it; files are not copied. Plus is a convenience, not storage: a failed save also starts the next run empty. Anything your app or users must keep belongs in an Artifact. Switching the network policy between unrestricted and restricted stops a running workspace, which loses Core files.
 
 Not the same as: an Artifact. Workspace files are the agent's scratch space; your app cannot fetch them directly.
 
@@ -132,7 +132,7 @@ Not the same as: a Chat Connection (a Slack or Telegram bot). Attaching a connec
 
 ### Backend function
 
-A function in your own backend that a chat agent can call. You attach a map of them to one `chat()` call (TypeScript `defineFunction`, Python `define_function`, Rust `Functions::builder().function(...)`, Go `ba.NewFunctions(ba.Function(...))`); BA shows the model only each name, description, and input schema, and your SDK validates the input, runs the handler, and submits its JSON result. Functions are attached per request, never saved on the Agent, and exist only in interactive chat, including the `continueChat`/`continue_chat` call that continues a Turn after an approval pause.
+A function in your own backend that a chat agent can call. You attach a map of them to one `chat()` call (`defineFunction` in TypeScript); BA shows the model only each name, description, and input schema, and your SDK validates the input, runs the handler, and submits its JSON result. Functions are attached per request, never saved on the Agent, and exist only in interactive chat, including the `continueChat` call that continues a Turn after an approval pause.
 
 Not the same as: an MCP Connection, whose tools live on a remote server and also work in Tasks, stateless generation, and Slack or Telegram.
 
@@ -166,7 +166,7 @@ Not the same as: a separate cron job resource. A "cron job" in BA is just a task
 
 ### Chat Connection
 
-A link from one Slack app or Telegram bot to one of your own agents, never the Admin Agent. BA receives the messages, keeps a session per native conversation, posts replies, and shows tool approval buttons in the chat. Use it when your users should talk to the agent inside Slack or Telegram instead of your own UI. You supply your bot's credentials.
+A link from one Slack app or Telegram bot to one of your own agents, never the Admin Agent. BA receives the messages, keeps a session per native conversation, posts replies, and shows tool approval buttons in the chat. Use it when your users should talk to the agent inside Slack or Telegram instead of your own UI. You supply your bot's credentials. Its turns carry no API key, run with full authority and no end-user scope, and take a `userId` that names the person in a direct message but the whole thread in a shared conversation. Anyone who can reach the bot can talk to it.
 
 Not the same as: an MCP Connection, which gives an agent tools rather than a place to chat.
 
@@ -176,7 +176,7 @@ Not the same as: an MCP Connection, which gives an agent tools rather than a pla
 
 A label you stamp on resources and turns to say which of your end users they are for: an opaque `userId` string you choose plus optional `metadata`. Set it when you create an agent, workspace, prompt, task, or memory, or on a turn (a session takes the label of its first turn); a `userId` never changes once set, and you can filter lists and usage by it. An empty `userId` means a tenant-level resource. Use it so you can list one user's sessions and bill or report per user without your own mapping tables.
 
-A body or filter `userId` alone does not change permissions. For user-owned resources, derive the ID from verified sign-in and use `client.forUser(userId)` in TypeScript, `client.for_user(user_id)` in Python, `client.for_user(user_id)?` in Rust, or `client.ForUser(userID)` in Go. BA enforces that scope on supported reads and writes. An unscoped API key retains Tenant-wide access. See [multi-user apps](recipes/multi-user-apps.md).
+A body or filter `userId` alone does not change permissions. For user-owned resources, derive the ID from verified sign-in and use `client.forUser(userId)`. BA enforces that scope on supported reads and writes. An unscoped API key retains Tenant-wide access. See [multi-user apps](recipes/multi-user-apps.md).
 
 ### Usage
 

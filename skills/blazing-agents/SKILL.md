@@ -1,9 +1,9 @@
 ---
 name: blazing-agents
-description: Build products on Blazing Agents (BA), the hosted platform that runs production AI agents behind your backend. Use when the user wants to add an agent, chat, background or scheduled agent work, structured output, agent files, web search, backend functions, MCP tools, tool approvals, Slack/Telegram bots, usage dashboards, or token billing to their app with the BA TypeScript, Python, Rust, or Go SDK, or asks what BA is or can do. Use ba-admin instead for one-off Tenant administration. Do not use for generic AI-agent work without BA.
+description: Build products on Blazing Agents (BA), the hosted platform that runs production AI agents behind your backend. Use when the user wants to add an agent, chat, background or scheduled agent work, structured output, Workspaces and files, Skills, Memory, Prompts, web search, backend functions, MCP tools, tool approvals, Slack/Telegram bots, multi-user apps, usage dashboards, or token billing to their app with the BA TypeScript, Python, Rust, or Go SDK; asks which BA feature or design fits, or what BA's limits are; debugs a BA error code; or asks what BA is or can do. Use ba-admin instead for one-off Tenant administration. Do not use for generic AI-agent work without BA.
 metadata:
   author: Blazing Agents
-  version: "0.7.0"
+  version: "0.8.0"
 ---
 
 # Blazing Agents
@@ -17,7 +17,7 @@ It can also send each Turn's token usage to the developer's own Polar or Dodo
 account so they can bill their customers.
 
 The developer's backend is the only thing that calls BA. It signs in its users,
-decides what each may access, and calls BA with the Tenant API key through the
+decides what each may access, and calls BA with a Tenant API key through the
 TypeScript SDK (`@blazingagents/sdk`), the Python SDK (`blazing-agents`),
 the Rust SDK (crate `blazing-agents`, import `blazing_agents`), or the Go SDK
 (module `github.com/blazingagents/golang-sdk`, package `blazingagents`).
@@ -27,6 +27,15 @@ directly.
 BA does not fit when the app must call it from the browser with no server, when
 every Turn must run inside the developer's own infrastructure, or when the
 developer wants to write the agent loop step by step.
+
+## Answer design questions
+
+| The user asks | Read |
+| --- | --- |
+| Which BA feature fits, how to structure Agents and users, or a comparison of options | [Choose a design](references/choosing.md) |
+| A number that sizes a design: concurrency, deadlines, caps, rates | [Limits](references/limits.md) |
+| What a BA term means | [Concepts](references/concepts.md) |
+| Why a call failed, or what an error code means | [Troubleshooting](references/troubleshooting.md) |
 
 ## What you can build
 
@@ -48,18 +57,22 @@ developer wants to write the agent loop step by step.
 
 ## Workflow
 
-1. Map the request to rows in the table above and read those recipes. Read
-   [Concepts](references/concepts.md) when a BA term is unclear.
-2. Check the project's stack and the SDK version it has installed. Take method
-   names and fields from [the TypeScript SDK](references/sdk-typescript.md),
+1. For a design question, read [Choose a design](references/choosing.md)
+   first and recommend one option. For a build, map the request to rows in the
+   table above and read those recipes.
+2. Check the project's language and the SDK version it has installed. Recipes
+   show TypeScript; for Python, Rust, or Go, also read the recipe's language
+   file, linked at the top of its "Build it" section. Take method names and
+   fields from [the TypeScript SDK](references/sdk-typescript.md),
    [the Python SDK](references/sdk-python.md),
-   [the Rust SDK](references/sdk-rust.md), or
-   [the Go SDK](references/sdk-go.md), and confirm anything not shown
-   there against the installed package's types or the linked docs. Never guess
-   a method, field, or limit.
-3. Make sure the Tenant has a Provider and an Agent. Create them in code as in
-   [Getting started](references/getting-started.md), in the BA dashboard, or with
-   the `ba-admin` skill for a one-off setup.
+   [the Rust SDK](references/sdk-rust.md), or [the Go SDK](references/sdk-go.md),
+   and confirm anything not shown there against the installed package's types.
+   Never guess a method or field. Take limits from
+   [Limits](references/limits.md).
+3. Make sure the Tenant has a Provider and an Agent. The user creates the
+   Provider in the BA dashboard or in code as in
+   [Getting started](references/getting-started.md). Create Agents in code, or
+   for a one-off setup through the BA MCP server or the `ba-admin` skill.
 4. Build the integration in the project's backend and frontend, following the
    recipe's steps.
 5. Run the recipe's "Check it works" steps and the project's own checks. Before
@@ -68,36 +81,37 @@ developer wants to write the agent loop step by step.
 
 ## Rules
 
+Rules name the TypeScript method; each SDK page gives its language's spelling.
+
 - Keep the BA API key on the backend, read from `BLAZING_AGENTS_API_KEY`. Never
-  ship it in browser or mobile code, logs, or Workspace files.
+  ship it in browser or mobile code, logs, or Workspace files. Give a backend
+  that only chats, runs Tasks, and reads a read key (`ba_read_`); setup code
+  that creates or changes BA resources needs a full key (`ba_full_`).
 - The API key selects the Tenant. Never accept a Tenant from a request.
-- Derive the user ID from verified sign-in. For user-owned resources, use
-  `client.forUser(userId)` (`client.for_user(user_id)` in Python,
-  `client.for_user(user_id)?` in Rust, `client.ForUser(userID)` in Go) so BA
-  enforces ownership. A body or filter `userId` alone only
-  labels work and grants no access. Keep unscoped clients for trusted Tenant
-  operations. Read
+- Derive the user ID from verified sign-in. For anything an End-user does or
+  reads, call BA through `client.forUser(userId)` so BA enforces ownership. A
+  body or filter `userId` alone only labels work and grants no access. Keep
+  unscoped clients for trusted Tenant operations. A scoped Turn needs an Agent
+  and a Workspace owned by the same user. Read
   [Multi-user apps](references/recipes/multi-user-apps.md) for the boundary.
-- Relay BA's stream as it is. Return `toResponse()` in TypeScript, forward the
-  raw bytes in Python, relay the `ChatStream` bytes unchanged in Rust, or call
-  `stream.WriteTo(w)` in Go, and let `useChat` render it. Never parse the
-  stream by hand.
+- An unscoped Agent shared by several End-users shares one Workspace between
+  them: one user's Turn can read files another user's Turn wrote. Use per-user
+  Agents and Workspaces with `forUser`, or no file tools, when users must not
+  see each other's files.
+- Relay BA's stream as it is (`toResponse()` in TypeScript) and let `useChat`
+  render it. Never parse the stream by hand.
 - A chat Session ID arrives with the response. Save it and pass it back to
-  continue the conversation. Load history from BA instead of storing your own copy.
+  continue the conversation. Load history from BA instead of storing your own
+  copy.
 - A resend or retry is a new attempt, and tool side effects can happen again.
-  Use a stable idempotency key for every Task run submission, and for Task
-  creation with `submit: true` in TypeScript, `.submit(true)` in Rust, or
-  `Submit: new(true)` in Go (Python has no key on create).
-- BA holds no message queue; waiting messages live in the client. While a Turn
-  runs, a new chat call fails with `session_busy`. A Turn that stopped
-  responding returns `session_turn_unresponsive` with a `Retry-After` header
-  instead. Either steer the Turn with `sessions.submitInput()` /
-  `submit_input()` (`sessions().submit_input()` in Rust,
-  `client.Sessions.SubmitInput()` in Go), or hold the message
-  until the Session is idle and send it
-  as ordinary chat (one per Turn, or several with `messages`). Take a message
-  out of the local queue before sending it, keep each input's `requestId` until
-  its receipt arrives, and never rebuild the queue from receipts or history.
+  Use a stable idempotency key for every Task run submission and for Task
+  creation with `submit: true`.
+- BA holds no message queue. While a Turn runs, a new chat call fails with
+  `session_busy`; steer the Turn or hold the message in the client, as
+  [Chat in your app](references/recipes/chat-in-your-app.md#how-it-works)
+  describes. Never retry `session_busy` blindly: its `details.reason` says
+  whether it clears by itself (`turn_running`) or needs an approval decision
+  (`approval_pending`, `continuation_waiting`).
 - Changing an Agent's Provider requires `model` in the same update. Agent edits
   reach new Sessions, Task runs queued afterwards, and stateless calls. An
   existing Session keeps the settings from its first Turn, so start a new
