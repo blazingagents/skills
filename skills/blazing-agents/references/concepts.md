@@ -93,7 +93,7 @@ A file system and shell (`/workspace`) attached to an agent. Several agents can 
 Pick the tier when the workspace is created; it never changes:
 
 - **Core** (default, 256 MiB memory, about 1.3 GB free disk). Files are lost when the workspace stops. Use it for scratch work inside one conversation.
-- **Plus** (4 GiB memory). Files are saved when the workspace stops while idle and come back on the next start. Use it when a later Session or Task run must find the files. Running processes do not come back, and a crash loses changes since the last idle stop. Saved files are discarded after 29 days without use.
+- **Plus** (4 GiB memory). Files are saved at a controlled stop, such as the idle stop or a network policy switch, and come back on the next start. Use it when a later Session or Task run must find the files. Running processes do not come back, and a crash loses changes since the last save. Saved files are discarded after 29 days without use.
 
 Both tiers start with Python 3.13, Node.js 24 with `tsc`, and common shell tools (bash, git, curl, jq, ripgrep, zip). There is no Go toolchain or C compiler; the agent installs anything else itself, and on Core it reinstalls after every stop.
 

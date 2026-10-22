@@ -15,7 +15,9 @@ case, and say what would change the answer.
 - **Task** (optionally scheduled): no one waits, the work repeats, or it must
   run exactly once (an idempotency key returns the same run on retry).
 - **One-shot generation** (`completion()`, `object()`): one transform with no
-  history and no published files.
+  history and no published files. It is metered like any Turn, and a failure
+  after streaming starts ends the stream early with status 200, so check how
+  the stream finished.
 
 Deciding facts:
 
@@ -108,6 +110,8 @@ Deciding facts:
 - Plans do not cap the number of Agents, and an idle Agent with an unused
   Workspace runs no compute.
 - Providers and MCP Connections stay Tenant configuration either way.
+- A model spending limit is set per Agent or for the Tenant, so only per-user
+  Agents give each user their own spend cap.
 
 Build: [Multi-user apps](recipes/multi-user-apps.md).
 
@@ -202,7 +206,10 @@ Build: [Slack and Telegram](recipes/slack-and-telegram.md),
 - **Merchant guardrail**: refuse Turns for End-users whose own plan or balance
   fails, when the user bills End-users through Polar or Dodo.
 
-Deciding facts: all three can be overshot by a Turn already running. A model
+Deciding facts: all three can be overshot by a Turn already running. To stop
+spend at once, disable the Agent, stop the Turn with `sessions.stop()`, or
+cancel the Task run. BA refuses Turns with `usage_credit_required` (402) when
+the Tenant's own Usage credit runs out. A model
 response with no reported cost stops the Turn under a spending limit, which
 custom Providers can hit. Web search is billed by BA as Usage credit and is not
 capped by spending limits. An End-user with no customer binding is never

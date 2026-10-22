@@ -30,7 +30,7 @@ For a Python, Rust, or Go backend, read the code for these steps in [Python](cha
 1. Install the packages. Your backend needs `@blazingagents/sdk`. Your React frontend needs `@blazingagents/sdk`, `ai`, and `@ai-sdk/react`.
 
 ```bash
-npm install @blazingagents/sdk ai @ai-sdk/react zod
+npm install @blazingagents/sdk ai@^7 @ai-sdk/react zod
 ```
 
 2. Add the backend. `chat` relays one Turn and `history` returns a Session's saved messages. Mount them as `POST /api/chat` and `GET /api/chat/history` in your framework. In the Next.js App Router, export them as `POST` and `GET` handlers. In Hono, call `chat(c.req.raw)`. Authenticate the user, select their Agent in backend code, validate the request body, then call the scoped client. `sessions.messages()` returns the native UIMessage page. Return its cursors with the messages for older-history controls.

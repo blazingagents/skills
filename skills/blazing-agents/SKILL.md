@@ -103,6 +103,9 @@ Rules name the TypeScript method; each SDK page gives its language's spelling.
 - A chat Session ID arrives with the response. Save it and pass it back to
   continue the conversation. Load history from BA instead of storing your own
   copy.
+- A failed or stopped Turn saves nothing to history but is still metered.
+  Stop a Turn with `sessions.stop()` and its Turn ID, and keep reading the
+  stream until it ends.
 - A resend or retry is a new attempt, and tool side effects can happen again.
   Use a stable idempotency key for every Task run submission and for Task
   creation with `submit: true`.

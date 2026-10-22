@@ -141,7 +141,7 @@ await client.workspaces.delete({ workspaceId });
 ## Gotchas
 
 - One Agent, one Workspace, shared by every Session. Without `forUser` and per-user Agents, a shared Agent's users read and overwrite each other's files, and on Plus those files persist. Give each user their own Agent and Workspace when files are private, or keep file tools off the shared Agent.
-- Each shell command is killed after 30 seconds. Split long installs, builds, and test suites, or run them in the background and poll.
+- Each shell command is killed after 30 seconds. Split long installs, builds, and test suites into commands that each finish within 30 seconds.
 - Switching a Workspace's network policy between unrestricted and restricted stops it if it is running; Core files are lost, Plus saves them first.
 - The Agent says it wrote a file but nothing happened. It lacks `write`. Add it to `tools`. The same goes for `publish_artifacts` when nothing was published.
 - Listing Artifacts before the stream ends. The turn saves its results only when the stream is fully read. Drain or relay it first.

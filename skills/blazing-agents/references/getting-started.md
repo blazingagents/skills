@@ -31,7 +31,7 @@ For a Python, Rust, or Go backend, read the code for these steps in [Python](get
 
 ```bash
 npm pkg set type=module
-npm install @blazingagents/sdk ai zod
+npm install @blazingagents/sdk ai@^7 zod
 ```
 
 2. Check the connection. This lists the first page of Agents in your Tenant and changes nothing. A new Tenant already has 1 Agent, its admin Agent.

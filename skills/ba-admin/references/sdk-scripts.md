@@ -7,7 +7,7 @@ declarations for exact bodies and responses; they are the source of truth.
 ## Set up
 
 Use the project's `@blazingagents/sdk` when it is installed. Otherwise create a
-temporary Node project and run `npm install @blazingagents/sdk ai zod` there.
+temporary Node project and run `npm install @blazingagents/sdk ai@^7 zod` there.
 Never add dependencies to the user's app only for an administrative call.
 Remove the temporary project once you have the result.
 
