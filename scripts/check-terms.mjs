@@ -15,6 +15,8 @@ const banned = [
   "DBOS",
   "Supabase",
   "Durable Object",
+  "Cloudflare(?![ -]worker)",
+  "\\bR2\\b",
   "agent-runner",
   "task-worker",
   "@blazing-agents/",

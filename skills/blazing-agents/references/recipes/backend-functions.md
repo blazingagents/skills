@@ -12,6 +12,8 @@ You pass a map of named functions on a single `chat()` call. Blazing Agents send
 
 ## Build it
 
+For a Python, Rust, or Go backend, read the code for these steps in [Python](backend-functions.python.md), [Rust](backend-functions.rust.md), [Go](backend-functions.go.md).
+
 1. Add the functions inside your chat route, after authenticating the request, so every handler closes over the verified user. Scope the call with `forUser` (TypeScript), `for_user` (Python and Rust), or `ForUser` (Go) as in [chat in your app](chat-in-your-app.md). Read the user's Agent ID from trusted backend state, never from the request, and validate the browser's `sessionId` before it reaches the SDK.
 
 ```ts
@@ -26,7 +28,7 @@ declare function findOrder(
   options: { signal: AbortSignal; idempotencyKey: string },
 ): Promise<{ status: string; totalCents: number } | null>;
 
-const client = new BlazingAgents({ apiKey: process.env.BLAZING_AGENTS_API_KEY ?? "" });
+const tenant = new BlazingAgents({ apiKey: process.env.BLAZING_AGENTS_API_KEY ?? "" });
 const chatBody = z.object({
   message: z.custom<UIMessage>(),
   sessionId: sessionIdSchema.optional(),
@@ -50,294 +52,12 @@ export async function POST(request: Request): Promise<Response> {
     }),
   };
 
+  const client = tenant.forUser(user.id);
   const input = { agentId: user.agentId, message: body.message, functions };
   const result = body.sessionId
-    ? await client.forUser(user.id).chat({ ...input, sessionId: body.sessionId })
-    : await client.forUser(user.id).chat(input);
+    ? await client.chat({ ...input, sessionId: body.sessionId })
+    : await client.chat(input);
   return result.toResponse();
-}
-```
-
-```python
-from typing import Any
-
-from blazing_agents import AsyncBlazingAgents, FunctionContext, define_function
-from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
-
-app = FastAPI()
-client = AsyncBlazingAgents()  # reads BLAZING_AGENTS_API_KEY
-SESSION_ID = r"^ss_[0-9A-Za-z]{16}$"
-
-
-def current_user(request: Request) -> str:
-    """Your sign-in check. Return the verified user ID or raise HTTPException(401)."""
-    raise NotImplementedError
-
-
-def agent_for_user(user_id: str) -> str:
-    """Read this user's Agent ID from trusted backend state."""
-    raise NotImplementedError
-
-
-async def find_order(user_id: str, order_id: str) -> dict[str, Any] | None:
-    """Your database lookup, scoped to this user."""
-    raise NotImplementedError
-
-
-class OrderInput(BaseModel):
-    order_id: str
-
-
-class ChatBody(BaseModel):
-    message: dict[str, Any]
-    sessionId: str | None = Field(default=None, pattern=SESSION_ID)
-
-
-@app.post("/api/chat")
-async def chat(body: ChatBody, user_id: str = Depends(current_user)):
-    async def order_lookup(value: OrderInput, context: FunctionContext) -> dict[str, Any]:
-        # Queries only this user's rows. An async handler is cancelled at the
-        # call's deadline or when the stream closes (a synchronous handler
-        # checks context.cancelled); context.idempotency_key names this one
-        # execution.
-        order = await find_order(user_id, value.order_id)
-        return order or {"found": False}
-
-    functions = {
-        "orderLookup": define_function(
-            description="Look up one of the signed-in user's orders by ID.",
-            input_schema=OrderInput,
-            execute=order_lookup,
-        ),
-    }
-
-    extra: dict[str, Any] = {}
-    if body.sessionId is not None:
-        extra["session_id"] = body.sessionId
-    stream = await client.for_user(user_id).chat(
-        agent_id=agent_for_user(user_id), message=body.message, functions=functions, **extra
-    )
-    headers = {"x-vercel-ai-ui-message-stream": "v1"}
-    if body.sessionId is None:
-        headers["location"] = stream.headers["location"]
-    return StreamingResponse(stream, media_type="text/event-stream", headers=headers)
-```
-
-```rust
-use anyhow::anyhow;
-use axum::body::Body;
-use axum::extract::{Json, State};
-use axum::http::{HeaderMap, StatusCode};
-use axum::response::Response;
-use axum::routing::post;
-use axum::Router;
-use blazing_agents::functions::{FunctionContext, Functions};
-use blazing_agents::messages::UserMessage;
-use blazing_agents::Client;
-use schemars::JsonSchema;
-use serde::Deserialize;
-use serde_json::json;
-
-#[derive(Deserialize, JsonSchema)]
-struct OrderInput {
-    order_id: String,
-}
-
-#[derive(Deserialize)]
-struct ChatBody {
-    message: UserMessage,
-    #[serde(rename = "sessionId")]
-    session_id: Option<String>,
-}
-
-fn current_user(headers: &HeaderMap) -> String {
-    // Your sign-in check: verify the session token and return its user ID.
-    let _ = headers;
-    todo!("verify the signed-in user")
-}
-
-fn agent_for_user(_user_id: &str) -> String {
-    // Read this user's Agent ID from trusted backend state.
-    "ag_0123456789abcdef".to_owned()
-}
-
-async fn find_order(_user_id: &str, _order_id: &str) -> Option<serde_json::Value> {
-    // Your database lookup, scoped to this user.
-    None
-}
-
-async fn chat(
-    State(client): State<Client>,
-    headers: HeaderMap,
-    Json(body): Json<ChatBody>,
-) -> Result<Response, StatusCode> {
-    let user_id = current_user(&headers);
-
-    let functions = Functions::builder()
-        .function(
-            "orderLookup",
-            "Look up one of the signed-in user's orders by ID.",
-            {
-                let user_id = user_id.clone();
-                move |input: OrderInput, context: FunctionContext| {
-                    let user_id = user_id.clone();
-                    async move {
-                        // Queries only this user's rows. context.is_cancelled()
-                        // reports the call's deadline or a dropped stream;
-                        // context.idempotency_key() names this one execution.
-                        let _ = context;
-                        let order = find_order(&user_id, &input.order_id).await;
-                        Ok::<_, anyhow::Error>(
-                            order.unwrap_or_else(|| json!({"found": false})),
-                        )
-                    }
-                }
-            },
-        )
-        .build()
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let scoped = client
-        .for_user(&user_id)
-        .map_err(|_| StatusCode::UNAUTHORIZED)?;
-    let call = scoped
-        .chat(agent_for_user(&user_id), body.message)
-        .functions(functions);
-    let stream = match &body.session_id {
-        Some(session_id) => call.session(session_id),
-        None => call,
-    }
-    .await
-    .map_err(|_| StatusCode::BAD_GATEWAY)?;
-
-    let mut response = Response::builder()
-        .header("content-type", "text/event-stream")
-        .header("x-vercel-ai-ui-message-stream", "v1");
-    if let Some(turn_id) = stream.meta().headers().get("x-ba-turn-id") {
-        response = response.header("x-ba-turn-id", turn_id.clone());
-    }
-    if body.session_id.is_none() {
-        if let Some(location) = stream.meta().headers().get("location") {
-            response = response.header("location", location);
-        }
-    }
-    response
-        .body(Body::from_stream(stream))
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
-}
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let app = Router::new()
-        .route("/api/chat", post(chat))
-        .with_state(Client::from_env()?);
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
-    axum::serve(listener, app).await?;
-    Ok(())
-}
-```
-
-```go
-package main
-
-import (
-	"context"
-	"encoding/json"
-	"log"
-	"net/http"
-
-	ba "github.com/blazingagents/golang-sdk"
-)
-
-type OrderInput struct {
-	OrderID string `json:"orderId"`
-}
-
-type chatBody struct {
-	Message   ba.UserMessage `json:"message"`
-	SessionID ba.SessionID   `json:"sessionId"` // "" starts a Session
-}
-
-func currentUser(r *http.Request) (string, bool) {
-	// Your sign-in check: verify the session token and return its user ID.
-	return "", false
-}
-
-func agentForUser(userID string) ba.AgentID {
-	// Read this user's Agent ID from trusted backend state.
-	return "ag_0123456789abcdef"
-}
-
-func findOrder(ctx context.Context, userID, orderID string) (map[string]any, error) {
-	// Your database lookup, scoped to this user.
-	return nil, nil
-}
-
-func chat(client *ba.Client) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		userID, ok := currentUser(r)
-		if !ok {
-			http.Error(w, "Sign in first.", http.StatusUnauthorized)
-			return
-		}
-		var body chatBody
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			http.Error(w, "Invalid message.", http.StatusBadRequest)
-			return
-		}
-
-		functions, err := ba.NewFunctions(ba.Function("orderLookup",
-			"Look up one of the signed-in user's orders by ID.",
-			func(ctx context.Context, call ba.FunctionCall, in OrderInput) (any, error) {
-				// Queries only this user's rows. ctx ends at the call's deadline or
-				// when the stream closes; call.ID names this one execution.
-				order, err := findOrder(ctx, userID, in.OrderID)
-				if err != nil {
-					return nil, err
-				}
-				if order == nil {
-					return map[string]bool{"found": false}, nil
-				}
-				return order, nil
-			}))
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		scoped, err := client.ForUser(userID)
-		if err != nil {
-			http.Error(w, "Sign in first.", http.StatusUnauthorized)
-			return
-		}
-		stream, err := scoped.Chat.Send(r.Context(), agentForUser(userID), ba.Messages(body.Message), ba.ChatParams{
-			SessionID: body.SessionID,
-			Functions: functions,
-		})
-		if err != nil {
-			http.Error(w, "Request failed.", http.StatusBadGateway)
-			return
-		}
-		defer stream.Close()
-		stream.SetRelayHeaders(w.Header())
-		if body.SessionID == "" {
-			w.Header().Set("Location", stream.Meta().Header.Get("Location"))
-		}
-		if _, err := stream.WriteTo(w); err != nil {
-			log.Printf("relay ended: %v", err)
-		}
-	}
-}
-
-func main() {
-	client, err := ba.NewClient() // reads BLAZING_AGENTS_API_KEY
-	if err != nil {
-		log.Fatal(err)
-	}
-	http.Handle("POST /api/chat", chat(client))
-	log.Fatal(http.ListenAndServe(":3000", nil))
 }
 ```
 
@@ -346,7 +66,7 @@ func main() {
 ```ts
 import type { BlazingAgents, ChatFunctions, ToolApprovalDecision } from "@blazingagents/sdk";
 
-declare const client: BlazingAgents;
+declare const tenant: BlazingAgents;
 declare const sessionOwnerId: string; // the Session's owner, from your records
 declare function chatFunctionsFor(userId: string): ChatFunctions; // the map from step 1
 
@@ -355,107 +75,13 @@ declare const sessionId: string;
 declare const decisions: ToolApprovalDecision[]; // every approval in the round
 
 export async function continueAfterDecisions(): Promise<Response> {
-  const continued = await client.forUser(sessionOwnerId).continueChat({
+  const continued = await tenant.forUser(sessionOwnerId).continueChat({
     agentId,
     sessionId,
     decisions,
     functions: chatFunctionsFor(sessionOwnerId),
   });
   return continued.toResponse();
-}
-```
-
-```python
-from blazing_agents import AsyncBlazingAgents, ChatFunction, ToolApprovalDecisionInput
-from fastapi.responses import StreamingResponse
-
-client = AsyncBlazingAgents()
-
-
-def chat_functions_for(user_id: str) -> dict[str, ChatFunction]:
-    """The same map as step 1, built for the Session's owner."""
-    raise NotImplementedError
-
-
-async def continue_after_decisions(
-    agent_id: str,
-    session_id: str,
-    decisions: list[ToolApprovalDecisionInput],
-    session_owner_id: str,
-) -> StreamingResponse:
-    stream = await client.for_user(session_owner_id).continue_chat(
-        agent_id=agent_id,
-        session_id=session_id,
-        decisions=decisions,
-        functions=chat_functions_for(session_owner_id),
-    )
-    return StreamingResponse(
-        stream,
-        headers={"x-vercel-ai-ui-message-stream": "v1"},
-        media_type="text/event-stream",
-    )
-```
-
-```rust
-use axum::body::Body;
-use axum::response::Response;
-use blazing_agents::chat::ToolApprovalDecision;
-use blazing_agents::functions::{Functions, FunctionsError};
-
-fn chat_functions_for(_user_id: &str) -> Result<Functions, FunctionsError> {
-    // The same functions as the chat route, built for the Session's owner.
-    Functions::builder().build()
-}
-
-let session_owner_id = "user_123"; // the Session's owner, from your records
-let decisions = vec![ToolApprovalDecision::approve("apr_0123456789abcdef")];
-
-let stream = client
-    .for_user(session_owner_id)?
-    .continue_chat(
-        "ag_0123456789abcdef",
-        "ss_0123456789abcdef",
-        decisions,
-    )
-    .functions(chat_functions_for(session_owner_id)?)
-    .await?;
-let mut response = Response::builder()
-    .header("x-vercel-ai-ui-message-stream", "v1")
-    .header("content-type", "text/event-stream");
-if let Some(turn_id) = stream.meta().headers().get("x-ba-turn-id") {
-    response = response.header("x-ba-turn-id", turn_id.clone());
-}
-let response = response.body(Body::from_stream(stream))?;
-let _ = response;
-```
-
-```go
-chatFunctionsFor := func(userID string) (*ba.Functions, error) {
-	// The same functions as the chat route, built for the Session's owner.
-	return ba.NewFunctions()
-}
-
-sessionOwnerID := "user_123" // the Session's owner, from your records
-decisions := []ba.ToolApprovalDecision{ba.Approve("apr_0123456789abcdef")}
-
-functions, err := chatFunctionsFor(sessionOwnerID)
-if err != nil {
-	return err
-}
-scoped, err := client.ForUser(sessionOwnerID)
-if err != nil {
-	return err
-}
-stream, err := scoped.Chat.Continue(ctx, agentID, sessionID, decisions, ba.ContinueParams{Functions: functions})
-if err != nil {
-	return err
-}
-defer stream.Close()
-// In an http.Handler: stream.SetRelayHeaders(w.Header()), then stream.WriteTo(w).
-for _, err := range stream.Events() {
-	if err != nil {
-		return err
-	}
 }
 ```
 

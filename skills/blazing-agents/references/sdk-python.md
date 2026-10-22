@@ -85,6 +85,8 @@ The client itself has five generation methods. Each call runs one metered Turn. 
 
 `chat()` returns a `ChatStream`. Iterating it yields the server's AI SDK UI message stream as raw SSE `bytes`, exactly as sent. The SDK does not decode it. Relay those bytes to your frontend, where `useChat` from `@ai-sdk/react` reads them.
 
+Call `chat()` on `client.for_user(verified_user_id)` whenever the Session belongs to one of your users. The scoped client sends the user on every request, so BA answers `404` for a Session ID, Agent, or Workspace that user does not own. A `session_id` from the browser is then safe to pass back. On the unscoped client the same call would resume any Session in your Tenant.
+
 `stream.session_id` holds the `ss_...` ID before you read the body, and `stream.turn_id` holds the running `turn_...` ID for `sessions.stop()`. Omit `session_id` to start a new Session. Store the returned ID with your user, send it to your frontend, and pass it back as `session_id` to continue that conversation.
 
 ```python
@@ -94,23 +96,17 @@ from blazing_agents import AsyncBlazingAgents, AsyncChatStream
 async def start_chat(
     client: AsyncBlazingAgents,
     *,
-    user_id: str,
+    verified_user_id: str,
+    agent_id: str,
     message: dict[str, object],
     session_id: str | None,
 ) -> AsyncChatStream:
-    """message is the AI SDK UIMessage from your frontend: {"id", "role", "parts"}."""
+    """verified_user_id comes from your sign-in check, agent_id from your own
+    records for that user, message is the AI SDK UIMessage {"id", "role", "parts"}."""
+    scoped = client.for_user(verified_user_id)
     if session_id is None:
-        return await client.chat(
-            agent_id="ag_0123456789abcdef",
-            message=message,
-            user_id=user_id,
-        )
-    return await client.chat(
-        agent_id="ag_0123456789abcdef",
-        session_id=session_id,
-        message=message,
-        user_id=user_id,
-    )
+        return await scoped.chat(agent_id=agent_id, message=message)
+    return await scoped.chat(agent_id=agent_id, session_id=session_id, message=message)
 ```
 
 To relay, pass the stream object itself as the body of your framework's streaming response. In FastAPI that is `StreamingResponse(stream, media_type="text/event-stream", headers=headers)` with `headers = {"x-vercel-ai-ui-message-stream": "v1"}`. When the call started a new Session, also copy `stream.headers["location"]` into `headers["location"]`: `BlazingAgentsChatTransport` in your frontend reads the new Session ID from that header. The [FastAPI example](https://github.com/blazingagents/examples/tree/main/vite-fastapi-ai-sdk) shows the full endpoint.
@@ -278,7 +274,15 @@ Signatures below drop `extra_headers` and `timeout`, which every method accepts.
 
 `fork()` requires `message_id` and `idempotency_key`. `forked_from` is a `SessionForkedFrom` with `session_id` and `message_id`, or `None` for an ordinary Session. Fork eligibility, retries, child contents, and error codes are in [Add a requested fork](recipes/chat-in-your-app.md#add-a-requested-fork).
 
-While a Turn runs, `chat()` raises `session_busy`; steer with `submit_input()` or hold the message in your own client. A Turn that stopped responding raises `session_turn_unresponsive`; wait `error.retry_after` seconds, read history, then send again under a new message ID. `submit_input()` saves a steer receipt under your `request_id` (1 to 128 characters, not `.` or `..`) before returning. Retry with the same `request_id` and message; a changed payload raises `input_idempotency_conflict`. A receipt's `state` is `accepted`, `committed`, or `not_placed`. Poll `inputs()` without `cursor` for changes; pass `include_completed=True` to see terminal receipts. `stop()` takes `stream.turn_id` in the client that started the Turn, or the `turn_id` from `activity` anywhere else; an unknown `turn_id` raises `not_found`. All methods accept `extra_headers` for user scope. What each receipt state means and how the client-held queue works are in [Add chat to your app](recipes/chat-in-your-app.md#how-it-works).
+For end-user scope, call these methods on `client.for_user(verified_user_id)`.
+
+- While a Turn runs, `chat()` raises `session_busy`. Read `error.details["reason"]`: `turn_running` clears when the Turn ends, so steer with `submit_input()` or hold the message in your client. `approval_pending` and `continuation_waiting` need an approval decision through `continue_chat()` first, so retrying never clears them.
+- A Turn that stopped responding raises `session_turn_unresponsive`. Wait `error.retry_after` seconds, read history, then send again under a new message ID.
+- `submit_input()` saves a steer receipt under your `request_id` (1 to 128 characters, not `.` or `..`) before returning. Retry with the same `request_id` and message; a changed payload raises `input_idempotency_conflict`.
+- A receipt's `state` is `accepted`, `committed`, or `not_placed`. Poll `inputs()` without `cursor` for changes; pass `include_completed=True` to see terminal receipts.
+- `stop()` takes `stream.turn_id` in the client that started the Turn, or the `turn_id` from `activity` anywhere else; an unknown `turn_id` raises `not_found`.
+
+What each receipt state means and how the client-held queue works are in [Add chat to your app](recipes/chat-in-your-app.md#how-it-works).
 
 ### `client.tasks`
 

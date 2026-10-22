@@ -623,35 +623,35 @@ export function Chat({ initialSessionId }: { initialSessionId?: string }) {
 ```
 
 On the backend, `createChatRelay` builds a `(request: Request) => Promise<Response>`
-handler that matches this transport. It validates the body, checks that the
-caller owns the Session through your `SessionOwnershipStore`, calls
-`client.chat`, records the owner of new Sessions, and returns the stream or a
-JSON error. `createCompletionRelay` does the same for `{ prompt }` bodies.
+handler that matches this transport. For each request it calls your
+`resolveContext`, runs the Turn through `client.forUser(context.userId)`, and
+returns the stream or a JSON error. Because every call is scoped, BA answers
+`404` for a Session, Agent, or Workspace that End-user does not own, and you
+keep no Session ownership table. `context.agentId` must name an Agent that the
+End-user owns, with a Workspace the same End-user owns. An approval round
+answered in `useChat` continues through `continueChat` in the same handler.
+`createCompletionRelay` does the same for `{ prompt }` bodies. The relay sends
+one message per Turn; for batches of queued messages, write the handler as in
+[Add chat to your app](recipes/chat-in-your-app.md).
 
 ```ts
-import {
-  BlazingAgents,
-  createChatRelay,
-  type RelayContext,
-  type SessionOwnershipStore,
-} from "@blazingagents/sdk";
+import { BlazingAgents, createChatRelay, type RelayContext } from "@blazingagents/sdk";
 
 declare const client: BlazingAgents;
-declare const sessions: SessionOwnershipStore;
 declare function userIdFromRequest(request: Request): Promise<string | null>;
+declare function agentIdForUser(userId: string): Promise<string>;
 
 async function resolveContext(request: Request): Promise<RelayContext | null> {
   const userId = await userIdFromRequest(request);
-  return userId === null ? null : { agentId: "ag_0123456789abcdef", userId };
+  if (userId === null) return null;
+  return { agentId: await agentIdForUser(userId), userId };
 }
 
-export const POST = createChatRelay({ client, resolveContext, sessions });
+export const POST = createChatRelay({ client, resolveContext });
 ```
 
 `resolveContext` returns `null` for unauthenticated requests, which become 401.
-`RelayContext` also accepts `metadata` and request-local `functions`. `SessionOwnershipStore`
-needs `ownerOf(sessionId)` and `recordOwner(sessionId, userId)` backed by your
-database.
+`RelayContext` also accepts `metadata` and request-local `functions`.
 
 For a native app that holds its own server-issued credentials and calls the SDK
 directly, `BlazingAgentsDirectChatTransport({ getClient, agentId, sessionId?,

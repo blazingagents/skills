@@ -81,6 +81,8 @@ The client itself has the generation methods. Each call runs one metered Turn. T
 
 `chat()` returns a `ChatStream`. It is a `Stream` whose items are the server's AI SDK UI message stream as raw SSE `Bytes`, one complete event per item, exactly as sent. The SDK does not decode it. Relay those bytes to your frontend, where `useChat` from `@ai-sdk/react` reads them.
 
+Call `chat` on `client.for_user(verified_user_id)?` whenever the Session belongs to one of your users. The scoped `UserClient` sends the user on every request, so BA answers `404` for a Session ID, Agent, or Workspace that user does not own, and a `sessionId` from the browser is safe to pass back. On the unscoped `Client` the same call would resume any Session in your Tenant.
+
 `stream.session_id()` holds the `ss_...` ID before you read the body, and `stream.turn_id()` holds the running `turn_...` ID for `sessions().stop()`. Call `chat` without `.session()` to start a new Session. Store the returned ID with your user, send it to your frontend, and pass it back through `.session()` to continue that conversation.
 
 ```rust
@@ -90,16 +92,18 @@ use blazing_agents::messages::UserMessage;
 
 async fn start_chat(
     client: &Client,
-    user_id: &str,
+    verified_user_id: &str,
+    agent_id: &str,
     message: UserMessage,
     session_id: Option<&str>,
-) -> blazing_agents::Result<ChatStream> {
-    // message is the AI SDK UIMessage from your frontend: {"id", "role", "parts"}.
-    let call = client.chat("ag_0123456789abcdef", message).user_id(user_id);
-    match session_id {
-        Some(session_id) => call.session(session_id).await,
-        None => call.await,
-    }
+) -> Result<ChatStream, Box<dyn std::error::Error + Send + Sync>> {
+    // verified_user_id comes from your sign-in check, agent_id from your own
+    // records for that user. message is the AI SDK UIMessage from your frontend.
+    let call = client.for_user(verified_user_id)?.chat(agent_id, message);
+    Ok(match session_id {
+        Some(session_id) => call.session(session_id).await?,
+        None => call.await?,
+    })
 }
 ```
 
@@ -108,13 +112,19 @@ To relay, turn the stream into your framework's streaming body. In axum that is 
 ```rust
 use axum::body::Body;
 use axum::extract::{Json, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::Response;
 use axum::routing::post;
 use axum::Router;
 use blazing_agents::messages::UserMessage;
 use blazing_agents::Client;
 use serde::Deserialize;
+
+/// Your sign-in check: the verified user's ID and the Agent you provisioned
+/// for that user, or None when the request is not signed in.
+fn authenticate(headers: &HeaderMap) -> Option<(String, String)> {
+    unimplemented!()
+}
 
 #[derive(Deserialize)]
 struct ChatBody {
@@ -125,9 +135,12 @@ struct ChatBody {
 
 async fn chat(
     State(client): State<Client>,
+    headers: HeaderMap,
     Json(body): Json<ChatBody>,
 ) -> Result<Response, StatusCode> {
-    let call = client.chat("ag_0123456789abcdef", body.message);
+    let (user_id, agent_id) = authenticate(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let user = client.for_user(&user_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let call = user.chat(&agent_id, body.message);
     let stream = match &body.session_id {
         Some(session_id) => call.session(session_id),
         None => call,

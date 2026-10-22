@@ -12,6 +12,8 @@ An MCP Connection stores one server's HTTPS URL and credentials in your Tenant. 
 
 ## Build it
 
+For a Python, Rust, or Go backend, read the code for these steps in [Python](external-tools-mcp.python.md), [Rust](external-tools-mcp.rust.md), [Go](external-tools-mcp.go.md).
+
 Pick the sign-in type your server needs:
 
 | `authType` | Use it when | You send |
@@ -21,7 +23,7 @@ Pick the sign-in type your server needs:
 | `oauth_client_credentials` | The server issues tokens to a machine client. | `clientId`, `clientSecret`, optional `scope` |
 | `oauth_authorization_code` | A person must sign in and grant access. | Nothing extra; finish sign-in in the dashboard |
 
-1. Create the Connection once, on your backend. For every type except `oauth_authorization_code`, Blazing Agents checks the server first and saves nothing if the check fails.
+1. Create the Connection once, on your backend. Connections are Tenant administration, so steps 1 and 3 use the unscoped client. For every type except `oauth_authorization_code`, Blazing Agents checks the server first and saves nothing if the check fails.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
@@ -35,48 +37,6 @@ const connection = await client.mcpConnections.create({
   bearerToken: process.env.CUSTOMER_MCP_TOKEN ?? "",
 });
 console.log(connection.id, connection.status);
-```
-
-```python
-import os
-
-from blazing_agents import BlazingAgents
-
-client = BlazingAgents()  # reads BLAZING_AGENTS_API_KEY
-
-connection = client.mcp_connections.create(
-    name="Customer tools",
-    url="https://mcp.example.com/v1",
-    auth_type="bearer",
-    bearer_token=os.environ["CUSTOMER_MCP_TOKEN"],
-)
-print(connection.id, connection.status)
-```
-
-```rust
-use blazing_agents::mcp_connections::NewMcpConnection;
-
-let connection = client
-    .mcp_connections()
-    .create(NewMcpConnection::Bearer {
-        name: "Customer tools".to_owned(),
-        url: "https://mcp.example.com/v1".to_owned(),
-        bearer_token: std::env::var("CUSTOMER_MCP_TOKEN")?,
-    })
-    .await?;
-println!("{} {:?}", connection.id, connection.status);
-```
-
-```go
-connection, err := client.MCPConnections.Create(ctx, ba.CreateMCPConnectionParams{
-	Name: "Customer tools",
-	URL:  "https://mcp.example.com/v1",
-	Auth: ba.MCPAuthBearer{Token: ba.NewSecret(os.Getenv("CUSTOMER_MCP_TOKEN"))},
-})
-if err != nil {
-	return err
-}
-fmt.Println(connection.ID, connection.Status)
 ```
 
 2. If you chose `oauth_authorization_code`, finish sign-in in the dashboard. The Connection starts as `needs_auth`. A Tenant administrator opens MCP connections in the [dashboard](https://www.blazingagents.com/app), clicks **Connect**, and signs in to the server. If the server's authorization server asks for a redirect URL, register `https://api.blazingagents.com/v1/mcp/oauth/callback`. This sign-in needs a signed-in dashboard administrator, so no SDK has a method for it, and the API answers an API key with `unauthorized`.
@@ -111,123 +71,19 @@ await client.agents.updateMcpAttachment({
 });
 ```
 
-```python
-from blazing_agents import BlazingAgents
-
-
-def attach(agent_id: str, mcp_connection_id: str) -> None:
-    client = BlazingAgents()
-
-    test = client.mcp_connections.test(mcp_connection_id)
-    if test.error is not None:
-        raise RuntimeError(f"{test.error.code}: {test.error.message}")
-    if "lookup_customer" not in (test.tool_names or []):
-        raise RuntimeError(f"Expected lookup_customer, got {test.tool_names}")
-
-    agent = client.agents.get(agent_id)
-    if mcp_connection_id not in agent.mcp_connection_ids:
-        client.agents.update(
-            agent_id,
-            mcp_connection_ids=[*agent.mcp_connection_ids, mcp_connection_id],
-        )
-
-    client.agents.update_mcp_attachment(
-        agent_id,
-        mcp_connection_id,
-        forward_user_id=True,
-        forwarded_metadata_keys=["plan"],
-    )
-```
-
-```rust
-use blazing_agents::mcp_connections::McpConnectionTest;
-
-let agent_id = "ag_0123456789abcdef";
-let mcp_connection_id = "mcp_0123456789abcdef";
-
-let test = client.mcp_connections().test(mcp_connection_id).await?;
-let tool_names = match &test {
-    McpConnectionTest::Passed { tool_names, .. } => tool_names,
-    McpConnectionTest::Failed { error } => {
-        return Err(format!("{}: {}", error.code, error.message).into());
-    }
-    _ => unreachable!(),
-};
-if !tool_names.iter().any(|name| name == "lookup_customer") {
-    return Err(format!("Expected lookup_customer, got {tool_names:?}").into());
-}
-
-let agent = client.agents().get(agent_id).await?;
-if !agent
-    .mcp_connection_ids
-    .iter()
-    .any(|id| id.as_str() == mcp_connection_id)
-{
-    let mut ids = agent.mcp_connection_ids;
-    ids.push(mcp_connection_id.into());
-    client
-        .agents()
-        .update(agent_id)
-        .mcp_connection_ids(ids)
-        .await?;
-}
-
-client
-    .agents()
-    .update_mcp_attachment(agent_id, mcp_connection_id)
-    .forward_user_id(true)
-    .forwarded_metadata_keys(["plan"])
-    .await?;
-```
-
-```go
-connectionID := ba.MCPConnectionID("mcp_0123456789abcdef")
-
-test, err := client.MCPConnections.Test(ctx, connectionID)
-if err != nil {
-	return err
-}
-if !test.OK {
-	return fmt.Errorf("%s: %s", test.Error.Code, test.Error.Message)
-}
-if !slices.Contains(test.ToolNames, "lookup_customer") {
-	return fmt.Errorf("expected lookup_customer, got %v", test.ToolNames)
-}
-
-agent, err := client.Agents.Get(ctx, agentID)
-if err != nil {
-	return err
-}
-if !slices.Contains(agent.MCPConnectionIDs, connectionID) {
-	_, err = client.Agents.Update(ctx, agentID, ba.UpdateAgentParams{
-		MCPConnectionIDs: append(agent.MCPConnectionIDs, connectionID),
-	})
-	if err != nil {
-		return err
-	}
-}
-
-_, err = client.Agents.UpdateMCPAttachment(ctx, agentID, connectionID, ba.UpdateMCPAttachmentParams{
-	ForwardUserID:         new(true),
-	ForwardedMetadataKeys: []string{"plan"},
-})
-if err != nil {
-	return err
-}
-```
-
-4. Run a Turn that needs the tool, then read the saved Session to confirm the call. The saved tool part uses a generated name that contains the original tool name.
+4. Run a Turn that needs the tool, then read the saved Session to confirm the call. Run both on the End-user scoped client, as your app does for a signed-in user. The scope sets the Turn's `userId`, which the attachment forwards, and the Agent must belong to that user. The saved tool part uses a generated name that contains the original tool name.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
 
 declare const agentId: string;
+declare const verifiedUserId: string; // e.g. "user_123", from your sign-in check
 
-const client = new BlazingAgents({ apiKey: process.env.BLAZING_AGENTS_API_KEY ?? "" });
+const tenant = new BlazingAgents({ apiKey: process.env.BLAZING_AGENTS_API_KEY ?? "" });
+const client = tenant.forUser(verifiedUserId);
 
 const result = await client.chat({
   agentId,
-  userId: "user_123",
   metadata: { plan: "pro" },
   message: {
     id: crypto.randomUUID(),
@@ -243,103 +99,6 @@ const called = page.data.some((message) =>
   message.parts.some((part) => part.type.includes("lookup_customer")),
 );
 console.log(sessionId, called ? "MCP tool was called" : "MCP tool was not called");
-```
-
-```python
-import uuid
-
-from blazing_agents import BlazingAgents
-
-
-def check_tool_call(agent_id: str) -> None:
-    client = BlazingAgents()
-    with client.chat(
-        agent_id=agent_id,
-        user_id="user_123",
-        metadata={"plan": "pro"},
-        message={
-            "id": str(uuid.uuid4()),
-            "role": "user",
-            "parts": [{"type": "text", "text": "Look up customer 42 and summarize their account."}],
-        },
-    ) as stream:
-        for _chunk in stream:
-            pass  # Drain the stream; in an app, relay the raw bytes to the browser instead.
-        session_id = stream.session_id
-
-    page = client.sessions.messages(agent_id=agent_id, session_id=session_id)
-    called = any("lookup_customer" in part.type for m in page.data for part in m.parts)
-    print(session_id, "MCP tool was called" if called else "MCP tool was not called")
-```
-
-```rust
-use blazing_agents::messages::UserMessage;
-use blazing_agents::types::Metadata;
-use futures_util::TryStreamExt;
-
-let mut stream = client
-    .chat(
-        "ag_0123456789abcdef",
-        UserMessage::text("Look up customer 42 and summarize their account."),
-    )
-    .user_id("user_123")
-    .metadata(Metadata::new().insert("plan", "pro"))
-    .await?;
-let session_id = stream.session_id().clone();
-while stream.try_next().await?.is_some() {
-    // Drain the stream; in an app, relay the raw bytes to the browser instead.
-}
-
-let page = client
-    .sessions()
-    .messages("ag_0123456789abcdef", &session_id)
-    .await?;
-let called = page
-    .data
-    .iter()
-    .any(|m| m.parts.iter().any(|part| part.kind.contains("lookup_customer")));
-println!(
-    "{session_id} {}",
-    if called { "MCP tool was called" } else { "MCP tool was not called" }
-);
-```
-
-```go
-stream, err := client.Chat.Send(ctx, agentID,
-	ba.Messages(ba.TextMessage("Look up customer 42 and summarize their account.")),
-	ba.ChatParams{UserID: new("user_123"), Metadata: ba.Metadata{"plan": "pro"}})
-if err != nil {
-	return err
-}
-defer stream.Close()
-chatSessionID := stream.SessionID()
-for _, err := range stream.Events() {
-	if err != nil {
-		return err
-	}
-	// Drain the stream; in an app, relay the raw bytes to the browser instead.
-}
-
-page, err := client.Sessions.ListMessages(ctx, agentID, chatSessionID, ba.ListSessionMessagesParams{})
-if err != nil {
-	return err
-}
-called := false
-for _, message := range page.Data {
-	for _, raw := range message.Parts {
-		var part struct {
-			Type string `json:"type"`
-		}
-		if json.Unmarshal(raw, &part) == nil && strings.Contains(part.Type, "lookup_customer") {
-			called = true
-		}
-	}
-}
-if called {
-	fmt.Println(chatSessionID, "MCP tool was called")
-} else {
-	fmt.Println(chatSessionID, "MCP tool was not called")
-}
 ```
 
 ## Gotchas

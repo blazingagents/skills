@@ -99,17 +99,24 @@ Options:
 
 `client.Chat.Send` returns a `*ba.ChatStream`. `Events()` yields the server's AI SDK UI message stream as raw SSE frames, one complete event per iteration, exactly as sent. The SDK does not decode it. Relay those bytes to your frontend, where `useChat` from `@ai-sdk/react` reads them.
 
+Send through `client.ForUser(verifiedUserID)` whenever the Session belongs to one of your users. The scoped `*ba.UserClient` sends the user on every request, so BA answers `404` for a Session ID, Agent, or Workspace that user does not own, and a `sessionId` from the browser is safe to pass back. On the unscoped `*ba.Client` the same call would resume any Session in your Tenant.
+
 `stream.SessionID()` holds the `ss_...` ID before you read the body, and `stream.TurnID()` holds the running `turn_...` ID for `client.Sessions.Stop`. Send with an empty `SessionID` to start a new Session. Store the returned ID with your user, send it to your frontend, and pass it back in `ba.ChatParams` to continue that conversation.
 
 ```go
+// verifiedUserID comes from your sign-in check; agentID is the Agent you provisioned for that user.
+verifiedUserID := "user_123"
+user, err := client.ForUser(verifiedUserID)
+if err != nil {
+	return err
+}
 // message is the AI SDK UIMessage from your frontend: {"id", "role", "parts"}.
 var message ba.UserMessage
 if err := json.Unmarshal([]byte(`{"id":"msg-1","role":"user","parts":[{"type":"text","text":"Hello"}]}`), &message); err != nil {
 	return err
 }
-stream, err := client.Chat.Send(ctx, agentID, ba.Messages(message), ba.ChatParams{
+stream, err := user.Chat.Send(ctx, agentID, ba.Messages(message), ba.ChatParams{
 	SessionID: sessionID, // "" starts a new Session
-	UserID:    new("user_123"),
 })
 if err != nil {
 	return err
@@ -131,6 +138,12 @@ import (
 	ba "github.com/blazingagents/golang-sdk"
 )
 
+// authenticate is your sign-in check. It returns the verified user's ID and the Agent you
+// provisioned for that user, or ok == false when the request is not signed in.
+func authenticate(r *http.Request) (userID string, agentID ba.AgentID, ok bool) {
+	panic("replace with your sign-in check")
+}
+
 type chatBody struct {
 	Message   ba.UserMessage `json:"message"`
 	SessionID ba.SessionID   `json:"sessionId"` // "" starts a Session
@@ -138,12 +151,22 @@ type chatBody struct {
 
 func chat(client *ba.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		userID, agentID, ok := authenticate(r)
+		if !ok {
+			http.Error(w, "Sign in first.", http.StatusUnauthorized)
+			return
+		}
+		user, err := client.ForUser(userID)
+		if err != nil {
+			http.Error(w, "Invalid user.", http.StatusBadRequest)
+			return
+		}
 		var body chatBody
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "Invalid message.", http.StatusBadRequest)
 			return
 		}
-		stream, err := client.Chat.Send(r.Context(), "ag_0123456789abcdef", ba.Messages(body.Message),
+		stream, err := user.Chat.Send(r.Context(), agentID, ba.Messages(body.Message),
 			ba.ChatParams{SessionID: body.SessionID})
 		if err != nil {
 			http.Error(w, "Request failed.", http.StatusBadGateway)

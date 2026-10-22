@@ -12,6 +12,8 @@ Your code needs a result it can act on, not prose: extraction, classification, r
 
 ## Build it
 
+For a Python, Rust, or Go backend, read the code for these steps in [Python](structured-output.python.md), [Rust](structured-output.rust.md), [Go](structured-output.go.md).
+
 1. Define the shape, send it as JSON Schema, and validate the final object. In TypeScript `result.object` resolves to `unknown`, so parse it with the same Zod schema.
 
 ```ts
@@ -42,69 +44,7 @@ export async function triage(agentId: string, message: string) {
 
 In Python, pass a Pydantic model as `output_type`. The SDK sends its JSON Schema and returns a validated instance. Pass `json_schema={...}` instead to get plain JSON back.
 
-```python
-from typing import Literal
-
-from blazing_agents import BlazingAgents
-from pydantic import BaseModel
-
-
-class Triage(BaseModel):
-    category: Literal["billing", "technical", "other"]
-    urgent: bool
-    summary: str
-
-
-client = BlazingAgents()  # reads BLAZING_AGENTS_API_KEY
-
-
-def triage(agent_id: str, message: str) -> Triage:
-    return client.object(
-        agent_id=agent_id,
-        prompt=f"Triage this support message:\n\n{message}",
-        output_type=Triage,
-    )
-```
-
 In Rust, derive the schema from a struct with `ObjectSchema::derive()`. In Go, `ba.Object` derives it from the type argument with `ba.SchemaFor` and decodes the answer into that type; a `jsonschema` struct tag adds a field description.
-
-```rust
-use blazing_agents::generation::ObjectSchema;
-use schemars::JsonSchema;
-use serde::Deserialize;
-
-#[derive(Deserialize, JsonSchema)]
-struct Triage {
-    /// billing, technical, or other
-    category: String,
-    urgent: bool,
-    summary: String,
-}
-
-let triage: Triage = client
-    .object(
-        "ag_0123456789abcdef",
-        "Triage this support message:\n\nWhere is my invoice?",
-        ObjectSchema::derive(),
-    )
-    .await?;
-println!("{} {}", triage.category, triage.summary);
-```
-
-```go
-type Triage struct {
-	Category string `json:"category" jsonschema:"billing, technical, or other"`
-	Urgent   bool   `json:"urgent"`
-	Summary  string `json:"summary"`
-}
-
-triage, err := ba.Object(ctx, client.Generation, agentID,
-	ba.Text("Triage this support message:\n\nWhere is my invoice?"), ba.ObjectParams[Triage]{})
-if err != nil {
-	return err
-}
-fmt.Println(triage.Category, triage.Summary)
-```
 
 2. To show progress, relay the stream from your backend. `toResponse()` returns the JSON text as it arrives, which is the format the AI SDK `useObject` hook reads.
 
@@ -168,86 +108,6 @@ export function TriagePanel({ message }: { message: string }) {
 
 On the backend alone, iterate `result.partialObjectStream` for partial objects and then `await result.object` for the final one. In Python, `object_stream` yields raw JSON text, not parsed partials:
 
-```python
-from typing import Literal
-
-from blazing_agents import BlazingAgents
-from pydantic import BaseModel
-
-
-class Triage(BaseModel):
-    category: Literal["billing", "technical", "other"]
-    urgent: bool
-    summary: str
-
-
-client = BlazingAgents()
-
-
-def triage_with_progress(agent_id: str, message: str) -> Triage:
-    with client.object_stream(
-        agent_id=agent_id,
-        prompt=f"Triage this support message:\n\n{message}",
-        output_type=Triage,
-    ) as stream:
-        for json_text in stream:
-            print(json_text, end="", flush=True)  # or forward it to your client
-        return stream.get_final_object()
-```
-
-```rust
-use blazing_agents::generation::ObjectSchema;
-use futures_util::TryStreamExt;
-use schemars::JsonSchema;
-use serde::Deserialize;
-
-#[derive(Deserialize, JsonSchema)]
-struct Triage {
-    category: String,
-    urgent: bool,
-    summary: String,
-}
-
-let mut stream = client
-    .object_stream::<Triage>(
-        "ag_0123456789abcdef",
-        "Triage this support message:\n\nWhere is my invoice?",
-        ObjectSchema::derive(),
-    )
-    .await?;
-while let Some(json_text) = stream.try_next().await? {
-    print!("{json_text}"); // or forward it to your client
-}
-let triage: Triage = stream.final_object().await?;
-println!("\n{} {}", triage.category, triage.summary);
-```
-
-```go
-type Triage struct {
-	Category string `json:"category"`
-	Urgent   bool   `json:"urgent"`
-	Summary  string `json:"summary"`
-}
-
-stream, err := ba.StreamObject(ctx, client.Generation, agentID,
-	ba.Text("Triage this support message:\n\nWhere is my invoice?"), ba.ObjectParams[Triage]{})
-if err != nil {
-	return err
-}
-defer stream.Close()
-for delta, err := range stream.Deltas() {
-	if err != nil {
-		return err
-	}
-	fmt.Print(delta) // or forward it to your client
-}
-triage, err := stream.Object()
-if err != nil {
-	return err
-}
-fmt.Printf("\n%s %s\n", triage.Category, triage.Summary)
-```
-
 3. To keep the wording out of your code, save a Prompt once and call it with `promptId` and `variables` instead of `prompt`.
 
 ```ts
@@ -287,94 +147,6 @@ export async function triageWithPrompt(
 }
 ```
 
-```python
-from typing import Literal
-
-from blazing_agents import BlazingAgents
-from pydantic import BaseModel
-
-
-class Triage(BaseModel):
-    category: Literal["billing", "technical", "other"]
-    urgent: bool
-    summary: str
-
-
-client = BlazingAgents()
-
-
-def create_triage_prompt() -> str:
-    prompt = client.prompts.create(
-        name="Support triage",
-        template="Triage this message from a {{ plan }} customer:\n\n{{ message }}",
-    )
-    return prompt.id
-
-
-def triage_with_prompt(agent_id: str, prompt_id: str, plan: str, message: str) -> Triage:
-    return client.object(
-        agent_id=agent_id,
-        prompt_id=prompt_id,
-        variables={"plan": plan, "message": message},
-        output_type=Triage,
-    )
-```
-
-```rust
-use blazing_agents::generation::{ObjectSchema, SavedPrompt};
-use schemars::JsonSchema;
-use serde::Deserialize;
-
-#[derive(Deserialize, JsonSchema)]
-struct Triage {
-    category: String,
-    urgent: bool,
-    summary: String,
-}
-
-let prompt = client
-    .prompts()
-    .create(
-        "Support triage",
-        "Triage this message from a {{ plan }} customer:\n\n{{ message }}",
-    )
-    .await?;
-let triage: Triage = client
-    .object(
-        "ag_0123456789abcdef",
-        SavedPrompt::new(&prompt.id)
-            .var("plan", "pro")
-            .var("message", "Where is my invoice?"),
-        ObjectSchema::derive(),
-    )
-    .await?;
-println!("{} {}", triage.category, triage.summary);
-```
-
-```go
-type Triage struct {
-	Category string `json:"category"`
-	Urgent   bool   `json:"urgent"`
-	Summary  string `json:"summary"`
-}
-
-prompt, err := client.Prompts.Create(ctx, ba.CreatePromptParams{
-	Name:     "Support triage",
-	Template: "Triage this message from a {{ plan }} customer:\n\n{{ message }}",
-})
-if err != nil {
-	return err
-}
-triage, err := ba.Object(ctx, client.Generation, agentID, ba.SavedPrompt{
-	ID:        prompt.ID,
-	Variables: map[string]string{"plan": "pro", "message": "Where is my invoice?"},
-}, ba.ObjectParams[Triage]{})
-if err != nil {
-	return err
-}
-fmt.Println(triage.Category, triage.Summary)
-```
-
 ## Gotchas
 
 - Using `result.object` directly in TypeScript. It is `unknown`. Parse it with your Zod schema before use.
@@ -385,6 +157,7 @@ fmt.Println(triage.Category, triage.Summary)
 - Not handling bad final JSON. TypeScript rejects `result.object` with a `BlazingAgentsError` whose `code` is `stream_error`. Python raises a `StreamError` subclass: `ObjectJSONDecodeError`, `ObjectTruncationError`, or `ObjectValidationError`. Rust returns `Error::Object`, and Go returns a `*ba.ObjectError` whose `Kind` is `ba.ObjectTruncated`, `ba.ObjectInvalidJSON`, or `ba.ObjectMismatch`. Retry or show an error.
 - Passing the wrong Prompt variables. Every variable is required and extras are rejected (`prompt_variable_missing`, `prompt_variable_unknown`).
 - Calling `client.object()` from the browser. Your Tenant key must stay on the backend. The browser calls your endpoint, as `useObject` does above.
+- These samples run a Tenant-level Agent from trusted backend code; the call reads no user's data and saves nothing. When the call works for a signed-in user, such as on their own Agent or with usage counted to them, make it on their End-user scoped client: `tenant.forUser(verifiedUserId).object(...)` (`for_user(...)` in Python and Rust, `ForUser(...)` in Go). The Agent must then belong to that user.
 - Calling `toResponse()` twice. The body can be claimed once per result.
 
 ## Check it works

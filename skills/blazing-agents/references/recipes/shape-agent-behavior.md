@@ -13,6 +13,8 @@ An Agent holds configuration: Provider and model, thinking level, instructions, 
 
 ## Build it
 
+For a Python, Rust, or Go backend, read the code for these steps in [Python](shape-agent-behavior.python.md), [Rust](shape-agent-behavior.rust.md), [Go](shape-agent-behavior.go.md).
+
 1. Set the model, instructions, and context compaction in one update. Confirm the model is offered by the Provider, and send `providerId` and `model` together. `autoCompaction` (default `true`) summarizes older messages near the model's context limit; `compactionReserveTokens` (default `16384`) is how much room to keep free, so a larger value compacts sooner.
 
 ```ts
@@ -38,80 +40,9 @@ const agent = await client.agents.update({
 console.log(agent.model, agent.instructions);
 ```
 
-```python
-from blazing_agents import BlazingAgents
-
-
-def configure(client: BlazingAgents, agent_id: str, provider_id: str) -> None:
-    models = client.providers.list_models(provider_id).models
-    if not any(m.id == "openai/gpt-6-luna" for m in models):
-        raise RuntimeError("Model not offered by this Provider")
-
-    agent = client.agents.update(
-        agent_id,
-        provider_id=provider_id,
-        model="openai/gpt-6-luna",
-        instructions="You are the support assistant for Acme. Answer in two short paragraphs.",
-        tools=["read", "grep", "glob", "save_memory", "search_memories"],
-        compaction_reserve_tokens=32_768,
-    )
-    print(agent.model, agent.instructions)
-```
-
-```rust
-use blazing_agents::agents::AgentTool;
-
-let provider_id = "prv_0123456789abcdef";
-let models = client.providers().list_models(provider_id).await?.models;
-if !models.iter().any(|model| model.id == "openai/gpt-6-luna") {
-    return Err("Model not offered by this Provider".into());
-}
-
-let agent = client
-    .agents()
-    .update("ag_0123456789abcdef")
-    .model(provider_id, "openai/gpt-6-luna")
-    .instructions(
-        "You are the support assistant for Acme. Answer in two short paragraphs.",
-    )
-    .tools([
-        AgentTool::Read,
-        AgentTool::Grep,
-        AgentTool::Glob,
-        AgentTool::SaveMemory,
-        AgentTool::SearchMemories,
-    ])
-    .compaction_reserve_tokens(32_768)
-    .await?;
-println!("{:?} {}", agent.model, agent.instructions);
-```
-
-```go
-providerID := ba.ProviderID("prv_0123456789abcdef")
-models, err := client.Providers.ListModels(ctx, providerID)
-if err != nil {
-	return err
-}
-if !slices.ContainsFunc(models, func(m ba.ProviderModel) bool { return m.ID == "openai/gpt-6-luna" }) {
-	return errors.New("model not offered by this Provider")
-}
-
-agent, err := client.Agents.Update(ctx, agentID, ba.UpdateAgentParams{
-	ProviderID:              ba.Value(providerID),
-	Model:                   ba.Value("openai/gpt-6-luna"),
-	Instructions:            new("You are the support assistant for Acme. Answer in two short paragraphs."),
-	Tools:                   []ba.AgentTool{ba.AgentToolRead, ba.AgentToolGrep, ba.AgentToolGlob, ba.AgentToolSaveMemory, ba.AgentToolSearchMemories},
-	CompactionReserveTokens: new(32_768),
-})
-if err != nil {
-	return err
-}
-fmt.Println(*agent.Model, agent.Instructions)
-```
-
 The file tools here are the `file_read`-tagged ones (`read`, `grep`, `glob`), so the Agent can search its Workspace but never change it. Add `write` or `edit` to let it change files; add `bash` only if it may run any command. See [Built-in tools](../concepts.md#built-in-tools).
 
-2. Save a Prompt linked to the Agent and run it with exactly its variables. `agentId` groups Prompts for listing. A scoped request requires the Prompt and Agent to belong to the same user.
+2. Save a Prompt linked to the Agent and run it with exactly its variables. `agentId` groups Prompts for listing. These samples are trusted Tenant setup on the unscoped client. When a signed-in user saves or runs their own Prompts, use their End-user scoped client; the Prompt and Agent must then belong to that user.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
@@ -134,77 +65,6 @@ console.log(await result.text);
 
 const { data: prompts } = await client.prompts.list({ agentId });
 console.log(prompts.map(({ name }) => name));
-```
-
-```python
-from blazing_agents import BlazingAgents
-
-
-def run_prompt(client: BlazingAgents, agent_id: str) -> None:
-    prompt = client.prompts.create(
-        name="Release summary",
-        template="Summarize {{ version }} for {{ audience }}.",
-        agent_id=agent_id,
-    )
-    print(
-        client.completion(
-            agent_id=agent_id,
-            prompt_id=prompt.id,
-            variables={"version": "2.4", "audience": "developers"},
-        )
-    )
-    print([p.name for p in client.prompts.list(agent_id=agent_id).data])
-```
-
-```rust
-use blazing_agents::generation::SavedPrompt;
-
-let prompt = client
-    .prompts()
-    .create("Release summary", "Summarize {{ version }} for {{ audience }}.")
-    .agent_id("ag_0123456789abcdef")
-    .await?;
-let answer = client
-    .completion(
-        "ag_0123456789abcdef",
-        SavedPrompt::new(&prompt.id)
-            .var("version", "2.4")
-            .var("audience", "developers"),
-    )
-    .await?;
-println!("{answer}");
-let page = client
-    .prompts()
-    .list()
-    .agent_id("ag_0123456789abcdef")
-    .await?;
-println!("{:?}", page.data.iter().map(|p| &p.name).collect::<Vec<_>>());
-```
-
-```go
-prompt, err := client.Prompts.Create(ctx, ba.CreatePromptParams{
-	Name:     "Release summary",
-	Template: "Summarize {{ version }} for {{ audience }}.",
-	AgentID:  ba.Value(agentID),
-})
-if err != nil {
-	return err
-}
-answer, err := client.Generation.Completion(ctx, agentID, ba.SavedPrompt{
-	ID:        prompt.ID,
-	Variables: map[string]string{"version": "2.4", "audience": "developers"},
-}, ba.GenerateParams{})
-if err != nil {
-	return err
-}
-fmt.Println(answer)
-page, err := client.Prompts.List(ctx, ba.ListPromptsParams{AgentID: new(agentID)})
-if err != nil {
-	return err
-}
-for _, p := range page.Data {
-	fmt.Println(p.Name)
-}
 ```
 
 These list calls show the first page. Follow `nextCursor` or `next_cursor` for the remaining Prompts.
@@ -236,167 +96,31 @@ await skills.putFile({
 });
 ```
 
-```python
-from blazing_agents import BlazingAgents
-
-
-def add_skill(client: BlazingAgents, agent_id: str) -> None:
-    skills = client.agent(agent_id).skills
-    skill = skills.upload(archive_type="zip", file="release-notes.zip")
-    print(skill.name, [f.path for f in skill.files])
-
-    skills.replace_file(
-        skill_id=skill.id,
-        path="references/style-guide.md",
-        content=b"Use sentence case headings.\n",
-    )
-```
-
-```rust
-use blazing_agents::files::Upload;
-use blazing_agents::skills::ArchiveType;
-
-let agent_handle = client.agent("ag_0123456789abcdef");
-let skills = agent_handle.skills();
-let skill = skills
-    .upload(ArchiveType::Zip, Upload::file("release-notes.zip").await?)
-    .await?;
-println!("{} {:?}", skill.name, skill.files.iter().map(|f| &f.path).collect::<Vec<_>>());
-
-skills
-    .replace_file(
-        &skill.id,
-        "references/style-guide.md",
-        Upload::bytes("Use sentence case headings.\n"),
-    )
-    .await?;
-```
-
-```go
-skill, err := client.Skills.Upload(ctx, agentID, ba.UploadSkillParams{
-	Type: ba.ArchiveTypeZip,
-	File: ba.UploadFile("release-notes.zip"),
-})
-if err != nil {
-	return err
-}
-fmt.Println(skill.Name)
-for _, file := range skill.Files {
-	fmt.Println(file.Path)
-}
-
-_, err = client.Skills.ReplaceFile(ctx, agentID, skill.ID, "references/style-guide.md",
-	strings.NewReader("Use sentence case headings.\n"))
-if err != nil {
-	return err
-}
-```
-
-4. Store Memory for one End-user and turn on injection so every Turn with that `userId` starts with the newest notes it can see, general and that user's (up to 4,000 words). Use list with `search`, `update()`, and `delete()` to curate them.
+4. Store Memory for one End-user and turn on injection so every Turn of theirs starts with the newest notes it can see, general and that user's (up to 4,000 words). Turning on injection is Agent configuration on the unscoped client. The Memory calls run on that user's End-user scoped client, which sets `userId` and sees only their notes, so the Agent must belong to that user. Use list with `search`, `update()`, and `delete()` to curate them.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
 
-declare const client: BlazingAgents;
+declare const tenant: BlazingAgents;
+declare const verifiedUserId: string; // the user who owns this Agent
 const agentId = "ag_0123456789abcdef";
-const userId = "app-user-42";
 
-await client.agents.update({ agentId, memoryInjectionEnabled: true });
+await tenant.agents.update({ agentId, memoryInjectionEnabled: true });
+
+const client = tenant.forUser(verifiedUserId);
 const { memory } = await client.memories.create({
   agentId,
-  userId,
   text: "Prefers concise status updates.",
 });
 
-const { data } = await client.memories.list({ agentId, userId, search: "status" });
+const { data } = await client.memories.list({ agentId, search: "status" });
 console.log(data.map(({ text }) => text));
 
 await client.memories.update({ agentId, memoryId: memory.id, text: "Prefers bullet-point status updates." });
 await client.memories.delete({ agentId, memoryId: memory.id });
 ```
 
-```python
-from blazing_agents import BlazingAgents
-
-
-def curate_memory(client: BlazingAgents, agent_id: str, user_id: str) -> None:
-    client.agents.update(agent_id, memory_injection_enabled=True)
-    memory = client.memories.create(
-        agent_id=agent_id, user_id=user_id, text="Prefers concise status updates."
-    ).memory
-
-    page = client.memories.list(agent_id=agent_id, user_id=user_id, search="status")
-    print([m.text for m in page.data])
-
-    client.memories.update(
-        agent_id=agent_id, memory_id=memory.id, text="Prefers bullet-point status updates."
-    )
-    client.memories.delete(agent_id=agent_id, memory_id=memory.id)
-```
-
-```rust
-client
-    .agents()
-    .update("ag_0123456789abcdef")
-    .memory_injection_enabled(true)
-    .await?;
-let memory = client
-    .memories()
-    .create("ag_0123456789abcdef", "Prefers concise status updates.")
-    .user_id("app:user-42")
-    .await?;
-
-let page = client
-    .memories()
-    .list("ag_0123456789abcdef")
-    .user_id("app:user-42")
-    .search("status")
-    .await?;
-println!("{:?}", page.data.iter().map(|m| &m.text).collect::<Vec<_>>());
-
-client
-    .memories()
-    .update(
-        "ag_0123456789abcdef",
-        &memory.id,
-        "Prefers bullet-point status updates.",
-    )
-    .await?;
-client
-    .memories()
-    .delete("ag_0123456789abcdef", memory.id)
-    .await?;
-```
-
-```go
-if _, err := client.Agents.Update(ctx, agentID, ba.UpdateAgentParams{MemoryInjectionEnabled: new(true)}); err != nil {
-	return err
-}
-memory, err := client.Memories.Create(ctx, agentID, ba.CreateMemoryParams{
-	UserID: new("app:user-42"),
-	Text:   "Prefers concise status updates.",
-})
-if err != nil {
-	return err
-}
-
-page, err := client.Memories.List(ctx, agentID, ba.ListMemoriesParams{UserID: new("app:user-42"), Search: new("status")})
-if err != nil {
-	return err
-}
-for _, m := range page.Data {
-	fmt.Println(m.Text)
-}
-
-if _, err := client.Memories.Update(ctx, agentID, memory.ID, ba.UpdateMemoryParams{Text: "Prefers bullet-point status updates."}); err != nil {
-	return err
-}
-if err := client.Memories.Delete(ctx, agentID, memory.ID); err != nil {
-	return err
-}
-```
-
-5. Read saved configuration and pause new work. Edit the Agent for future Sessions and Task runs. The existing Session keeps its saved settings.
+5. Read saved configuration and pause new work from trusted backend code with the unscoped client. Edit the Agent for future Sessions and Task runs. The existing Session keeps its saved settings.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
@@ -410,52 +134,6 @@ console.log(session.agentConfig.model, session.agentConfig.instructions);
 
 await client.agents.disable({ agentId });
 await client.agents.enable({ agentId });
-```
-
-```python
-from blazing_agents import BlazingAgents
-
-client = BlazingAgents()
-agent_id = "ag_0123456789abcdef"
-session_id = "ss_0123456789abcdef"
-
-session = client.sessions.get(agent_id=agent_id, session_id=session_id)
-print(session.agent_config.model, session.agent_config.instructions)
-
-client.agents.disable(agent_id)
-client.agents.enable(agent_id)
-```
-
-```rust
-let session = client
-    .sessions()
-    .get("ag_0123456789abcdef", "ss_0123456789abcdef")
-    .await?;
-println!("{:?} {}", session.agent_config.model, session.agent_config.instructions);
-
-client
-    .agents()
-    .disable("ag_0123456789abcdef")
-    .await?;
-client.agents().enable("ag_0123456789abcdef").await?;
-```
-
-```go
-session, err := client.Sessions.Get(ctx, agentID, sessionID)
-if err != nil {
-	return err
-}
-if session.AgentConfig.Model != nil {
-	fmt.Println(*session.AgentConfig.Model)
-}
-fmt.Println(session.AgentConfig.Instructions)
-
-if _, err := client.Agents.Disable(ctx, agentID); err != nil {
-	return err
-}
-if _, err := client.Agents.Enable(ctx, agentID); err != nil {
-	return err
-}
 ```
 
 ## Gotchas
@@ -475,7 +153,7 @@ if _, err := client.Agents.Enable(ctx, agentID); err != nil {
 - `client.agents.get()` shows the new `model` and `instructions`; `sessions.get()` shows the settings saved for an existing Session.
 - Run the Prompt twice with different `variables`; each answer reflects its inputs.
 - Ask a question that matches your Skill's description; the answer follows the Skill's instructions.
-- After saving a note for `app-user-42`, a fresh Session with `userId: "app-user-42"` answers using it, and one without `userId` does not.
+- After saving a note through `app-user-42`'s scoped client, a fresh Session on that client answers using it. Another user's scoped client cannot list or read the note.
 
 ## Go deeper
 
