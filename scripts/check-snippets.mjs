@@ -149,10 +149,10 @@ if (tsFiles.length) {
   if (tsc.status && !failures) failures++;
 }
 
-/** The pinned wheel, which `just sdk-pin` moves, unless SNIPPETS_PYTHON_SDK names another. */
+/** The pinned PyPI release, which `just sdk-release` moves, unless SNIPPETS_PYTHON_SDK names a wheel. */
 function pythonSdk() {
   const sdk = process.env.SNIPPETS_PYTHON_SDK;
-  if (!sdk) return join(snippets, "vendor/blazing_agents-0.31.0-py3-none-any.whl");
+  if (!sdk) return "blazing_agents==0.31.0";
   console.log(`Python snippets use ${sdk}`);
   return resolve(sdk);
 }
