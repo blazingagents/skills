@@ -2,68 +2,53 @@
 
 Use BA's managed Chat Connections when the user wants an existing Agent in Slack
 or Telegram. BA keeps the Sessions, posts replies, and renders approval cards.
-Use `client.chatConnections` for connection configuration.
+Manage connections with `client.chatConnections` in an SDK script.
 
 Read [setup](https://docs.blazingagents.com/platform/chat-integrations) before
 creating a connection, including registering the returned `webhookUrl` on the
 platform. Read the
 [TypeScript SDK reference](https://docs.blazingagents.com/sdk/typescript/chat-integrations)
-for exact arguments. Keep bot credentials in environment variables;
-report only IDs, enabled state, and safe health results.
+for exact arguments. Read bot credentials from environment variables; report
+only IDs, enabled state, and safe health results.
 
-The resource provides list, get, create, update, credential rotation, health checks,
-enable, disable, and delete. Update accepts only `name` and `configuration`;
-BA generates `webhookUrl`. Changing the Agent or bot requires a new connection.
+The resource offers list, get, create, update, credential rotation, health
+checks, enable, disable, and delete. Update accepts only `name` and
+`configuration`; BA generates `webhookUrl`. Changing the Agent or the bot needs
+a new connection.
 
 - Create: resolve the Agent, which must be one of the Tenant's own Agents and
-  never the Admin Agent (`create` fails with `admin_agent_managed`, 409),
-  verify the intended bot/installation, create once
-  with `enabled: false`, and read `webhookUrl` from the response. For Slack,
-  register that URL as both the Event Subscriptions and Interactivity Request
-  URL; for Telegram, enabling registers it. Run health, enable, and test a real
-  reply. Platform registration is separate from BA connection creation.
-- Inspect: list/get connections, then run health if fresh evidence is needed.
-  `unknown` requires manual verification; token validity does not prove delivery.
-- Rotate: replace the complete credentials for the same installation. Preserve
-  Sessions.
-- Disable/delete: explain that disable stops new intake while admitted work may
-  finish; delete preserves Sessions and leaves platform registration unchanged.
+  never the Admin Agent (`admin_agent_managed`, 409). Verify the intended bot
+  or installation, create once with `enabled: false`, and read `webhookUrl`
+  from the response. For Slack, register that URL as both the Event
+  Subscriptions and the Interactivity Request URL; for Telegram, enabling
+  registers it. Run health, enable, and test a real reply.
+- Inspect: list or get connections, then run health when you need fresh
+  evidence. `unknown` needs manual checking; a valid token does not prove
+  delivery.
+- Rotate: send the complete credentials for the same installation. Sessions
+  stay attached.
+- Disable: stops new messages and approval clicks. Enabling again does not
+  replay missed messages.
+- Delete: disconnects the bot and keeps its Sessions. BA removes the Telegram
+  webhook it set; the user uninstalls the Slack app.
 
-Sender/approver policy is unrestricted. Destination IDs are health probes, not
-allowlists. Any participant with access to a bound approval card can decide.
-Users send `/new` to start a new conversation on purpose, even while the
-current one is answering. They send `/new` in a Telegram private chat,
-`/new@BotName` in a Telegram group, or `@bot /new` in a Slack channel, because
-Slack never delivers a bare `/new` to the bot. The old Session stays in history,
-and the next message begins on a fresh Session without waiting for the old one.
-`/new` followed by other text, and other slash commands such as Telegram's
-`/start`, reach the Agent as ordinary messages. After a Session is deleted, the
-next message that addresses the bot starts a new conversation without `/new`. A
-message that was still queued for the deleted Session is not run; the bot says
-the conversation was deleted and asks the user to send the message again.
+Tell the user before a disable or a rotation that a Turn already running
+finishes and keeps its reply in the Session, but the bot posts neither the reply
+nor its approval cards. Messages waiting behind it in that conversation are
+dropped with no notice. Suggest doing either when conversations are quiet.
 
-Relay these runtime behaviors when a user asks why a bot answered as it did:
+Facts that shape how the user sets up a bot:
 
-- A message sent while the Agent is answering waits and is answered in order in
-  the same conversation. Nothing is dropped, and other conversations, including
-  other Telegram forum topics, do not wait. A redelivered platform event is
-  answered once.
-- If a Turn fails or stops before BA saves its reply, the bot posts that the
-  reply was interrupted and asks the user to send the message again. BA does
-  not run the Turn again, because Tools may already have run. An interrupted
-  approval round asks the user to ask again.
-- A message sent while a Tool approval waits is not run. The bot asks the user
-  to approve or reject the request first, then send the message again, or to
-  send `/new` if the request is lost.
-- BA posts each reply and approval card at least once, with a few retries, so
-  a reply can rarely appear twice. A reply that still fails to post stays in
-  the Session transcript, and nothing sends it again; read the Session's
-  messages to see it. An approval card that failed to post is posted again
-  when the person sends their next message, with a note asking them to decide
-  it first.
-- A Turn started through the API on a chat Session does not post to Slack or
-  Telegram.
-- A message with no text is ignored. In a channel, a message that does not
-  mention the bot is answered only in a thread the bot already joined.
-- In a Telegram private chat the reply appears as a growing draft, then as the
-  final message. Slack and group chats show the final message only.
+- Anyone who can reach the bot can talk to it, and anyone who sees an approval
+  card can decide it. `channelIds` and `chatIds` only choose where health
+  checks look; they are not allowlists.
+- Every conversation runs on the connected Agent, so all of them share its
+  Workspace files.
+- A message sent while the Agent is answering is steered into that answer, and
+  one reply covers both. While a Tool approval waits, new messages are refused
+  with a notice.
+- Users send `/new` (`/new@BotName` in a Telegram group, `@bot /new` in Slack)
+  to start a new conversation.
+
+When the user asks why a bot answered as it did, read
+[message order and interruptions](https://docs.blazingagents.com/platform/chat-integrations#message-order).
