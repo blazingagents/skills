@@ -12,7 +12,9 @@ Every Agent has a Workspace: a private file system with a shell, rooted at `/wor
 
 ## Build it
 
-1. Create an Agent with the file tools the job needs. This one writes reports, so it needs `write` and `publish_artifacts`, plus `read` and `bash` to check its work. Without file tools the Agent cannot touch files.
+For a Python, Rust, or Go backend, read the code for these steps in [Python](files-and-deliverables.python.md), [Rust](files-and-deliverables.rust.md), [Go](files-and-deliverables.go.md).
+
+1. Create an Agent with the file tools the job needs, for the user who will chat with it. This one writes reports, so it needs `write` and `publish_artifacts`, plus `read` and `bash` to check its work. Without file tools the Agent cannot touch files. Provisioning is a trusted Tenant operation, so it runs on the unscoped client with that user's `userId`; the Agent's own Workspace gets the same `userId`.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
@@ -20,9 +22,11 @@ import { BlazingAgents } from "@blazingagents/sdk";
 const apiKey = process.env.BLAZING_AGENTS_API_KEY;
 if (!apiKey) throw new Error("Set BLAZING_AGENTS_API_KEY");
 const client = new BlazingAgents({ apiKey });
+declare const verifiedUserId: string; // the user this Agent serves
 
 const agent = await client.agents.create({
   name: "Report writer",
+  userId: verifiedUserId,
   providerId: "prv_0123456789abcdef",
   model: "openai/gpt-6-luna",
   instructions:
@@ -33,77 +37,21 @@ const agent = await client.agents.create({
 console.log(agent.id, agent.workspaceId);
 ```
 
-```python
-from blazing_agents import BlazingAgents
-
-client = BlazingAgents()  # reads BLAZING_AGENTS_API_KEY
-
-agent = client.agents.create(
-    name="Report writer",
-    provider_id="prv_0123456789abcdef",
-    model="openai/gpt-6-luna",
-    instructions=(
-        "Write reports as Markdown files. "
-        "When a file is finished, publish it with publish_artifacts."
-    ),
-    workspace_tier="plus",
-    tools=["read", "write", "bash", "publish_artifacts"],
-)
-print(agent.id, agent.workspace_id)
-```
-
-```rust
-use blazing_agents::agents::AgentTool;
-use blazing_agents::workspaces::WorkspaceTier;
-
-let agent = client
-    .agents()
-    .create("Report writer")
-    .model("prv_0123456789abcdef", "openai/gpt-6-luna")
-    .instructions(
-        "Write reports as Markdown files. \
-         When a file is finished, publish it with publish_artifacts.",
-    )
-    .workspace_tier(WorkspaceTier::Plus)
-    .tools([
-        AgentTool::Read,
-        AgentTool::Write,
-        AgentTool::Bash,
-        AgentTool::PublishArtifacts,
-    ])
-    .await?;
-println!("{} {}", agent.id, agent.workspace_id);
-```
-
-```go
-agent, err := client.Agents.Create(ctx, ba.CreateAgentParams{
-	Name:       "Report writer",
-	ProviderID: ba.Value(ba.ProviderID("prv_0123456789abcdef")),
-	Model:      ba.Value("openai/gpt-6-luna"),
-	Instructions: new("Write reports as Markdown files. " +
-		"When a file is finished, publish it with publish_artifacts."),
-	WorkspaceTier: new(ba.WorkspaceTierPlus),
-	Tools:         []ba.AgentTool{ba.AgentToolRead, ba.AgentToolWrite, ba.AgentToolBash, ba.AgentToolPublishArtifacts},
-})
-if err != nil {
-	return err
-}
-fmt.Println(agent.ID, agent.WorkspaceID)
-```
-
 For an existing Agent, read `agent.tools` and send the full list with the new tools added. `tools` replaces the whole list and rejects duplicate names.
 
-2. To let several Agents work on the same files, create a Workspace and attach each Agent to it. Pick the narrowest network policy: `unrestricted` (default), `allowlist`, or `offline`.
+2. To let several of a user's Agents work on the same files, create a Workspace with the same `userId` and attach each Agent to it. A scoped chat on an Agent whose Workspace belongs to another user, or to no user, fails with `workspace_not_found`. Pick the narrowest network policy: `unrestricted` (default), `allowlist`, or `offline`.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
 
 declare const client: BlazingAgents;
+declare const verifiedUserId: string; // the user who owns both Agents
 declare const writerAgentId: string;
 declare const reviewerAgentId: string;
 
 const workspace = await client.workspaces.create({
   name: "Release files",
+  userId: verifiedUserId,
   tier: "plus",
   networkPolicy: { mode: "allowlist", allowedHosts: ["registry.npmjs.org"] },
 });
@@ -113,72 +61,17 @@ for (const agentId of [writerAgentId, reviewerAgentId]) {
 }
 ```
 
-```python
-from blazing_agents import BlazingAgents
-
-
-def share_workspace(client: BlazingAgents, agent_ids: list[str]) -> str:
-    workspace = client.workspaces.create(
-        name="Release files",
-        tier="plus",
-        network_policy={"mode": "allowlist", "allowed_hosts": ["registry.npmjs.org"]},
-    )
-    for agent_id in agent_ids:
-        client.agents.update(agent_id, workspace_id=workspace.id)
-    return workspace.id
-```
-
-```rust
-use blazing_agents::workspaces::{NetworkPolicy, WorkspaceTier};
-
-let agent_ids = ["ag_0123456789abcdef", "ag_abcdef0123456789"];
-let workspace = client
-    .workspaces()
-    .create()
-    .name("Release files")
-    .tier(WorkspaceTier::Plus)
-    .network_policy(NetworkPolicy::allowlist(["registry.npmjs.org"]))
-    .await?;
-for agent_id in agent_ids {
-    client
-        .agents()
-        .update(agent_id)
-        .workspace_id(&workspace.id)
-        .await?;
-}
-println!("{}", workspace.id);
-```
-
-```go
-agentIDs := []ba.AgentID{"ag_0123456789abcdef", "ag_abcdef0123456789"}
-workspace, err := client.Workspaces.Create(ctx, ba.CreateWorkspaceParams{
-	Name:          new("Release files"),
-	Tier:          new(ba.WorkspaceTierPlus),
-	NetworkPolicy: ba.NetworkPolicyAllowlist{AllowedHosts: []string{"registry.npmjs.org"}},
-})
-if err != nil {
-	return err
-}
-for _, id := range agentIDs {
-	_, err := client.Agents.Update(ctx, id, ba.UpdateAgentParams{WorkspaceID: new(workspace.ID)})
-	if err != nil {
-		return err
-	}
-}
-fmt.Println(workspace.ID)
-```
-
-3. Ask for the file in a chat turn, read the stream to the end, then list the Session's Artifacts. Pass `userId` so each Artifact carries the Session's user ID, which you check before download.
+3. Ask for the file in a chat turn on the signed-in user's End-user scoped client, read the stream to the end, then list the Session's Artifacts through the same client. The scope sets the Session's `userId`, so the call needs none.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
 
-declare const client: BlazingAgents;
+declare const tenant: BlazingAgents;
 
-export async function writeReport(agentId: string, userId: string) {
+export async function writeReport(agentId: string, verifiedUserId: string) {
+  const client = tenant.forUser(verifiedUserId);
   const turn = await client.chat({
     agentId,
-    userId,
     message: {
       id: crypto.randomUUID(),
       role: "user",
@@ -198,154 +91,44 @@ export async function writeReport(agentId: string, userId: string) {
 }
 ```
 
-```python
-import uuid
+A scoped chat needs an Agent and Workspace provisioned for that same user, as in steps 1 and 2; any other Agent returns `not_found`. The Artifacts the turn publishes belong to that user. See [multi-user apps](multi-user-apps.md).
 
-from blazing_agents import BlazingAgents
-
-
-def write_report(client: BlazingAgents, agent_id: str, user_id: str) -> list[str]:
-    message: dict[str, object] = {
-        "id": str(uuid.uuid4()),
-        "role": "user",
-        "parts": [
-            {
-                "type": "text",
-                "text": "Write a short release summary to release.md, then publish it.",
-            }
-        ],
-    }
-    with client.chat(agent_id=agent_id, user_id=user_id, message=message) as stream:
-        session_id = stream.session_id
-        for _ in stream:
-            pass  # or forward each chunk to your client
-    page = client.artifacts.list(agent_id=agent_id, session_id=session_id)
-    return [artifact.artifact_id for artifact in page.data]
-```
-
-```rust
-use blazing_agents::messages::UserMessage;
-use futures_util::TryStreamExt;
-
-let mut stream = client
-    .chat(
-        "ag_0123456789abcdef",
-        UserMessage::text("Write a short release summary to release.md, then publish it."),
-    )
-    .user_id("app:user-42")
-    .await?;
-let session_id = stream.session_id().clone();
-while stream.try_next().await?.is_some() {
-    // or forward each chunk to your client
-}
-let page = client
-    .artifacts()
-    .list()
-    .agent_id("ag_0123456789abcdef")
-    .session_id(session_id)
-    .await?;
-let artifact_ids: Vec<_> = page.data.iter().map(|artifact| &artifact.artifact_id).collect();
-```
-
-```go
-stream, err := client.Chat.Send(ctx, agentID,
-	ba.Messages(ba.TextMessage("Write a short release summary to release.md, then publish it.")),
-	ba.ChatParams{UserID: new("app:user-42")})
-if err != nil {
-	return err
-}
-defer stream.Close()
-chatSessionID := stream.SessionID()
-for _, err := range stream.Events() {
-	if err != nil {
-		return err
-	}
-	// or forward each event to your client
-}
-page, err := client.Artifacts.List(ctx, ba.ListArtifactsParams{AgentID: new(agentID), SessionID: new(chatSessionID)})
-if err != nil {
-	return err
-}
-for _, artifact := range page.Data {
-	fmt.Println(artifact.ID, artifact.Filename, artifact.SizeBytes)
-}
-```
-
-This recipe uses a Tenant-owned Agent with explicit end-user Attribution. For user-owned Agents, scope Agent creation, chat, and downloads consistently as shown in [multi-user apps](multi-user-apps.md). A scoped download cannot read an Artifact produced by a Tenant-owned Agent.
-
-4. Serve downloads from your backend. Compare the Artifact's `userId` with the `userId` you send for the signed-in user on chat calls, then redirect to a fresh download URL.
+4. Serve downloads from your backend through the signed-in user's scoped client, then redirect to a fresh download URL. BA returns `not_found` (404) for an Artifact from another user's Session, so you need no ownership check of your own.
 
 ```ts
-import { BlazingAgents } from "@blazingagents/sdk";
+import { BlazingAgents, BlazingAgentsError } from "@blazingagents/sdk";
 
-declare const client: BlazingAgents;
+declare const tenant: BlazingAgents;
 
 export async function downloadArtifact(
   artifactId: string,
-  signedInUserId: string
+  verifiedUserId: string
 ): Promise<Response> {
-  const artifact = await client.artifacts.get({ artifactId });
-  if (artifact.userId !== signedInUserId) {
-    return new Response("Not found", { status: 404 });
+  try {
+    const { url } = await tenant
+      .forUser(verifiedUserId)
+      .artifacts.createDownloadUrl({ artifactId });
+    return Response.redirect(url, 302);
+  } catch (error) {
+    if (BlazingAgentsError.isInstance(error) && error.status === 404) {
+      return new Response("Not found", { status: 404 });
+    }
+    throw error;
   }
-  const { url } = await client.artifacts.createDownloadUrl({ artifactId });
-  return Response.redirect(url, 302);
 }
 ```
 
-```python
-from blazing_agents import BlazingAgents
-
-
-def artifact_download_url(
-    client: BlazingAgents, artifact_id: str, signed_in_user_id: str
-) -> str | None:
-    artifact = client.artifacts.get(artifact_id=artifact_id)
-    if artifact.user_id != signed_in_user_id:
-        return None  # respond 404
-    return str(client.artifacts.create_download_url(artifact_id=artifact_id).url)
-```
-
-```rust
-let signed_in_user_id = "app:user-42";
-let artifact = client.artifacts().get("at_0123456789abcdef").await?;
-if artifact.user_id != signed_in_user_id {
-    return Err("not found".into()); // respond 404
-}
-let url = client
-    .artifacts()
-    .create_download_url(artifact.artifact_id)
-    .await?
-    .url;
-```
-
-```go
-signedInUserID := "app:user-42"
-artifactID := ba.ArtifactID("at_0123456789abcdef")
-artifact, err := client.Artifacts.Get(ctx, artifactID)
-if err != nil {
-	return err
-}
-if artifact.UserID != signedInUserID {
-	return errors.New("not found") // respond 404
-}
-download, err := client.Artifacts.CreateDownloadURL(ctx, artifactID)
-if err != nil {
-	return err
-}
-// Redirect to download.URL.Reveal(). The Secret prints as [redacted] in logs.
-_ = download.URL.Reveal()
-```
-
-5. Clean up. Deleting an Artifact is permanent and leaves the Workspace file alone. When you delete a Session, choose whether its Artifacts go too. A Workspace can be deleted only after every Agent has moved off it.
+5. Clean up through the same scoped client. Deleting an Artifact is permanent and leaves the Workspace file alone. When you delete a Session, choose whether its Artifacts go too. A Workspace can be deleted only after every Agent has moved off it.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
 
-declare const client: BlazingAgents;
+declare const tenant: BlazingAgents;
+declare const verifiedUserId: string;
 declare const artifactId: string;
 declare const workspaceId: string;
 
+const client = tenant.forUser(verifiedUserId);
 await client.artifacts.delete({ artifactId });
 await client.sessions.delete({
   agentId: "ag_0123456789abcdef",
@@ -355,48 +138,16 @@ await client.sessions.delete({
 await client.workspaces.delete({ workspaceId });
 ```
 
-```python
-from blazing_agents import BlazingAgents
-
-
-def clean_up(client: BlazingAgents, artifact_id: str, workspace_id: str) -> None:
-    client.artifacts.delete(artifact_id=artifact_id)
-    client.sessions.delete(
-        agent_id="ag_0123456789abcdef",
-        session_id="ss_0123456789abcdef",
-        delete_artifacts=True,
-    )
-    client.workspaces.delete(workspace_id=workspace_id)
-```
-
-```rust
-client.artifacts().delete("at_0123456789abcdef").await?;
-client
-    .sessions()
-    .delete("ag_0123456789abcdef", "ss_0123456789abcdef", true)
-    .await?;
-client.workspaces().delete("ws_0123456789abcdef").await?;
-```
-
-```go
-if err := client.Artifacts.Delete(ctx, ba.ArtifactID("at_0123456789abcdef")); err != nil {
-	return err
-}
-if err := client.Sessions.Delete(ctx, agentID, sessionID, ba.DeleteSessionParams{DeleteArtifacts: true}); err != nil {
-	return err
-}
-if err := client.Workspaces.Delete(ctx, ba.WorkspaceID("ws_0123456789abcdef")); err != nil {
-	return err
-}
-```
-
 ## Gotchas
 
+- One Agent, one Workspace, shared by every Session. Without `forUser` and per-user Agents, a shared Agent's users read and overwrite each other's files, and on Plus those files persist. Give each user their own Agent and Workspace when files are private, or keep file tools off the shared Agent.
+- Each shell command is killed after 30 seconds. Split long installs, builds, and test suites into commands that each finish within 30 seconds.
+- Switching a Workspace's network policy between unrestricted and restricted stops it if it is running; Core files are lost, Plus saves them first.
 - The Agent says it wrote a file but nothing happened. It lacks `write`. Add it to `tools`. The same goes for `publish_artifacts` when nothing was published.
 - Listing Artifacts before the stream ends. The turn saves its results only when the stream is fully read. Drain or relay it first.
 - Expecting a written file to show up as an Artifact. Only files passed to `publish_artifacts` are published. Tell the Agent to publish in its instructions or prompt.
 - Asking for a file from `client.completion()` or `client.object()`. Stateless calls can use Workspace Tools but cannot publish. Use a chat Session or a Task run.
-- Creating a download URL without an ownership check. Your API key reads every Artifact in your account. Compare `userId` (or your own mapping) first.
+- Creating a download URL on the unscoped client. It reads every Artifact in your account. Use the signed-in user's scoped client, which returns 404 for another user's Artifact.
 - Storing or logging download URLs. They expire after five minutes and act like passwords. Create one per download.
 - Trusting Artifact filenames, media types, or contents. The Agent produced them. Validate before you open or display them.
 - Two Agents writing the same path in a shared Workspace. Nothing locks files. Give each Agent its own directory.

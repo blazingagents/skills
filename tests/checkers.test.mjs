@@ -147,6 +147,23 @@ test("link validation ignores code and external links but reports missing relati
   assert.match(result.stderr, /2 broken relative link/);
 });
 
+test("language validation keeps Python, Rust, and Go code in their own files", (t) => {
+  const dir = fixture(t);
+  file(dir, "skills/example/recipe.md", "```ts\nconst a = 1;\n```\n```bash\nls\n```\n");
+  file(dir, "skills/example/recipe.python.md", "```python\na = 1\n```\n");
+  file(dir, "skills/example/recipe.rust.md", "```rust\nlet a = 1;\n```\n");
+  file(dir, "skills/example/sdk-go.md", "```go\na := 1\n```\n");
+  assert.equal(run(dir, "check-languages.mjs").status, 0);
+  file(dir, "skills/example/recipe.md", "intro\n```py\na = 1\n```\n```go\na := 1\n```\n");
+  file(dir, "skills/example/recipe.go.md", "```rs\nlet a = 1;\n```\n");
+  const result = run(dir, "check-languages.mjs");
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /recipe.md:2: python code belongs in recipe.python.md/);
+  assert.match(result.stderr, /recipe.md:5: go code belongs in recipe.go.md/);
+  assert.match(result.stderr, /recipe.go.md:1: rust code belongs in recipe.go.rust.md/);
+  assert.match(result.stderr, /3 block\(s\) outside their language file/);
+});
+
 test("terms validation reports banned terms with location and accepts clean prose", (t) => {
   const dir = fixture(t);
   file(dir, "skills/example/SKILL.md", "Use a Workspace.");

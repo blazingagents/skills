@@ -1,6 +1,6 @@
 # Rust SDK reference
 
-Use this page to call Blazing Agents from a Rust backend: install the crate, build a client, run Turns, and find the method for every operation. It matches the `blazing-agents` crate at 0.2.0 on crates.io, the release this skill's snippets compile against.
+Use this page to call Blazing Agents from a Rust backend: install the crate, build a client, run Turns, and find the method for every operation. Check the installed version's types when a method here is missing.
 
 For the same surface in Python, TypeScript, or Go, read [Python SDK reference](sdk-python.md), [TypeScript SDK reference](sdk-typescript.md), or [Go SDK reference](sdk-go.md). For end-to-end builds, start from a recipe such as [Add chat to your app](recipes/chat-in-your-app.md).
 
@@ -11,16 +11,8 @@ The snippets on this page assume a `client` built as shown in [Construct](#const
 The crate is `blazing-agents`; the import name is `blazing_agents`. It needs Rust 1.85 or newer and runs on Tokio.
 
 ```bash
-cargo add blazing-agents
+cargo add blazing-agents futures-util
 cargo add tokio --features macros,rt-multi-thread
-cargo add futures-util
-```
-
-```toml
-[dependencies]
-blazing-agents = "0.3"
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-futures-util = "0.3"
 ```
 
 `futures-util` gives you `TryStreamExt` for the SDK's streams. TLS uses rustls by default; for OpenSSL instead, depend with `default-features = false, features = ["native-tls", "schemars"]`; keep `schemars` or you lose schema derivation and typed function inputs.
@@ -81,6 +73,8 @@ The client itself has the generation methods. Each call runs one metered Turn. T
 
 `chat()` returns a `ChatStream`. It is a `Stream` whose items are the server's AI SDK UI message stream as raw SSE `Bytes`, one complete event per item, exactly as sent. The SDK does not decode it. Relay those bytes to your frontend, where `useChat` from `@ai-sdk/react` reads them.
 
+Call `chat` on `client.for_user(verified_user_id)?` whenever the Session belongs to one of your users. The scoped `UserClient` sends the user on every request, so BA answers `404` for a Session ID, Agent, or Workspace that user does not own, and a `sessionId` from the browser is safe to pass back. On the unscoped `Client` the same call would resume any Session in your Tenant.
+
 `stream.session_id()` holds the `ss_...` ID before you read the body, and `stream.turn_id()` holds the running `turn_...` ID for `sessions().stop()`. Call `chat` without `.session()` to start a new Session. Store the returned ID with your user, send it to your frontend, and pass it back through `.session()` to continue that conversation.
 
 ```rust
@@ -90,16 +84,18 @@ use blazing_agents::messages::UserMessage;
 
 async fn start_chat(
     client: &Client,
-    user_id: &str,
+    verified_user_id: &str,
+    agent_id: &str,
     message: UserMessage,
     session_id: Option<&str>,
-) -> blazing_agents::Result<ChatStream> {
-    // message is the AI SDK UIMessage from your frontend: {"id", "role", "parts"}.
-    let call = client.chat("ag_0123456789abcdef", message).user_id(user_id);
-    match session_id {
-        Some(session_id) => call.session(session_id).await,
-        None => call.await,
-    }
+) -> Result<ChatStream, Box<dyn std::error::Error + Send + Sync>> {
+    // verified_user_id comes from your sign-in check, agent_id from your own
+    // records for that user. message is the AI SDK UIMessage from your frontend.
+    let call = client.for_user(verified_user_id)?.chat(agent_id, message);
+    Ok(match session_id {
+        Some(session_id) => call.session(session_id).await?,
+        None => call.await?,
+    })
 }
 ```
 
@@ -108,13 +104,19 @@ To relay, turn the stream into your framework's streaming body. In axum that is 
 ```rust
 use axum::body::Body;
 use axum::extract::{Json, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::Response;
 use axum::routing::post;
 use axum::Router;
 use blazing_agents::messages::UserMessage;
 use blazing_agents::Client;
 use serde::Deserialize;
+
+/// Your sign-in check: the verified user's ID and the Agent you provisioned
+/// for that user, or None when the request is not signed in.
+fn authenticate(headers: &HeaderMap) -> Option<(String, String)> {
+    unimplemented!()
+}
 
 #[derive(Deserialize)]
 struct ChatBody {
@@ -125,9 +127,12 @@ struct ChatBody {
 
 async fn chat(
     State(client): State<Client>,
+    headers: HeaderMap,
     Json(body): Json<ChatBody>,
 ) -> Result<Response, StatusCode> {
-    let call = client.chat("ag_0123456789abcdef", body.message);
+    let (user_id, agent_id) = authenticate(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let user = client.for_user(&user_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let call = user.chat(&agent_id, body.message);
     let stream = match &body.session_id {
         Some(session_id) => call.session(session_id),
         None => call,
@@ -339,7 +344,7 @@ An `Upload` comes from `Upload::bytes(...)`, `Upload::file(path).await`, or `Upl
 
 `fork()` sends `idempotency_key` as a header and fails client-side on an empty or non-header-safe key. Reuse the original key after a lost response; a retry returns the same child. The child's `forked_from` names the source Session and message. Fork eligibility, retries, and error codes are in [Add a requested fork](recipes/chat-in-your-app.md#add-a-requested-fork).
 
-`messages()` returns the newest page in chronological order; pass `next_cursor` back as `.cursor(...)` for earlier pages, and save `latest_cursor` to pass as `.after(...)` later for messages that arrived since (never `cursor` and `after` together). While a Turn runs, `chat()` fails with `session_busy`; steer with `submit_input()` or hold the message in your own client. A Turn that stopped responding fails `session_turn_unresponsive`; wait out the error's `retry_after()`, read history, then send again under a new message ID.
+`messages()` returns the newest page in chronological order; pass `next_cursor` back as `.cursor(...)` for earlier pages, and save `latest_cursor` to pass as `.after(...)` later for messages that arrived since (never `cursor` and `after` together). While a Turn runs, `chat()` fails with `session_busy`. Read `"reason"` from the error's `details()`: `turn_running` clears when the Turn ends, so steer with `submit_input()` or hold the message in your own client. `approval_pending` and `continuation_waiting` need an approval decision through `continue_chat()` first, so retrying never clears them. A Turn that stopped responding fails `session_turn_unresponsive`; wait out the error's `retry_after()`, read history, then send again under a new message ID.
 
 `submit_input()` saves a steer receipt under your `request_id` before returning, so retry with the same `request_id` and message; a changed payload fails `input_idempotency_conflict`. Receipt `state` is `accepted` (the running Turn may still read and save it, so wait), `committed` (in history), or `not_placed` (the Turn ended without saving it; send it again as chat, which can repeat Tool calls if the Turn read it before it failed). `inputs()` lists receipts; `.include_completed(true)` adds terminal ones, and `activity` (`idle`, `running`, `stopping`, `approval` with `turn_id`) says what the Session is doing. `stop()` takes `stream.turn_id()` in the client that started the Turn, or `activity.turn_id` read from `inputs()`. What each receipt state means and how the client-held queue works are in [Add chat to your app](recipes/chat-in-your-app.md#how-it-works).
 
@@ -362,7 +367,7 @@ An `Upload` comes from `Upload::bytes(...)`, `Upload::file(path).await`, or `Upl
 
 ### `client.workspaces()`
 
-`create()` takes `.tier(workspaces::WorkspaceTier::Core)` (default) or `workspaces::WorkspaceTier::Plus`; `update` cannot change it. `agents().create().workspace_tier(...)` sets the tier of the new Workspace it creates and is rejected together with `.workspace_id(...)`, even as `Core`. See [Workspace](concepts.md#workspace) for choosing a tier.
+`create()` takes `.tier(workspaces::WorkspaceTier::Core)` (default) or `workspaces::WorkspaceTier::Plus`; `update` cannot change it. `agents().create().workspace_tier(...)` sets the tier of the new Workspace it creates, while `.workspace_id(...)` shares an existing one. Each setter clears the other, so the one called last wins and the SDK never sends both. See [Workspace](concepts.md#workspace) for choosing a tier.
 
 | Method | Returns |
 | --- | --- |
@@ -412,7 +417,7 @@ A network policy is `NetworkPolicy::Unrestricted`, `NetworkPolicy::allowlist(hos
 | `update(agent_id, memory_id, text)` | `Memory` |
 | `delete(agent_id, memory_id)` | `()` |
 
-A `Memory` carries `id`, `user_id` (empty for a general memory), `text`, and timestamps including `last_accessed_at`; `get` does not touch `last_accessed_at`, `update` does. An agent holds at most 500 memories.
+A `Memory` carries `id`, `user_id` (empty for a general memory), `text`, and timestamps including `last_accessed_at`; `get` does not touch `last_accessed_at`, `update` does. An Agent holds at most 500 memories, shared by all its End-users. When it is full, creating one evicts the least recently used.
 
 ### `client.prompts()`
 
@@ -462,7 +467,7 @@ Run a saved Prompt with `client.chat(agent_id, SavedPrompt::new(prompt_id).var("
 | `tenant().update()`, `.name(...)`, `.monetization_enabled(...)`, `.quota(QuotaInput)`, `.clear_quota()` | `TenantSettings`. Turning `monetization_enabled` off drops usage events the merchant has not accepted |
 | `tenant().get_spending_limit()` / `tenant().update_spending_limit(Option<SpendingLimitInput>)` | `SpendingLimitStatus` |
 
-`group_by` is `UsageGroupBy::Day`, `Agent`, `Model`, `Session`, or `User`. `range(from, to)` takes `YYYY-MM-DD` dates. `QuotaInput::new(reset_day)` sets the reset day and takes `.monthly_token_limit(...)` and `.monthly_request_limit(...)`; a limit you do not set goes out as `null`, which means unlimited.
+`group_by` is `UsageGroupBy::Day`, `Agent`, `Model`, `Session`, or `User`. `range(from, to)` takes `YYYY-MM-DD` dates. `QuotaInput::new(reset_day)` sets the reset day and takes `.monthly_token_limit(...)` and `.monthly_request_limit(...)`; set at least one limit, and a limit you do not set goes out as `null`, which means unlimited. `.clear_quota()` sends `null` for the whole quota and removes it.
 
 ### `client.merchant_connection()`, `client.merchant_bindings()`, `client.merchant_usage_events()`
 
@@ -471,9 +476,9 @@ Monetization: bill your end users through your own Polar or Dodo account. Setup,
 | Method | Returns |
 | --- | --- |
 | `merchant_connection().get()` | `Option<MerchantConnection>` |
-| `merchant_connection().create(MerchantProvider, MerchantEnvironment, credential)`, `.guard(...)` | `MerchantConnection`. `MerchantProvider::Polar` or `Dodo`; `MerchantEnvironment::Sandbox` or `Live`. Replaces the current connection; fails `merchant_connection_in_use` (409) while a request admitted on it is still running or one of its usage events is `pending` |
+| `merchant_connection().create(MerchantProvider, MerchantEnvironment, credential)`, `.guard(...)` | `MerchantConnection`. `MerchantProvider::Polar` or `Dodo`; `MerchantEnvironment::Sandbox` or `Live`. Replaces the current connection; fails `merchant_connection_in_use` (409) while a request that started on it is still running or one of its usage events is `pending` |
 | `merchant_connection().update()`, `.credential(...)`, `.guard(...)` | `MerchantConnection` |
-| `merchant_connection().retire()` | `()`. New usage is no longer recorded against it. Fails `merchant_connection_in_use` (409) while a request admitted on the connection is still running or one of its usage events is `pending`. On success its `failed` events are discarded and the credential is deleted at once, so nothing more is delivered through it. |
+| `merchant_connection().retire()` | `()`. New usage is no longer recorded against it. Fails `merchant_connection_in_use` (409) while a request that started on the connection is still running or one of its usage events is `pending`. On success its `failed` events are discarded and the credential is deleted at once, so nothing more is delivered through it. |
 | `merchant_bindings().list()`, `.user_id(...)`, `.limit(...)` | `BindingsPage`. Fails `merchant_connection_not_found` when there is no connection |
 | `merchant_bindings().put(user_id, customer_id)` | `MerchantBinding`. The API checks the customer exists at the provider |
 | `merchant_bindings().delete(user_id)` | `()` |
@@ -482,7 +487,7 @@ Monetization: bill your end users through your own Polar or Dodo account. Setup,
 | `merchant_usage_events().summary()`, `.days(...)` | `MerchantUsageSummary` (status counts and a daily window; `days` 1 to 90, default 14) |
 | `merchant_usage_events().retry(event_id)` / `discard(event_id)` | `MerchantUsageEvent` |
 
-`guard` is `MerchantGuard::new(enabled)` with `.product_ids(...)` and `.meter_id(...)`. Turn billing on with `tenant().update().monetization_enabled(true)` after the connection exists, and off with `.monetization_enabled(false)` to pause it. To switch providers without losing charges, retry the `failed` events you still want billed, wait until no event is `pending`, then replace the connection.
+`guard` is `MerchantGuard::new(enabled)` with `.product_ids(...)` and `.meter_id(...)`. Turn billing on with `tenant().update().monetization_enabled(true)` after the connection exists, and off with `.monetization_enabled(false)` to pause it. To switch providers without losing charges, retry each `failed` event you still want billed and each `pending` event whose `next_action` is `retry` (automatic delivery stopped), wait until no event is `pending`, then replace the connection. Details: [Bill your users for model tokens](https://docs.blazingagents.com/platform/monetization).
 
 ## Partial updates: unset keeps, `clear_*` sends null
 

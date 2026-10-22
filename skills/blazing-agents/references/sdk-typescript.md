@@ -4,9 +4,7 @@ Use this page to write backend TypeScript that calls Blazing Agents: install the
 client, run chat, text, and structured output, call every resource method, page
 through lists, handle errors, and connect `useChat` to your own backend.
 
-This page matches `@blazingagents/sdk` 0.36.0. If the project pins an older
-version, upgrade it or check the installed types before using a method from
-this page.
+Check the installed version's types when a method here is missing.
 
 For the same surface in Python, Rust, or Go, read [Python SDK reference](sdk-python.md),
 [Rust SDK reference](sdk-rust.md), or [Go SDK reference](sdk-go.md). For end-to-end builds, start from a
@@ -15,10 +13,10 @@ recipe such as [Add chat to your app](recipes/chat-in-your-app.md).
 ## Install
 
 ```bash
-npm install @blazingagents/sdk ai@^7
+npm install @blazingagents/sdk ai@^7 zod
 ```
 
-- `ai` (AI SDK 7) is a peer dependency. The SDK re-exports its `UIMessage` type.
+- `ai` (AI SDK 7) and `zod` are peer dependencies. The SDK re-exports the `UIMessage` type from `ai`.
 - The SDK requires Node.js 24 or newer and ships ESM only.
 - Add `@ai-sdk/react` only in the frontend that renders `useChat`.
 - Runtime Zod schemas for request and response bodies live in
@@ -64,7 +62,7 @@ Per-call options:
 - Every resource and generation method takes one request object. Pass
   `abortSignal` in it to cancel. Cancellation stops the request; it does not roll
   back a mutation the server already accepted.
-- `chat`, `completion`, and `object` also accept `clientRequestId` per call.
+- `chat`, `continueChat`, `completion`, and `object` also accept `clientRequestId` per call.
 - `client.withOptions({ clientRequestId })` returns a client view that tags every
   call with that ID. Use it to tie one inbound request to all its BA calls.
 
@@ -98,13 +96,16 @@ key remains on the backend.
 
 ## Generate output
 
-The root client has three generation methods. All three take `agentId`, and
-`userId` plus `metadata` for Attribution. Pass the ID of the end user who caused
-the Turn as `userId`; omitting it records the Turn at Tenant level with no user.
+The root client has four generation methods. `chat`, `completion`, and `object`
+take `agentId`, and `userId` plus `metadata` for Attribution. Pass the ID of the
+end user who caused the Turn as `userId`; omitting it records the Turn at Tenant
+level with no user. `continueChat` takes `agentId`, `sessionId`, and `decisions`,
+and no `userId` or `metadata` (see [Backend functions](#backend-functions)).
 
 | Method | Use it for | State |
 | --- | --- | --- |
 | `client.chat(input)` | Conversations. Creates a Session or resumes one. | Stateful: history lives in the Session. |
+| `client.continueChat(input)` | Continuing a Session's approval round with your decisions. | Stateful: continues the existing Session. |
 | `client.completion(input)` | One-shot text, streamed. | Stateless: no Session. |
 | `client.object(input)` | One-shot JSON that matches a JSON Schema. | Stateless: no Session. |
 
@@ -378,6 +379,8 @@ A `SessionInput` is a steer receipt: `requestId`, `sequence`, `message`, `state`
 | `update({ agentId, memoryId, ...body })` | `PATCH /v1/agents/{agentId}/memories/{memoryId}` | `MemoryResponse` |
 | `delete({ agentId, memoryId })` | `DELETE /v1/agents/{agentId}/memories/{memoryId}` | `void` |
 
+A `Memory` carries timestamps including `lastAccessedAt`; `get` does not touch `lastAccessedAt`, `update` does. An Agent holds at most 500 memories, shared by all its End-users. When it is full, creating one evicts the least recently used.
+
 ### `client.mcpConnections`
 
 | Method | HTTP | Returns / notes |
@@ -442,10 +445,10 @@ These bill your own customers through your Polar or Dodo account.
 
 | Method | HTTP | Returns / notes |
 | --- | --- | --- |
-| `merchantConnection.create(body)` | `POST /v1/merchant-connection` | `MerchantConnectionResponse`. One per Tenant; creating replaces the current connection and fails `merchant_connection_in_use` (409) while a request admitted on it is still running or one of its usage events is `pending`. |
+| `merchantConnection.create(body)` | `POST /v1/merchant-connection` | `MerchantConnectionResponse`. One per Tenant; creating replaces the current connection and fails `merchant_connection_in_use` (409) while a request that started on it is still running or one of its usage events is `pending`. |
 | `merchantConnection.get()` | `GET /v1/merchant-connection` | `MerchantConnectionResponse` |
 | `merchantConnection.update(body)` | `PATCH /v1/merchant-connection` | `MerchantConnectionResponse` |
-| `merchantConnection.retire()` | `DELETE /v1/merchant-connection` | `void`. New usage is no longer recorded against it. Fails `merchant_connection_in_use` (409) while a request admitted on the connection is still running or one of its usage events is `pending`. On success its `failed` events are discarded and the credential is deleted at once, so nothing more is delivered through it. |
+| `merchantConnection.retire()` | `DELETE /v1/merchant-connection` | `void`. New usage is no longer recorded against it. Fails `merchant_connection_in_use` (409) while a request that started on the connection is still running or one of its usage events is `pending`. On success its `failed` events are discarded and the credential is deleted at once, so nothing more is delivered through it. |
 | `merchantBindings.list({ userId?, cursor?, limit? })` | `GET /v1/merchant-connection/bindings` | `{ bindings, nextCursor }` |
 | `merchantBindings.put({ userId, ...body })` | `PUT /v1/merchant-connection/bindings/{userId}` | `MerchantBindingResponse` |
 | `merchantBindings.delete({ userId })` | `DELETE /v1/merchant-connection/bindings/{userId}` | `void` |
@@ -455,7 +458,7 @@ These bill your own customers through your Polar or Dodo account.
 | `merchantUsageEvents.retry({ eventId })` | `POST /v1/merchant-usage-events/{eventId}/retry` | `MerchantUsageEventResponse` |
 | `merchantUsageEvents.discard({ eventId })` | `POST /v1/merchant-usage-events/{eventId}/discard` | `MerchantUsageEventResponse` |
 
-Turn billing on with `client.tenant.patch({ monetizationEnabled: true })` after the connection exists, and off with `monetizationEnabled: false` to pause it. To switch providers without losing charges, retry the `failed` events you still want billed, wait until no event is `pending`, then replace the connection.
+Turn billing on with `client.tenant.patch({ monetizationEnabled: true })` after the connection exists, and off with `monetizationEnabled: false` to pause it. To switch providers without losing charges, retry each `failed` event you still want billed and each `pending` event whose `nextAction` is `retry` (automatic delivery stopped), wait until no event is `pending`, then replace the connection. Details: [Bill your users for model tokens](https://docs.blazingagents.com/platform/monetization).
 
 ## Pagination
 
@@ -623,35 +626,35 @@ export function Chat({ initialSessionId }: { initialSessionId?: string }) {
 ```
 
 On the backend, `createChatRelay` builds a `(request: Request) => Promise<Response>`
-handler that matches this transport. It validates the body, checks that the
-caller owns the Session through your `SessionOwnershipStore`, calls
-`client.chat`, records the owner of new Sessions, and returns the stream or a
-JSON error. `createCompletionRelay` does the same for `{ prompt }` bodies.
+handler that matches this transport. For each request it calls your
+`resolveContext`, runs the Turn through `client.forUser(context.userId)`, and
+returns the stream or a JSON error. Because every call is scoped, BA answers
+`404` for a Session, Agent, or Workspace that End-user does not own, and you
+keep no Session ownership table. `context.agentId` must name an Agent that the
+End-user owns, with a Workspace the same End-user owns. An approval round
+answered in `useChat` continues through `continueChat` in the same handler.
+`createCompletionRelay` does the same for `{ prompt }` bodies. The relay sends
+one message per Turn; for batches of queued messages, write the handler as in
+[Add chat to your app](recipes/chat-in-your-app.md).
 
 ```ts
-import {
-  BlazingAgents,
-  createChatRelay,
-  type RelayContext,
-  type SessionOwnershipStore,
-} from "@blazingagents/sdk";
+import { BlazingAgents, createChatRelay, type RelayContext } from "@blazingagents/sdk";
 
 declare const client: BlazingAgents;
-declare const sessions: SessionOwnershipStore;
 declare function userIdFromRequest(request: Request): Promise<string | null>;
+declare function agentIdForUser(userId: string): Promise<string>;
 
 async function resolveContext(request: Request): Promise<RelayContext | null> {
   const userId = await userIdFromRequest(request);
-  return userId === null ? null : { agentId: "ag_0123456789abcdef", userId };
+  if (userId === null) return null;
+  return { agentId: await agentIdForUser(userId), userId };
 }
 
-export const POST = createChatRelay({ client, resolveContext, sessions });
+export const POST = createChatRelay({ client, resolveContext });
 ```
 
 `resolveContext` returns `null` for unauthenticated requests, which become 401.
-`RelayContext` also accepts `metadata` and request-local `functions`. `SessionOwnershipStore`
-needs `ownerOf(sessionId)` and `recordOwner(sessionId, userId)` backed by your
-database.
+`RelayContext` also accepts `metadata` and request-local `functions`.
 
 For a native app that holds its own server-issued credentials and calls the SDK
 directly, `BlazingAgentsDirectChatTransport({ getClient, agentId, sessionId?,
@@ -673,9 +676,12 @@ it for the messages your client held while the Session was busy.
 - `object` results are `unknown`. Validate before use.
 - The chat transport does not resume an interrupted stream; `reconnectToStream`
   returns `null`. Reload history before resending.
-- `chat` on a busy Session fails with `session_busy`. Steer the running Turn
-  with `sessions.submitInput()`, or keep the message in your own queue and send
-  it as ordinary chat once the Turn settles. A Turn that stopped responding fails
+- `chat` on a busy Session fails with `session_busy`. Read `error.details?.reason`:
+  `turn_running` clears when the Turn ends, so steer the running Turn with
+  `sessions.submitInput()`, or keep the message in your own queue and send it as
+  ordinary chat once the Turn settles. `approval_pending` and
+  `continuation_waiting` need an approval decision through `continueChat()`
+  first, so retrying never clears them. A Turn that stopped responding fails
   with `session_turn_unresponsive` and a `Retry-After` header instead. Wait that
   long, read history, then send again under a new message ID.
 - Agent and Prompt names can repeat. Read every page before resolving a name

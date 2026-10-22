@@ -1,10 +1,13 @@
 # Take your integration to production
 
+For a Python, Rust, or Go backend, read this page's code examples in [Python](production.python.md), [Rust](production.rust.md), [Go](production.go.md).
+
 Work through this checklist before real users reach your agent. Each item links to a short explanation below with the fix and, where it helps, working code.
 
 ## Checklist
 
 - [ ] [The Blazing Agents API key lives only on your backend.](#keep-the-key-on-your-backend)
+- [ ] [A backend that only chats, runs Tasks, and reads uses a read key.](#use-a-read-key-where-you-can)
 - [ ] [You know how to rotate the key without downtime.](#rotate-keys)
 - [ ] [Your backend creates one client per API key and reuses it.](#one-client-per-credential)
 - [ ] [Your backend derives user scope from verified sign-in.](#attribution-is-not-authorization)
@@ -14,7 +17,7 @@ Work through this checklist before real users reach your agent. Each item links 
 - [ ] [Your rollout plan accounts for Agent edits reaching only new work.](#agent-edits-reach-new-work-only)
 - [ ] [A tenant quota is set with headroom, and your code handles quota outcomes.](#set-quotas-and-handle-quota-outcomes)
 - [ ] [Your code handles Stop and Task run cancellation, including side effects that already happened.](#handle-cancellation)
-- [ ] [Your code reads limits from the docs instead of hard-coding them.](#respect-limits)
+- [ ] [Your design fits the limits, and your code does not hard-code them.](#respect-limits)
 
 ## Keep the key on your backend
 
@@ -25,18 +28,22 @@ A Blazing Agents API key reaches everything in your Tenant: every Agent, Session
 - Your frontend talks to your own backend endpoint. That endpoint signs in the user, checks access, and then calls Blazing Agents.
 - Provider keys and MCP credentials are stored by Blazing Agents and never returned. Responses show only a short fragment. The agent's Workspace never sees any of these secrets.
 
+## Use a read key where you can
+
+Each key is read (`ba_read_...`) or full (`ba_full_...`), chosen when it is created and never changed. A read key can read everything and run Agents, chat, and Tasks, but cannot create, change, or delete anything; such a call fails with `insufficient_scope` (403). It still spends credit and creates Sessions. Give the backend that serves your users a read key, and keep a full key for setup code and deploy scripts that create Agents, Skills, Tasks, or other resources. A leaked read key cannot rewrite your Agents.
+
 ## Rotate keys
 
 Keys are created and revoked only in the dashboard at `https://www.blazingagents.com/app/keys`. An API key cannot create, list, or revoke keys, and the SDKs have no key-management methods.
 
-1. Create a new key. The full `ba_...` value appears once, so copy it right away.
+1. Create a new key with the same access level. The full value appears once, so copy it right away.
 2. Deploy it to every backend instance.
 3. Confirm the workload runs on the new key.
 4. Revoke the old key. Revocation takes effect immediately.
 
 Name each key for one workload or environment, such as `Production API`, so you know what breaks when you revoke it. A key with an expiration stops working the same way a revoked key does, so track expiry dates.
 
-Provider keys cannot be changed in place. To rotate one, create a new Provider, move your Agents to it by sending `providerId` and `model` together, then delete the old Provider. Saved Sessions and queued or running Task runs that still name the old Provider block deletion with `provider_historical_use`. Move them first, or delete with `confirmSnapshotInvalidation: true` (`confirm_snapshot_invalidation=True` in Python, `.confirm_snapshot_invalidation(true)` in Rust, `ConfirmSnapshotInvalidation: new(true)` in Go) and accept that work needing the deleted Provider then fails with `provider_not_found`; see [troubleshooting](troubleshooting.md#provider-credential-rejected).
+Provider keys cannot be changed in place. To rotate one, create a new Provider, move your Agents to it by sending `providerId` and `model` together, then delete the old Provider. Saved Sessions and queued or running Task runs that still name the old Provider block deletion with `provider_historical_use`. Move them first, or delete with `confirmSnapshotInvalidation: true` and accept that work needing the deleted Provider then fails with `provider_not_found`; see [troubleshooting](troubleshooting.md#provider-credential-rejected).
 
 ## One client per credential
 
@@ -56,54 +63,6 @@ export const client = new BlazingAgents({
 });
 ```
 
-```python
-from blazing_agents import BlazingAgents, ResponseObservation
-
-
-def log_response(response: ResponseObservation) -> None:
-    print(
-        {
-            "method": response.method,
-            "path": response.path,
-            "status": response.status,
-            "duration_ms": response.duration_ms,
-            "request_id": response.request_id,
-        }
-    )
-
-
-client = BlazingAgents(on_response=log_response)
-```
-
-```rust
-use blazing_agents::Client;
-
-let client = Client::builder()
-    .on_response(|obs| {
-        println!(
-            "{} {} {} {} {:?}",
-            obs.method,
-            obs.path,
-            obs.status,
-            obs.duration.as_millis(),
-            obs.request_id
-        );
-    })
-    .build()?; // reads BLAZING_AGENTS_API_KEY
-```
-
-```go
-observed, err := ba.NewClient(ba.WithObserver(func(o ba.ResponseObservation) {
-	log.Println(o.Method, o.Path, o.Status, o.Duration.Milliseconds(), o.RequestID)
-})) // reads BLAZING_AGENTS_API_KEY
-if err != nil {
-	return err
-}
-if _, err := observed.Agents.List(ctx, ba.ListAgentsParams{}); err != nil {
-	return err
-}
-```
-
 The Python client reads `BLAZING_AGENTS_API_KEY` and raises `ValueError` when it is missing. Close it on shutdown with `client.close()`, or use `with BlazingAgents() as client:` in scripts. The Go client fails `ba.NewClient()` with `ba.ErrMissingAPIKey` or `ba.ErrInvalidAPIKey`, so a bad key is caught at startup; `ba.WithLogger(logger)` writes one `slog` Debug record per response instead of an observer.
 
 To tag one request with your own correlation ID, derive a copy with `client.withOptions({ clientRequestId })` (`client.with_options(client_request_id=...)` in Python, `client.with_client_request_id(...)` in Rust, `client.WithClientRequestID(...)` in Go). The original client is unchanged.
@@ -112,8 +71,8 @@ To tag one request with your own correlation ID, derive a copy with `client.with
 
 Your API key identifies your Tenant, not your end user. A `userId` and `metadata` you pass on a turn, Session, or Task are Attribution: labels for filtering Sessions and breaking down usage. They grant nothing.
 
-- Authenticate each request and use `client.forUser(verifiedUserId)` for user-owned operations. BA checks ownership on reads and writes. In Python, use `client.for_user(verified_user_id)`; in Rust, `client.for_user(verified_user_id)?`; in Go, `client.ForUser(verifiedUserID)`.
-- Keep Tenant administration on an unscoped client in trusted backend code. A scoped request rejects unsupported operations.
+- Authenticate each request and run every call made for a signed-in user on the End-user scoped client: `client.forUser(verifiedUserId)` in TypeScript, `client.for_user(verified_user_id)` in Python, `client.for_user(verified_user_id)?` in Rust, `client.ForUser(verifiedUserID)` in Go. That covers chat, approvals, history, Session inputs and Stop, Artifacts, Memories, the user's usage, and Task runs for that user. BA checks ownership on reads and writes: another user's resource returns `not_found` (404), and a conflicting `userId` fails with `invalid_request` (400).
+- Keep Tenant administration (Providers, connections, spending limits, quotas, usage across all users) on the unscoped client in trusted backend code. A scoped client cannot reach it; such a request fails with `forbidden` (403).
 - Derive the scope from your verified session. A browser-supplied header or `userId` is not proof of identity.
 - If an integration uses an unscoped client, keep its own resource access checks. A list filter does not restrict later reads by ID.
 - The `userId` on a Session is fixed after its first turn. A Task run snapshots the Task's `userId` and `metadata` when it is queued.
@@ -137,7 +96,7 @@ The SDKs never retry for you, except backend-function claim and result submissio
 | Stopping the same Turn again | Yes. Stop names the Turn, so a repeat never stops a later Turn. |
 | Creating another resource, or a Task without a key | No. Reconcile a lost response before retrying. Agent and Prompt names can repeat, so a name match alone cannot identify the created resource. |
 
-Retry these codes with backoff, jitter, and an overall deadline, and honor the `Retry-After` header when present (`error.headers` in TypeScript, `error.retry_after` in Python, `error.retry_after()` in Rust, `apiErr.RetryAfter` in Go): `rate_limited`, `session_busy`, `session_turn_unresponsive`, `session_version_mismatch`, `task_active_run_exists`, `workspace_busy`, `internal`, `service_unavailable`, `model_validation_unavailable`, `mcp_connection_unreachable`, `mcp_connection_discovery_failed`. For `session_turn_unresponsive`, wait the whole seconds in `Retry-After`, which is at most a minute. A retry sent earlier fails the same way. Fix the request for every other code. See [troubleshooting](troubleshooting.md) for each one.
+Retry these codes with backoff, jitter, and an overall deadline, and honor the `Retry-After` header when present (`error.headers` in TypeScript): `rate_limited`, `session_turn_unresponsive`, `session_version_mismatch`, `task_active_run_exists`, `workspace_busy`, `internal`, `service_unavailable`, `model_validation_unavailable`, `mcp_connection_unreachable`, `mcp_connection_discovery_failed`. For `session_turn_unresponsive`, wait the whole seconds in `Retry-After`, which is at most a minute. A retry sent earlier fails the same way. Retry `session_busy` only when its `details.reason` is `turn_running`, or steer the Turn instead; `approval_pending` and `continuation_waiting` never clear by waiting, so decide the approval round with `continueChat` first. Fix the request for every other code. See [troubleshooting](troubleshooting.md) for each one.
 
 ## Submit Task runs with an idempotency key
 
@@ -158,41 +117,12 @@ export async function submitDailyReport(day: string): Promise<string> {
 }
 ```
 
-```python
-from blazing_agents import BlazingAgents
-
-
-def submit_daily_report(client: BlazingAgents, task_id: str, day: str) -> str:
-    submission = client.tasks.submit(task_id, idempotency_key=f"daily-report:{day}")
-    return submission.run_id
-```
-
-```rust
-let day = "2026-10-16";
-let created = client
-    .tasks()
-    .submit("tk_0123456789abcdef")
-    .idempotency_key(format!("daily-report:{day}"))
-    .await?;
-println!("{}", created.run_id);
-```
-
-```go
-day := "2026-10-16"
-created, err := client.Tasks.Submit(ctx, ba.TaskID("tk_0123456789abcdef"), ba.SubmitTaskParams{
-	IdempotencyKey: new("daily-report:" + day),
-})
-if err != nil {
-	return err
-}
-fmt.Println(created.RunID)
-```
-
 - Save the run ID with the key before you return, so a later poll finds it.
 - A Task runs one job at a time. A different key while a run is queued or running returns `task_active_run_exists` (HTTP 409).
 - A Task run's turn executes at most once. If the platform restarts mid-run, an unfinished turn ends as `failed` instead of running the model and tools again.
 - At most once is not exactly once for the outside world. A `failed` run may already have called a tool. Check for its effects before you submit the work again with a new key.
 - Poll until the run reaches `succeeded`, `failed`, `canceled`, or `blocked`, and alert when a run stays `queued` or `running` past your deadline.
+- This sample is a trusted Tenant job, so it uses the unscoped client. Submit, poll, and cancel the runs of a Task you created for one user through that user's scoped client.
 
 For the full Task flow, read [background and scheduled work](recipes/background-and-scheduled.md).
 
@@ -208,20 +138,20 @@ Every response carries an `X-Request-Id` header. It is not in the JSON body. Rea
 
 ## Agent edits reach new work only
 
-An edit to an Agent's model, instructions, tools, approval policies, or compaction settings applies to new Sessions, Task runs queued after the edit, and stateless calls. An existing Session keeps the configuration from its first Turn, and a queued Task run keeps the one from when it was queued. To roll a change out to users mid-conversation, start them a new Session.
+An edit to an Agent's model, instructions, tools, approval policies, or compaction settings applies to new Sessions, Task runs queued after the edit, and stateless calls. An existing Session keeps the configuration from its first Turn, and a queued Task run keeps the one from when it was queued. To roll a change out to users mid-conversation, start them a new Session. Because saved Sessions keep their Provider, deleting a Provider they name fails with `provider_historical_use`; see [Rotate keys](#rotate-keys).
 
-When a Session or run behaves as if an edit never happened, read the configuration it used: `(await client.sessions.get({ agentId, sessionId })).agentConfig` or `(await client.tasks.getRun({ taskId, runId })).agentConfig` (`agent_config` from `sessions.get()` or `tasks.get_run()` in Python, `sessions().get()` or `tasks().get_run()` in Rust, `AgentConfig` from `client.Sessions.Get()` or `client.Tasks.GetRun()` in Go). Provider keys, MCP credentials, Skills, Memories, and the Workspace are always current.
+When a Session or run behaves as if an edit never happened, read the configuration it used from trusted backend code: `(await client.sessions.get({ agentId, sessionId })).agentConfig` or `(await client.tasks.getRun({ taskId, runId })).agentConfig`. Provider keys, MCP credentials, Skills, Memories, and the Workspace are always current.
 
 ## Set quotas and handle quota outcomes
 
-A tenant quota sets a monthly token ceiling, a request ceiling, or both, with a reset day from 1 to 28. Set it with `client.tenant.patch()` (`client.tenant.update()` in Python, `client.tenant().update()` in Rust, `client.Tenant.Update()` in Go). With no quota, usage is unlimited.
+A tenant quota sets a monthly token ceiling, a request ceiling, or both, with a reset day from 1 to 28. Set it with `client.tenant.patch()`. With no quota, usage is unlimited.
 
 - Blazing Agents checks the quota before each turn starts. It does not stop a turn that crosses the ceiling while running, and concurrent turns can overshoot. Leave headroom.
 - A chat or generation call over the ceiling fails with `quota_exceeded` (HTTP 429). Show your user a clear message; retrying before the reset fails the same way.
 - A Task run over the ceiling ends as `blocked`, not `failed`, and never runs. Treat `blocked` as its own outcome in your alerts.
 - A model spending limit returns `model_spending_limit_exceeded` (HTTP 429) before streaming, or a `data-ba-error` part with that code when it stops a chat mid-stream. Show the user when it resets and never retry automatically; see [chat in your app](recipes/chat-in-your-app.md) and [model spending limits](recipes/usage-dashboards.md#model-spending-limits).
-- A missing plan or used-up usage credit returns `subscription_required` or `usage_credit_required` (HTTP 402) for chat and generation, and ends a Task run as `blocked`.
-- Too many interactive turns at once returns `rate_limited` (HTTP 429). Extra Task runs wait as `queued` instead.
+- Without an active plan, almost every API call returns `subscription_required` (HTTP 402), reads included; only stopping a Turn and cancelling a Task run still work. Used-up usage credit returns `usage_credit_required` (HTTP 402) for a Turn. Both end a Task run as `blocked`.
+- Too many interactive turns at once returns `rate_limited` (HTTP 429) with no `Retry-After`; stateless calls share that limit. Extra Task runs wait as `queued` instead.
 - Failed and cancelled turns are metered too. Keep them in your usage reports.
 
 For per-user usage reporting, read [usage dashboards](recipes/usage-dashboards.md).
@@ -230,16 +160,16 @@ For per-user usage reporting, read [usage dashboards](recipes/usage-dashboards.m
 
 Cancellation asks work to stop. It never undoes what already happened.
 
-- **Chat Stop:** pass your incoming request's `abortSignal` to `client.chat()` (in Go, the request's `ctx`) so a user's Stop ends the stream and asks Blazing Agents to cancel the turn. A cancelled turn adds nothing to the Session history, but the exchange may already have been saved before the Stop arrived, so reload history instead of guessing. Keep the user's draft so they can resend.
-- **Stop by Turn ID:** `sessions.stop()` (`client.sessions.stop()` in Python, `client.sessions().stop()` in Rust, `client.Sessions.Stop()` in Go) records cancellation for the named Turn and returns `{ stoppedTurnId, activity }` immediately. The client that started the Turn has its ID from `ChatResult.turnId` (`stream.turn_id` in Python, `stream.turn_id()` in Rust, `stream.TurnID()` in Go); any other client reads it from the Session's `activity` (in Rust and Go, `activity` comes back from the inputs list, submit input, or stop call). Keep reading the existing stream until the Turn settles. Messages waiting in your client's own queue still need a send. A steered message the agent already read may have had effects even though the stopped Turn is not saved; its receipt ends `not_placed`, and sending it again as chat can repeat those effects. Stop never decides a pending tool approval.
-- **Task runs:** `client.tasks.cancelRun({ taskId, runId })` (`cancel_run` in Python, `tasks().cancel_run()` in Rust, `client.Tasks.CancelRun()` in Go) asks the run to stop at its next safe point. Keep polling until it reaches a final status. It may finish first, so handle `succeeded` as well as `canceled`.
+- **Chat Stop:** pass your incoming request's `abortSignal` to the user's scoped `chat()` call, `client.forUser(verifiedUserId).chat()` (in Go, the request's `ctx`), so a user's Stop ends the stream and asks Blazing Agents to cancel the turn. A cancelled turn adds nothing to the Session history, but the exchange may already have been saved before the Stop arrived, so reload history instead of guessing. Keep the user's draft so they can resend.
+- **Stop by Turn ID:** `sessions.stop()` on the user's scoped client (`sessions.stop()` in Python, `sessions().stop()` in Rust, `Sessions.Stop()` in Go) records cancellation for the named Turn and returns `{ stoppedTurnId, activity }` immediately. The client that started the Turn has its ID from `ChatResult.turnId` (`stream.turn_id` in Python, `stream.turn_id()` in Rust, `stream.TurnID()` in Go); any other client reads it from the Session's `activity` (in Rust and Go, `activity` comes back from the inputs list, submit input, or stop call). Keep reading the existing stream until the Turn settles. Messages waiting in your client's own queue still need a send. A steered message the agent already read may have had effects even though the stopped Turn is not saved; its receipt ends `not_placed`, and sending it again as chat can repeat those effects. Stop never decides a pending tool approval.
+- **Task runs:** `tasks.cancelRun({ taskId, runId })` (`cancel_run` in Python, `tasks().cancel_run()` in Rust, `Tasks.CancelRun()` in Go), on the scoped client for a user's run, asks the run to stop at its next safe point. Keep polling until it reaches a final status. It may finish first, so handle `succeeded` as well as `canceled`.
 - **Time limits:** a run that hits its time limit stops and ends as `failed`.
 - **Side effects:** a Workspace command or file operation that already started may finish after cancellation. Files it changed and effects on remote systems stay. Plan to clean up or reverse them yourself.
 - **Disconnects:** closing a chat or continuation stream does not prove the turn stopped. Repeat `continueChat`/`continue_chat` with the same decisions to recover a dropped continuation, then reload history. A running round returns `session_busy` and a settled one returns `tool_approval_continuation_settled`. For an ordinary turn, pass the request's `abortSignal`, expect a disconnect to cancel the turn, and reload history, because the stream cannot be reconnected. A stream that ends with a `data-ba-error` part with code `turn_interrupted` was cut by the platform, not by a disconnect. The turn may have saved its work, and the Session can stay busy for up to a minute, so reload history before you resend.
 
 ## Respect limits
 
-Resource counts, text and upload sizes, schedule intervals, usage windows, page sizes, and concurrency all have limits, and they change. Read the current values in [service limits](https://docs.blazingagents.com/api-reference/protocols/service-limits) instead of copying numbers into your code.
+Check the design against [Limits](limits.md) before launch: concurrency, the 30-minute Turn deadline, the 30-second shell command limit, the creation rate for per-user Agents, and the shared Memory pool. Limits can change, so do not hard-code them in your code; validate against the values on [service limits](https://docs.blazingagents.com/api-reference/protocols/service-limits) and handle the error when one is reached.
 
 - Treat pagination cursors as opaque. Pass `nextCursor` back to the same call with the same filters.
 - Validate user input against the documented sizes before you send it, so your users see your message instead of `validation_failed`.

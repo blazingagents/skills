@@ -1,5 +1,7 @@
 # Troubleshoot a Blazing Agents integration
 
+For a Python, Rust, or Go backend, read this page's code examples in [Python](troubleshooting.python.md), [Rust](troubleshooting.rust.md), [Go](troubleshooting.go.md).
+
 Find the symptom, read the likely cause, and apply the fix. Every failed request carries a stable error `code` and an HTTP status; branch on the code, never on the message text.
 
 ## Read the error first
@@ -28,52 +30,6 @@ export async function readAgent() {
 }
 ```
 
-```python
-from blazing_agents import Agent, APIStatusError, BlazingAgents
-
-
-def read_agent(client: BlazingAgents, agent_id: str) -> Agent:
-    try:
-        return client.agents.get(agent_id)
-    except APIStatusError as error:
-        print(
-            {
-                "code": error.code,
-                "status": error.status_code,
-                "request_id": error.request_id,
-                "agent_id": agent_id,
-            }
-        )
-        raise
-```
-
-```rust
-match client.agents().get("ag_0123456789abcdef").await {
-    Ok(agent) => println!("{}", agent.name),
-    Err(error) => {
-        eprintln!(
-            "{:?} {:?} {:?}",
-            error.code(),
-            error.status(),
-            error.request_id()
-        );
-        return Err(error.into());
-    }
-}
-```
-
-```go
-agent, err := client.Agents.Get(ctx, agentID)
-if err != nil {
-	var apiErr *ba.APIError
-	if errors.As(err, &apiErr) {
-		log.Println(apiErr.Code, apiErr.Status, apiErr.Meta.RequestID, agentID)
-	}
-	return err
-}
-fmt.Println(agent.Name)
-```
-
 Use `BlazingAgentsError.isInstance(error)` instead of `instanceof`, which fails when two copies of the package are installed. Treat `error.code` as an open string: new codes can appear. In Go, `apiErr.Code` is a `ba.ErrorCode` with a constant per documented code (`ba.ErrorCodeNotFound`), and an unknown code compares as itself. The TypeScript SDK adds four codes of its own: `network_error`, `request_aborted`, `stream_error`, and `invalid_response`.
 
 ## Symptom table
@@ -82,7 +38,7 @@ Use `BlazingAgentsError.isInstance(error)` instead of `instanceof`, which fails 
 | --- | --- | --- |
 | `unauthorized` (401) | Missing, mistyped, revoked, or expired API key, or a dashboard-only call made with an API key. | [Replace the key](#401-unauthorized). |
 | 403 | `merchant_customer_unmapped`: your monetization guard found no customer for the turn's `userId`. `forbidden`: a scoped client called a Tenant-only operation. `insufficient_scope`: a read-only key tried to create, change, or delete part of your setup, or to steer a turn a full key started. | [Link the user, use an unscoped client, or use a full key](#403-responses). |
-| `not_found` (404) for an ID you just created | The key is for a different Tenant, or the ID is wrong. | [Check the key's Tenant](#404-for-a-resource-you-can-see-in-the-dashboard). |
+| `not_found` (404) for an ID you just created | The key is for a different Tenant, the ID is wrong, or an End-user scoped client asked for another user's resource. | [Check the key's Tenant](#404-for-a-resource-you-can-see-in-the-dashboard). |
 | `provider_required` (400) | The saved Agent configuration has no Provider and model. | [Set a Provider and model](#agent-without-a-provider-or-model). |
 | `model_not_found` (400) or `model_validation_unavailable` (503) | The model ID is not in the Provider's list, or the Provider could not be reached or rejected the stored key. | [Fix the model or the Provider](#provider-credential-rejected). |
 | Turn fails right after it starts, no code | The Provider rejected the stored key or the request during the turn. | [Replace the Provider](#provider-credential-rejected). |
@@ -90,7 +46,8 @@ Use `BlazingAgentsError.isInstance(error)` instead of `instanceof`, which fails 
 | `model_spending_limit_exceeded` (429), a `data-ba-error` part with that code in a chat stream, or a Task run ends `blocked` with a spending-limit `error` | The Agent's or the account's model spending limit has nothing left this period. | [Wait for the reset or change the limit](#quota-blocked). |
 | `subscription_required` or `usage_credit_required` (402) | No active plan, or no usage credit left. | [Fix billing](#quota-blocked). |
 | `rate_limited` (429) | Too many interactive turns at once, or resources created too fast. | [Back off](#quota-blocked). |
-| `session_busy` (409) | A tool approval is pending, an approval continuation is running, or another turn holds the Session. | [Decide approvals, then resend](#session-busy). |
+| `session_busy` (409) | Read `details.reason`: `turn_running` (another turn holds the Session), `approval_pending`, or `continuation_waiting`. | [Steer or wait for `turn_running`; decide the approval round for the others](#session-busy). |
+| `tenant_deleting` (409) | Account deletion is scheduled. New turns and Task runs are refused and queued runs are cancelled. | Cancel the deletion in the dashboard within 24 hours to resume service. |
 | `session_turn_unresponsive` (409) | The Session's previous turn stopped responding and still holds the Session. The Session frees within a minute. | [Wait for `Retry-After`, read the history, then resend under a new message ID](#session-busy). |
 | Chat paused for approval never continues after the decisions | Nothing runs until a client sends the complete round's decisions; a partial set fails `validation_failed`. | Send the whole round in one `continueChat`/`continue_chat` call, with the chat's `functions`; see [backend functions](recipes/backend-functions.md). |
 | `tool_approval_continuation_settled` (409) on a continuation call | The approval round already ran to a terminal state. | Read the Session's messages instead of deciding again. |
@@ -131,6 +88,8 @@ A bad API key is always `unauthorized` (401), never 403. A 403 has one of three 
 - Check the ID's prefix, such as `ag_` or `ss_`.
 - Check that the key is for the same Tenant as the dashboard you are looking at.
 - Resuming a Session through a different Agent also returns `not_found`. Each Session is tied to one Agent.
+- An End-user scoped client gets `not_found` for every resource that user does not own, such as another user's Session or Artifact (`workspace_not_found` for a Workspace). A scoped chat needs an Agent created with that user's `userId` and, when the Agent has a Workspace, a Workspace created with the same `userId`. Check the scope ID you pass to `forUser` (`for_user`, `ForUser`) and the `userId` the Agent and Workspace were created with.
+- A scoped request whose body carries a different `userId` fails with `invalid_request` (400). Omit `userId`; the scope supplies it.
 
 ## Agent without a Provider or model
 
@@ -165,15 +124,18 @@ To fix it:
 
 ## Session busy
 
-`session_busy` (409) means the Session cannot take a new turn yet. A tool approval is waiting for a decision, an approval continuation is still running, or another turn holds the Session. Regeneration and deletion wait too.
+`session_busy` (409) means the Session cannot take a new turn yet. Regeneration and deletion wait too. `error.details.reason` says why, and only the first reason clears by waiting:
 
-- List the Session's pending tool approvals and decide the round. See [human approval](recipes/human-approval.md).
+- `turn_running`: another turn holds the Session, or an approval continuation is running. Steer it with `sessions.submitInput()`, or hold the message until the Session is idle.
+- `approval_pending`: a tool approval waits for a decision. List the Session's pending tool approvals and decide the round with `continueChat`. See [human approval](recipes/human-approval.md).
+- `continuation_waiting`: the round is decided but its continuation has not run. Call `continueChat` with the same decisions.
+- Some `session_busy` responses carry no reason. Treat them as `turn_running`.
 - Show the error to your user, keep their draft, and let them send again once the work settles.
 - `session_version_mismatch` (409) means two turns ran on the same Session at once and this one was not saved. Read the Session's messages to see what was saved, then resend if needed.
 - To prevent both, steer the running turn with `sessions.submitInput()` or hold new messages in your client until the Session is idle, and send one chat turn at a time per Session.
 - Deleting a Session returns `session_busy` while any turn runs, or `session_turn_unresponsive` when the last turn stopped responding.
 - `session_turn_unresponsive` (409) means the Session's previous turn stopped responding, for example because the platform restarted, and still holds the Session. The Session frees within a minute. A `session_busy` can come first while the stopped turn still looks busy. New chat, regeneration, approval continuations, and deletes all return the new code.
-  - Wait for the `Retry-After` header (`error.headers` in TypeScript, `error.retry_after` in Python, `error.retry_after()` in Rust, `apiErr.RetryAfter` in Go). It holds whole seconds, at most a minute, and `error.details.retryAfterSeconds` repeats the value. Sending earlier fails the same way.
+  - Wait for the `Retry-After` header (`error.headers` in TypeScript). It holds whole seconds, at most a minute, and `error.details.retryAfterSeconds` repeats the value. Sending earlier fails the same way.
   - Read the Session's messages before you resend, because the stopped turn may have saved its work.
   - Send a chat turn again under a new message ID. Repeat an approval continuation with the same decisions, which stay recorded. Repeat a delete as it was.
 
@@ -229,54 +191,6 @@ export async function checkMcpConnection() {
 }
 ```
 
-```python
-from blazing_agents import BlazingAgents
-
-
-def check_mcp_connection(client: BlazingAgents, mcp_connection_id: str) -> None:
-    connection = client.mcp_connections.get(mcp_connection_id)
-    print(connection.status, connection.last_auth_error_code)
-    test = client.mcp_connections.test(mcp_connection_id)
-    if test.error is not None:
-        print(test.error.code, test.error.message)
-```
-
-```rust
-use blazing_agents::mcp_connections::McpConnectionTest;
-
-let connection = client
-    .mcp_connections()
-    .get("mcp_0123456789abcdef")
-    .await?;
-println!("{:?} {:?}", connection.status, connection.last_auth_error_code);
-if let McpConnectionTest::Failed { error } = client
-    .mcp_connections()
-    .test("mcp_0123456789abcdef")
-    .await?
-{
-    println!("{} {}", error.code, error.message);
-}
-```
-
-```go
-connectionID := ba.MCPConnectionID("mcp_0123456789abcdef")
-connection, err := client.MCPConnections.Get(ctx, connectionID)
-if err != nil {
-	return err
-}
-fmt.Println(connection.Status)
-if connection.LastAuthErrorCode != nil {
-	fmt.Println(*connection.LastAuthErrorCode)
-}
-test, err := client.MCPConnections.Test(ctx, connectionID)
-if err != nil {
-	return err
-}
-if !test.OK {
-	fmt.Println(test.Error.Code, test.Error.Message)
-}
-```
-
 - `needs_auth`: a tenant administrator opens the MCP connections page in the dashboard and clicks **Connect** to sign in. An API key cannot start this sign-in, and no SDK has a method for it.
 - `MCP_CONNECTION_AUTHENTICATION_FAILED`: the server rejected the token or client secret. Get a new one and call `reconnect()`.
 - `MCP_CONNECTION_UNREACHABLE` or `MCP_CONNECTION_DISCOVERY_FAILED`: check that the server is up, reachable from the public internet, and implements tool listing.
@@ -314,51 +228,6 @@ export async function checkChatHealth() {
   for (const check of health.checks) {
     if (check.status !== "pass") console.log(check.code, check.status, check.subject);
   }
-}
-```
-
-```python
-from blazing_agents import BlazingAgents
-
-
-def check_chat_health(client: BlazingAgents, chat_connection_id: str) -> None:
-    connection = client.chat_connections.check_health(chat_connection_id)
-    print(connection.enabled, connection.health.token_valid)
-    for check in connection.health.checks:
-        if check.status != "pass":
-            print(check.code, check.status, check.subject)
-```
-
-```rust
-use blazing_agents::chat_connections::ChatHealthCheckStatus;
-
-let connection = client
-    .chat_connections()
-    .check_health("cc_0123456789abcdef")
-    .await?;
-println!("{} {}", connection.enabled, connection.health.token_valid);
-for check in &connection.health.checks {
-    if check.status != ChatHealthCheckStatus::Pass {
-        println!("{} {:?} {:?}", check.code, check.status, check.subject);
-    }
-}
-```
-
-```go
-connection, err := client.ChatConnections.CheckHealth(ctx, ba.ChatConnectionID("cc_0123456789abcdef"))
-if err != nil {
-	return err
-}
-fmt.Println(connection.Enabled, connection.Health.TokenValid)
-for _, check := range connection.Health.Checks {
-	if check.Status == ba.ChatHealthCheckStatusPass {
-		continue
-	}
-	subject := ""
-	if check.Subject != nil {
-		subject = *check.Subject
-	}
-	fmt.Println(check.Code, check.Status, subject)
 }
 ```
 
