@@ -19,11 +19,11 @@ import {
 } from "../scripts/markdown.mjs";
 
 const root = resolve(import.meta.dirname, "..");
-/** The wheel `just sdk-pin` pins in `scripts/check-snippets.mjs`. */
-const pinnedWheel = readFileSync(
+/** The PyPI release `just sdk-release` pins in `scripts/check-snippets.mjs`. */
+const pinnedPython = readFileSync(
   join(root, "scripts/check-snippets.mjs"),
   "utf8"
-).match(/"(vendor\/blazing_agents-[^"]+\.whl)"/)[1];
+).match(/"(blazing_agents==[^"]+)"/)[1];
 function fixture(t) {
   const dir = mkdtempSync(join(tmpdir(), "skills-checkers-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -539,7 +539,7 @@ test("snippet checker maps diagnostics and rejects compiler failures", async (t)
             return outputs.shift();
           }
           if (command === 'uv') {
-            assert.ok(args.includes(process.env.SNIPPETS_PYTHON_SDK ?? join(dirname(options.cwd), ${JSON.stringify(pinnedWheel)})), 'the pinned or packed wheel');
+            assert.ok(args.includes(process.env.SNIPPETS_PYTHON_SDK ?? ${JSON.stringify(pinnedPython)}), 'the pinned release or packed wheel');
           }
           assert.ok(command.endsWith('/tsc') || command === 'uv');
           assert.ok(args.some((arg) => /snippet\\d+\\.(ts|tsx|py)$/.test(arg)));
