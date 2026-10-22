@@ -325,12 +325,12 @@ means the result is `{ data, nextCursor }` (see [Pagination](#pagination)).
 | `delete({ agentId, sessionId, deleteArtifacts })` | `DELETE /v1/agents/{agentId}/sessions/{sessionId}` | `void`. `deleteArtifacts` is required. `session_busy` while any Turn runs, or `session_turn_unresponsive` when the last Turn stopped responding. |
 | `toolApprovals({ agentId, sessionId })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/tool-approvals` | `{ data, continuation }`. Each item has `approvalId`, `toolName`, `input`, `decision` (`pending`, `approved`, `denied`). `continuation` is `{ id, state }` with state `waiting`, `running`, `succeeded`, or `failed`, or `null`. |
 | `submitInput({ agentId, sessionId, requestId, message })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/inputs` | `{ data: SessionInput, activity }`. Steers the running Turn; `steer_not_available` (409) when no Turn can take a steer (idle, stopping, or an approval wait); keep the message in your own queue and send it as ordinary chat later. `requestId` is 1 to 128 characters and not `.` or `..`. Retrying with the same `requestId` and payload returns the same receipt; a changed payload returns `input_idempotency_conflict`. |
-| `inputs({ agentId, sessionId, includeCompleted?, limit?, cursor? })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/inputs` | `{ data, nextCursor, activity }`: steer receipts in submission order plus the Session's `activity`. Without `includeCompleted`, `data` lists only pending and `uncertain` receipts. Poll without `cursor` to see changes; `cursor` only pages. |
+| `inputs({ agentId, sessionId, includeCompleted?, limit?, cursor? })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/inputs` | `{ data, nextCursor, activity }`: steer receipts in submission order plus the Session's `activity`. Without `includeCompleted`, `data` lists only `accepted` receipts. Poll without `cursor` to see changes; `cursor` only pages. |
 | `stop({ agentId, sessionId, turnId })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/stop` | `{ stoppedTurnId, activity }` as soon as the stop is recorded, not after the Turn ends. Keep reading the existing stream until it settles. An unknown `turnId` returns `not_found`; a settled Turn's ID never stops a later Turn. Take `turnId` from `ChatResult.turnId` or `onTurnId` in the client that started the Turn, or from `activity` anywhere else. |
 
 Fork eligibility, retries, child contents, and error codes are in [Add a requested fork](recipes/chat-in-your-app.md#add-a-requested-fork).
 
-A `SessionInput` is a steer receipt: `requestId`, `sequence`, `message`, `state` (`accepted`, `delivered`, `committed`, `not_placed`, or `uncertain`), the `turnId` it was bound to, `reason` (`stopped`, `failed`, `owner_lost`, `turn_finished`, or `null`), and timestamps. `activity` is `{ state, turnId }` with `state` one of `idle`, `running`, `stopping`, `approval`. What each receipt state means, the `data-ba-steer-consumed` stream chunk, and the client-held queue are in [Add chat to your app](recipes/chat-in-your-app.md).
+A `SessionInput` is a steer receipt: `requestId`, `sequence`, `message`, `state` (`accepted` while the running Turn may still read and save it, `committed` once in history, or `not_placed` when the Turn ended without saving it), the `turnId` it was bound to, `reason` (`stopped`, `failed`, `owner_lost`, `turn_finished`, or `null`), and timestamps. `activity` is `{ state, turnId }` with `state` one of `idle`, `running`, `stopping`, `approval`. What each receipt state means, the `data-ba-steer-consumed` stream chunk, and the client-held queue are in [Add chat to your app](recipes/chat-in-your-app.md).
 
 ### `client.tasks` (Tasks and Task runs)
 
@@ -357,7 +357,7 @@ A `SessionInput` is a steer receipt: `requestId`, `sequence`, `message`, `state`
 | `list({ userId?, cursor?, limit? })` | `GET /v1/workspaces` | Page of `Workspace` |
 | `get({ workspaceId })` | `GET /v1/workspaces/{workspaceId}` | `Workspace` |
 | `update({ workspaceId, ...body })` | `PUT /v1/workspaces/{workspaceId}` | `Workspace` |
-| `delete({ workspaceId })` | `DELETE /v1/workspaces/{workspaceId}` | `"completed"` or `"pending"` |
+| `delete({ workspaceId })` | `DELETE /v1/workspaces/{workspaceId}` | `void`, once the Workspace and its files are deleted |
 
 ### `client.artifacts`
 
@@ -404,12 +404,6 @@ A `SessionInput` is a steer receipt: `requestId`, `sequence`, `message`, `state`
 | `disable({ chatConnectionId })` | `POST /v1/chat-connections/{chatConnectionId}/disable` | `ChatConnection` |
 | `delete({ chatConnectionId })` | `DELETE /v1/chat-connections/{chatConnectionId}` | `void` |
 
-### `client.chatDeliveries`
-
-| Method | HTTP | Returns / notes |
-| --- | --- | --- |
-| `list({ status?, since?, cursor?, limit? })` | `GET /v1/chat-deliveries` | Page of `TenantChatDelivery`. Failed and ambiguous deliveries across every connection, newest first (an attention feed, not full history). `status` is an array of `failed` and/or `ambiguous` (default both); pending/confirmed are rejected. One connection's full deliveries list and repair are REST-only, not in the SDK: `GET /v1/chat-connections/{id}/deliveries` and `POST /v1/chat-connections/{id}/deliveries/{deliveryId}/repair`. `since` is an inclusive ISO 8601 lower bound. |
-
 ### `client.agent({ agentId }).skills`
 
 | Method | HTTP | Returns / notes |
@@ -448,10 +442,10 @@ These bill your own customers through your Polar or Dodo account.
 
 | Method | HTTP | Returns / notes |
 | --- | --- | --- |
-| `merchantConnection.create(body)` | `POST /v1/merchant-connection` | `MerchantConnectionResponse`. One per Tenant; creating replaces the current connection and fails `merchant_connection_in_use` while a request admitted on it is still running. |
+| `merchantConnection.create(body)` | `POST /v1/merchant-connection` | `MerchantConnectionResponse`. One per Tenant; creating replaces the current connection and fails `merchant_connection_in_use` (409) while a request admitted on it is still running or one of its usage events is `pending`. |
 | `merchantConnection.get()` | `GET /v1/merchant-connection` | `MerchantConnectionResponse` |
 | `merchantConnection.update(body)` | `PATCH /v1/merchant-connection` | `MerchantConnectionResponse` |
-| `merchantConnection.retire()` | `DELETE /v1/merchant-connection` | `void`. New usage is no longer recorded against it. Recorded events keep being delivered; the credential is deleted once none can still be delivered or retried. Fails `merchant_connection_in_use` (409) while a request admitted on the connection is still running. |
+| `merchantConnection.retire()` | `DELETE /v1/merchant-connection` | `void`. New usage is no longer recorded against it. Fails `merchant_connection_in_use` (409) while a request admitted on the connection is still running or one of its usage events is `pending`. On success its `failed` events are discarded and the credential is deleted at once, so nothing more is delivered through it. |
 | `merchantBindings.list({ userId?, cursor?, limit? })` | `GET /v1/merchant-connection/bindings` | `{ bindings, nextCursor }` |
 | `merchantBindings.put({ userId, ...body })` | `PUT /v1/merchant-connection/bindings/{userId}` | `MerchantBindingResponse` |
 | `merchantBindings.delete({ userId })` | `DELETE /v1/merchant-connection/bindings/{userId}` | `void` |
@@ -459,8 +453,9 @@ These bill your own customers through your Polar or Dodo account.
 | `merchantUsageEvents.get({ eventId })` | `GET /v1/merchant-usage-events/{eventId}` | `MerchantUsageEventResponse` |
 | `merchantUsageEvents.summary({ days? })` | `GET /v1/merchant-usage-events/summary` | `MerchantUsageSummaryResponse` |
 | `merchantUsageEvents.retry({ eventId })` | `POST /v1/merchant-usage-events/{eventId}/retry` | `MerchantUsageEventResponse` |
-| `merchantUsageEvents.release({ eventId })` | `POST /v1/merchant-usage-events/{eventId}/release` | `MerchantUsageEventResponse` |
 | `merchantUsageEvents.discard({ eventId })` | `POST /v1/merchant-usage-events/{eventId}/discard` | `MerchantUsageEventResponse` |
+
+Turn billing on with `client.tenant.patch({ monetizationEnabled: true })` after the connection exists, and off with `monetizationEnabled: false` to pause it. To switch providers without losing charges, retry the `failed` events you still want billed, wait until no event is `pending`, then replace the connection.
 
 ## Pagination
 
@@ -532,7 +527,7 @@ SDK-local codes:
 
 | Code | When |
 | --- | --- |
-| `credential_echo` | A Provider, MCP connection, chat connection, chat delivery, or merchant connection response contained a credential field. `details.field` names it; the body is discarded. |
+| `credential_echo` | A Provider, MCP connection, chat connection, or merchant connection response contained a credential field. `details.field` names it; the body is discarded. |
 | `network_error` | `fetch` threw before any HTTP response. |
 | `request_aborted` | Your `abortSignal` fired. |
 | `invalid_response` | The server response did not match the expected shape. |

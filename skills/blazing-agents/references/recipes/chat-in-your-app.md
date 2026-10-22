@@ -10,7 +10,7 @@ Your users chat with an Agent inside your own web product, and conversations mus
 
 Your browser talks only to your backend. The backend authenticates the user and calls BA through `client.forUser(verifiedUserId)`. BA checks that the Agent and Session belong to that user. BA stores the history, so each request carries only the newest message and the Session ID. The first response returns a new Session ID in `Location`. AI SDK `useChat` and `BlazingAgentsChatTransport` render the stream and keep that ID for later messages.
 
-BA holds no queue. A message sent while the Session is busy either steers the running Turn or waits in your client's own queue. When the Turn settles, your client sends the waiting messages as ordinary chat, one per Turn or several in one Turn with `client.chat({ messages: [...] })`. `sessions.submitInput()` steers: it takes your `requestId` and the message, binds it to the running Turn, and returns a receipt. Retry with the same `requestId` and message until the outcome is known. `steer_not_available` (409) means no Turn can take a steer because the Session is idle, stopping, or waiting on an approval, so the message stays queued locally. `sessions.inputs()` returns the steer receipts and the Session's `activity`; poll it while the Session is busy. A receipt's `state` moves from `accepted` to `delivered` and ends in one of three states. `committed` means it is saved in history. `not_placed` means the agent never read it, so it is safe to send as ordinary chat. `uncertain` means it may have reached the agent, so never resend it automatically. `sessions.stop()` records cancellation for a Turn ID and returns immediately; keep reading the existing stream until the Turn settles.
+BA holds no queue. A message sent while the Session is busy either steers the running Turn or waits in your client's own queue. When the Turn settles, your client sends the waiting messages as ordinary chat, one per Turn or several in one Turn with `client.chat({ messages: [...] })`. `sessions.submitInput()` steers: it takes your `requestId` and the message, binds it to the running Turn, and returns a receipt. Retry with the same `requestId` and message until the outcome is known. `steer_not_available` (409) means no Turn can take a steer because the Session is idle, stopping, or waiting on an approval, so the message stays queued locally. `sessions.inputs()` returns the steer receipts and the Session's `activity`; poll it while the Session is busy. A receipt is `accepted` while the running Turn may still read and save it, so wait. `committed` means it is saved in history. `not_placed` means the Turn ended, or BA lost it, without saving the message, so send it again as ordinary chat. If the Turn read it and then failed, the resend may repeat Tool calls, as any resend can. `sessions.stop()` records cancellation for a Turn ID and returns immediately; keep reading the existing stream until the Turn settles.
 
 ## Build it
 
@@ -1214,7 +1214,7 @@ func main() {
 }
 ```
 
-4. Add the React chat. `ChatPage` loads saved history for the stored Session, then mounts `Chat`. `Chat` keeps a copy of the last successful conversation and restores it after an error or Stop, putting the sent text back in the box for an edited or unchanged resend. While the Session is busy, the composer's button reads Stop until the user types, then Send; a send adds the message to the local `queue`. The `queue` block above the composer lists each waiting message on one line with Send (steer the running Turn now) and Delete (drop it; it was never sent). `Chat` polls `GET /api/chat/session` while the Session is busy or a steer is pending. When the Session is idle and messages wait, `Chat` shows that batch of user messages and calls `resumeStream()`, which posts them to `/api/chat` through a second AI SDK transport as a `messages` array and streams the answer; after that Turn ends it reloads saved history. `Chat` sends each set of waiting messages once; after a failed send, it waits for the user. Send again on an `uncertain` steer requeues the same message ID; when it was saved after all, the batch returns `message_id_conflict`, and `Chat` reloads history and requeues only the messages history lacks.
+4. Add the React chat. `ChatPage` loads saved history for the stored Session, then mounts `Chat`. `Chat` keeps a copy of the last successful conversation and restores it after an error or Stop, putting the sent text back in the box for an edited or unchanged resend. While the Session is busy, the composer's button reads Stop until the user types, then Send; a send adds the message to the local `queue`. The `queue` block above the composer lists each waiting message on one line with Send (steer the running Turn now) and Delete (drop it; it was never sent). `Chat` polls `GET /api/chat/session` while the Session is busy or a steer is pending. When the Session is idle and messages wait, `Chat` shows that batch of user messages and calls `resumeStream()`, which posts them to `/api/chat` through a second AI SDK transport as a `messages` array and streams the answer; after that Turn ends it reloads saved history. `Chat` sends each set of waiting messages once; after a failed send, it waits for the user. A steer whose submit response was lost shows Retry, which submits it again under the same `requestId`, so a steer that was saved returns its existing receipt. A batch that contains a message already in history returns `message_id_conflict`, and `Chat` reloads history and requeues only the messages history lacks.
 
 ```tsx
 import { useChat } from "@ai-sdk/react";
@@ -1233,11 +1233,14 @@ interface Conversation {
   messages: UIMessage[];
 }
 
-/** A message this client sent as a steer, with its receipt state once known. */
+/**
+ * A message this client sent as a steer, with its receipt state once known.
+ * "unknown" means the submit's response was lost, so the steer may be saved.
+ */
 interface Steer {
   requestId: string;
   message: UIMessage;
-  state: "sending" | SessionInput["state"];
+  state: "sending" | "unknown" | SessionInput["state"];
   turnId?: string;
 }
 
@@ -1391,10 +1394,8 @@ function Chat({
   const streaming = chat.status === "submitted" || chat.status === "streaming";
   const { state, turnId } = activity;
   const busy = streaming || state === "running" || state === "stopping" || state === "approval";
-  const pendingSteers = steered.filter(
-    (item) => item.state === "sending" || item.state === "accepted" || item.state === "delivered",
-  );
-  const uncertain = steered.filter((item) => item.state === "uncertain");
+  const pendingSteers = steered.filter((item) => item.state === "sending" || item.state === "accepted");
+  const unknown = steered.filter((item) => item.state === "unknown");
   const hasAnswer = chat.messages.some((message) => message.role === "assistant");
 
   const refresh = useCallback(async () => {
@@ -1450,8 +1451,8 @@ function Chat({
         saved.current = body.messages;
         setMessages(body.messages);
         const savedIds = new Set(body.messages.map((message) => message.id));
-        // not_placed steers never reached the agent, so they rejoin the queue;
-        // committed ones are in history; uncertain ones stay flagged.
+        // not_placed steers are not in history, so they rejoin the queue;
+        // committed ones are in history.
         const requeue = steeredRef.current
           .filter((item) => item.state === "not_placed" && !savedIds.has(item.message.id))
           .map((item) => item.message);
@@ -1473,12 +1474,14 @@ function Chat({
     return () => controller.abort();
   }, [turnId, streaming, sessionId, token, reloads, setMessages, clearError]);
 
-  async function steer(item: UIMessage) {
+  async function steer(item: UIMessage, requestId = generateId()) {
     // Dequeue before sending: a queued row is "not sent yet" by definition.
     setQueue((current) => current.filter((queued) => queued.id !== item.id));
     setQueueError(undefined);
-    const requestId = generateId();
-    setSteered((current) => [...current, { requestId, message: item, state: "sending" }]);
+    setSteered((current) => [
+      ...current.filter((entry) => entry.requestId !== requestId),
+      { requestId, message: item, state: "sending" },
+    ]);
     try {
       const response = await fetch("/api/chat/steer", {
         method: "POST",
@@ -1495,11 +1498,8 @@ function Chat({
           // message simply waits again.
           setQueue((current) => [...current, item]);
         } else {
-          // The server may have saved it; flag it instead of resending.
-          setSteered((current) => [
-            ...current,
-            { requestId, message: item, state: "uncertain" },
-          ]);
+          // The server may have saved it; keep the requestId for a retry.
+          setSteered((current) => [...current, { requestId, message: item, state: "unknown" }]);
         }
         setQueueError(body.error?.code ?? `HTTP ${response.status}`);
       } else {
@@ -1513,10 +1513,10 @@ function Chat({
         );
       }
     } catch {
-      // The outcome is unknown; flag it instead of resending automatically.
+      // The steer may be saved; keep the requestId for a retry.
       setSteered((current) =>
         current.map((entry) =>
-          entry.requestId === requestId ? { ...entry, state: "uncertain" } : entry,
+          entry.requestId === requestId ? { ...entry, state: "unknown" } : entry,
         ),
       );
       setQueueError("network_error");
@@ -1574,7 +1574,7 @@ function Chat({
   const occupied = busy || queue.length > 0;
   const reading = steered.filter(
     (item) =>
-      item.state !== "uncertain" &&
+      item.state !== "unknown" &&
       !chat.messages.some((message) => message.id === item.message.id),
   );
   return (
@@ -1595,27 +1595,12 @@ function Chat({
           </p>
         </div>
       )}
-      {uncertain.map((item) => (
+      {unknown.map((item) => (
         <p key={item.requestId} role="alert">
-          May not have been delivered: {textOf(item.message)}{" "}
-          <button
-            type="button"
-            onClick={() => {
-              // Keeps the message ID: if it was saved, the send returns
-              // message_id_conflict and Chat reloads history instead.
-              setSteered((current) => current.filter((entry) => entry.requestId !== item.requestId));
-              setQueue((existing) => [...existing, item.message]);
-            }}
-          >
-            Send again
-          </button>{" "}
-          <button
-            type="button"
-            onClick={() =>
-              setSteered((current) => current.filter((entry) => entry.requestId !== item.requestId))
-            }
-          >
-            Dismiss
+          Not confirmed: {textOf(item.message)}{" "}
+          {/* The same requestId returns the saved receipt if the first submit landed. */}
+          <button type="button" onClick={() => void steer(item.message, item.requestId)}>
+            Retry
           </button>
         </p>
       ))}
@@ -1714,11 +1699,11 @@ Handle these errors:
 - **Queue only after the Session exists.** The first message creates the Session through `chat`. Steers and batches need a Session ID, which the transport receives before the answer streams.
 - **The queue is yours.** It lives in client state, such as `useState`, localStorage, or your own store. Take a message out before sending it (a queued row means "not sent"), never auto-retry a send whose outcome is unknown, and never rebuild the queue from receipts or history. A send containing any message ID already in history returns `message_id_conflict` (409) before model or Tool work: the message is already saved, so reload history instead of resending. Regeneration may reuse IDs.
 - **Keep the `requestId` until the outcome is known.** `submitInput` saves the steer before it returns, so a lost response may still have placed it. Retry with the same `requestId` and message; a changed payload under the same `requestId`, or the same message ID under a new one, returns `input_idempotency_conflict`.
-- **A steer is provisional until history catches up.** The `data-ba-steer-consumed` chunk on the running stream means the agent took the message; it is not yet proof of a durable save. `committed` proves it, `not_placed` means it never ran (safe to send as chat), and `uncertain` means it may have run, so flag it and let the user decide, as `Chat` does.
+- **A steer is provisional until history catches up.** The `data-ba-steer-consumed` chunk on the running stream means the agent took the message; it is not yet proof of a durable save. `committed` proves it. `not_placed` means the Turn ended without saving it, so send it again as chat; `Chat` does this for you.
 - **Steering stops at tool approvals.** An approval wait refuses new steers with `steer_not_available`, so a message sent then stays queued and goes out after the continuation settles. A steer already taken does not cross the pause either: it lands in history only if the Turn that read it commits.
 - **Your client sends every waiting message.** Poll `GET /api/chat/session` while the Session is busy; once activity is `idle` and messages wait, `Chat` posts them to `/api/chat` as one `messages` batch. There is no server queue to drain, so nothing runs without that send. Reloads lose the local queue unless you persist it yourself.
 - **Two tabs can send the same Session's Turns.** The second `chat` call while a Turn runs gets `session_busy`. Each tab holds only its own queue, so keep queued sends to the tab that queued them.
-- **A stopped Turn's uncommitted steers rejoin the queue.** After the history reload, a steered message missing from history and marked `not_placed` never ran, so `Chat` queues it again; `uncertain` stays flagged for the user.
+- **A stopped Turn's uncommitted steers rejoin the queue.** After the history reload, a steered message missing from history and marked `not_placed` was not saved, so `Chat` queues it again. If the Turn read it before it failed, the resend can repeat Tool calls.
 - **Stop without a Turn ID only aborts.** `Chat` stops by `turnId`, reading activity once if it has none yet. When there is still no Turn ID, for example while the first message is creating the Session, it can only abort the chat request. Keep the draft and let the user resend.
 - **Stop returns before the Turn ends.** `sessions.stop()` records cancellation and answers immediately; the `stopping` activity and the existing stream report the end. Keep reading the stream instead of polling for a stopped state.
 - **Reload the newest page, not `after`.** A tool approval continuation rewrites its assistant message in place, at the same position, so `messages({ after: latestCursor })` never returns the revised tool result or answer. `Chat` reloads the newest page after each Turn and drops that reload if a new Turn or stream starts first, so an old snapshot cannot overwrite live messages.
@@ -1741,7 +1726,7 @@ Handle these errors:
 - Retry a steer with the same `requestId` and message; you get the same receipt. Change the text under that `requestId`, and you get `input_idempotency_conflict`.
 - While a Tool approval is pending, a steer returns `steer_not_available` and the message stays queued; `chat` returns `session_busy`.
 - Press Regenerate. The last answer is replaced, and after a reload the new answer is the saved one.
-- Post a message whose ID is already in history to `/api/chat`; you get `message_id_conflict` (409) and no new Turn. Press Send again on an `uncertain` steer that was saved; `Chat` reloads history and shows the message once.
+- Post a message whose ID is already in history to `/api/chat`; you get `message_id_conflict` (409) and no new Turn. Cut the network after a steer is sent but before its response arrives, then press Retry. You get the same receipt, and history shows the message once.
 - If your UI answers Tool approvals with `addToolApprovalResponse`, answer one. The transport posts the answered assistant message, `chat` continues the Turn, and the answer streams into the same message.
 - Usage filtered by your user's ID includes these Turns. See [usage dashboards](usage-dashboards.md).
 

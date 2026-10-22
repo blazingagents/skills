@@ -259,7 +259,7 @@ fmt.Println(len(page.Data), page.NextCursor)
 
 - Take the ID from the session your backend verified, never from a request body or query parameter.
 - The ID is 1 to 256 printable ASCII characters with no leading or trailing space. Anything else fails with `ba.ErrInvalidUserID`.
-- A `*ba.UserClient` has `Agents`, `Skills`, `Sessions`, `Memories`, `Prompts`, `Tasks`, `Workspaces`, `Artifacts`, `Chat`, `Generation`, and a `Usage` with `Get`, `Sessions`, and `ForAgent`. Tenant administration (`Providers`, `MCPConnections`, `Tenant`, `SpendingLimits`, `ChatConnections`, `ChatDeliveries`, the merchant services) and `Usage.Overview` exist only on `*ba.Client`; the compiler rejects them on a `*ba.UserClient`.
+- A `*ba.UserClient` has `Agents`, `Skills`, `Sessions`, `Memories`, `Prompts`, `Tasks`, `Workspaces`, `Artifacts`, `Chat`, `Generation`, and a `Usage` with `Get`, `Sessions`, and `ForAgent`. Tenant administration (`Providers`, `MCPConnections`, `Tenant`, `SpendingLimits`, `ChatConnections`, the merchant services) and `Usage.Overview` exist only on `*ba.Client`; the compiler rejects them on a `*ba.UserClient`.
 - `WithClientRequestID` on a `*ba.UserClient` keeps the scope.
 
 ## Operation map
@@ -330,7 +330,7 @@ A `ba.Upload` comes from `ba.UploadFile(path)`, `ba.UploadBytes(name, b)`, or `b
 
 `ListMessages` returns the newest page in chronological order; pass `NextCursor` back as `Cursor` for earlier pages, and save `LatestCursor` to pass as `After` later for messages that arrived since. Setting both fails with `*ba.ArgumentError`. `AllMessages` keeps the direction: with `After` set it follows newer pages, otherwise older ones. While a Turn runs, `Chat.Send` fails with `session_busy`; steer with `SubmitInput` or hold the message in your own client. A Turn that stopped responding fails `session_turn_unresponsive`; wait out the error's `RetryAfter`, read history, then send again under a new message ID.
 
-`SubmitInput` saves a steer receipt under your `RequestID` before returning, so retry with the same `RequestID` and message; a changed payload fails `input_idempotency_conflict`. Receipt `State` is `accepted`, `delivered`, `committed` (in history), `not_placed` (never ran, safe to resend as chat), or `uncertain` (may have run; never resend automatically). `ListInputs` lists receipts; `IncludeCompleted: new(true)` adds terminal ones, and `Activity` (`idle`, `running`, `stopping`, `approval` with `TurnID`) says what the Session is doing. `Stop` takes `stream.TurnID()` in the client that started the Turn, or `Activity.TurnID` read from `ListInputs`. What each receipt state means and how the client-held queue works are in [Add chat to your app](recipes/chat-in-your-app.md#how-it-works).
+`SubmitInput` saves a steer receipt under your `RequestID` before returning, so retry with the same `RequestID` and message; a changed payload fails `input_idempotency_conflict`. Receipt `State` is `accepted` (the running Turn may still read and save it, so wait), `committed` (in history), or `not_placed` (the Turn ended without saving it; send it again as chat, which can repeat Tool calls if the Turn read it before it failed). `ListInputs` lists receipts; `IncludeCompleted: new(true)` adds terminal ones, and `Activity` (`idle`, `running`, `stopping`, `approval` with `TurnID`) says what the Session is doing. `Stop` takes `stream.TurnID()` in the client that started the Turn, or `Activity.TurnID` read from `ListInputs`. What each receipt state means and how the client-held queue works are in [Add chat to your app](recipes/chat-in-your-app.md#how-it-works).
 
 ### `client.Tasks` (both clients)
 
@@ -359,7 +359,7 @@ A `ba.Upload` comes from `ba.UploadFile(path)`, `ba.UploadBytes(name, b)`, or `b
 | `List(ba.ListWorkspacesParams{UserID, Limit, Cursor})` / `All(...)` | `*ba.Page[ba.Workspace]` |
 | `Get(workspaceID)` | `*ba.Workspace` |
 | `Update(workspaceID, ba.UpdateWorkspaceParams{Name, Metadata, NetworkPolicy})` | `*ba.Workspace` (`Name` is `ba.Nullable[string]`) |
-| `Delete(workspaceID)` | `ba.WorkspaceDeletion`: `ba.WorkspaceDeletionCompleted` when it is gone, `ba.WorkspaceDeletionPending` while cleanup continues in the background |
+| `Delete(workspaceID)` | `error`; `nil` once the Workspace and its files are deleted |
 
 A network policy is `ba.NetworkPolicyUnrestricted{}`, `ba.NetworkPolicyAllowlist{AllowedHosts: hosts}`, or `ba.NetworkPolicyOffline{}`.
 
@@ -438,18 +438,8 @@ The download link is a credential, so `URL` prints as `[redacted]` under `fmt`, 
 | `CheckHealth(chatConnectionID)` | `*ba.ChatConnection` |
 | `Enable(chatConnectionID)` / `Disable(chatConnectionID)` | `*ba.ChatConnection` |
 | `Delete(chatConnectionID)` | `error` |
-| `ListDeliveries(chatConnectionID, ba.ListChatDeliveriesParams{Limit, Cursor})` / `AllDeliveries(...)` | `*ba.Page[ba.ChatDelivery]` |
-| `RepairDelivery(chatConnectionID, deliveryID, ba.RepairChatDeliveryParams{ExpectedAttempt})` | `*ba.ChatDeliveryResult` |
 
-Every bot token and signing secret is a `ba.Secret` built with `ba.NewSecret`. `RepairDelivery` confirms the previous sender has stopped and accepts that the repaired reply may post twice. See [Put your agent in Slack or Telegram](recipes/slack-and-telegram.md).
-
-### `client.ChatDeliveries`
-
-| Method | Returns |
-| --- | --- |
-| `List(ba.ListTenantChatDeliveriesParams{Status, Since, Limit, Cursor})` / `All(...)` | `*ba.Page[ba.TenantChatDelivery]` |
-
-Failed and ambiguous deliveries across every connection, newest first (an attention feed, not full history). `Status` is a `[]ba.ChatDeliveryStatus` of `ba.ChatDeliveryStatusFailed` and/or `ba.ChatDeliveryStatusAmbiguous` (default both); pending and confirmed are rejected. `Since` is an inclusive `*time.Time` lower bound.
+Every bot token and signing secret is a `ba.Secret` built with `ba.NewSecret`. See [Put your agent in Slack or Telegram](recipes/slack-and-telegram.md).
 
 ### `client.Usage`, `client.SpendingLimits`, and `client.Tenant`
 
@@ -473,18 +463,18 @@ Monetization: bill your end users through your own Polar or Dodo account. Setup,
 | Method | Returns |
 | --- | --- |
 | `MerchantConnection.Get()` | `*ba.MerchantConnection`, or `nil, nil` when there is none: the one method where a successful call returns no model |
-| `MerchantConnection.Create(ba.CreateMerchantConnectionParams{Provider, Environment, Credential, Guard})` | `*ba.MerchantConnection`. `ba.MerchantProviderPolar` or `Dodo`; `ba.MerchantEnvironmentSandbox` or `Live`. Replaces the current connection; fails `merchant_connection_in_use` while a request admitted on it is still running |
-| `MerchantConnection.Update(ba.UpdateMerchantConnectionParams{Credential, Status, Guard})` | `*ba.MerchantConnection` |
-| `MerchantConnection.Retire()` | `error`. New usage is no longer recorded against it. Recorded events keep being delivered; the credential is deleted once none can still be delivered or retried. Fails `merchant_connection_in_use` (409) while a request admitted on the connection is still running. |
+| `MerchantConnection.Create(ba.CreateMerchantConnectionParams{Provider, Environment, Credential, Guard})` | `*ba.MerchantConnection`. `ba.MerchantProviderPolar` or `Dodo`; `ba.MerchantEnvironmentSandbox` or `Live`. Replaces the current connection; fails `merchant_connection_in_use` (409) while a request admitted on it is still running or one of its usage events is `pending` |
+| `MerchantConnection.Update(ba.UpdateMerchantConnectionParams{Credential, Guard})` | `*ba.MerchantConnection` |
+| `MerchantConnection.Retire()` | `error`. New usage is no longer recorded against it. Fails `merchant_connection_in_use` (409) while a request admitted on the connection is still running or one of its usage events is `pending`. On success its `failed` events are discarded and the credential is deleted at once, so nothing more is delivered through it. |
 | `MerchantBindings.List(ba.ListMerchantBindingsParams{UserID, Limit, Cursor})` / `All(...)` | `*ba.MerchantBindingList`. Fails `merchant_connection_not_found` when there is no connection |
 | `MerchantBindings.Set(userID string, ba.SetMerchantBindingParams{CustomerID})` | `*ba.MerchantBinding`. The API checks the customer exists at the provider |
 | `MerchantBindings.Delete(userID string)` | `error` |
 | `MerchantUsageEvents.List(ba.ListMerchantUsageEventsParams{Status, Limit, Cursor})` / `All(...)` | `*ba.MerchantUsageEventList` |
 | `MerchantUsageEvents.Get(eventID)` | `*ba.MerchantUsageEvent` (`NextAction` says what to do) |
 | `MerchantUsageEvents.Summary(ba.MerchantUsageSummaryParams{Days})` | `*ba.MerchantUsageSummary` (status counts and a daily window; `Days` 1 to 90, default 14) |
-| `MerchantUsageEvents.Retry(eventID)` / `Release(eventID)` / `Discard(eventID)` | `*ba.MerchantUsageEvent` |
+| `MerchantUsageEvents.Retry(eventID)` / `Discard(eventID)` | `*ba.MerchantUsageEvent` |
 
-`Credential` is a `ba.Secret`. `Guard` is a `*ba.MerchantGuard{Enabled, ProductIDs, MeterID}`; a nil `ProductIDs` is sent as `[]`. Turn billing on with `client.Tenant.Update(ctx, ba.UpdateTenantParams{MonetizationEnabled: new(true)})` after the connection exists.
+`Credential` is a `ba.Secret`. `Guard` is a `*ba.MerchantGuard{Enabled, ProductIDs, MeterID}`; a nil `ProductIDs` is sent as `[]`. Turn billing on with `client.Tenant.Update(ctx, ba.UpdateTenantParams{MonetizationEnabled: new(true)})` after the connection exists, and off with `MonetizationEnabled: new(false)` to pause it. To switch providers without losing charges, retry the `failed` events you still want billed, wait until no event is `pending`, then replace the connection.
 
 ## Partial updates: nil keeps, `Null` sends null
 

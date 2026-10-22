@@ -352,8 +352,7 @@ await client.sessions.delete({
   sessionId: "ss_0123456789abcdef",
   deleteArtifacts: true,
 });
-const status = await client.workspaces.delete({ workspaceId });
-console.log(status); // "completed", or "pending" while cleanup finishes
+await client.workspaces.delete({ workspaceId });
 ```
 
 ```python
@@ -367,7 +366,7 @@ def clean_up(client: BlazingAgents, artifact_id: str, workspace_id: str) -> None
         session_id="ss_0123456789abcdef",
         delete_artifacts=True,
     )
-    print(client.workspaces.delete(workspace_id=workspace_id))
+    client.workspaces.delete(workspace_id=workspace_id)
 ```
 
 ```rust
@@ -386,11 +385,9 @@ if err := client.Artifacts.Delete(ctx, ba.ArtifactID("at_0123456789abcdef")); er
 if err := client.Sessions.Delete(ctx, agentID, sessionID, ba.DeleteSessionParams{DeleteArtifacts: true}); err != nil {
 	return err
 }
-outcome, err := client.Workspaces.Delete(ctx, ba.WorkspaceID("ws_0123456789abcdef"))
-if err != nil {
+if err := client.Workspaces.Delete(ctx, ba.WorkspaceID("ws_0123456789abcdef")); err != nil {
 	return err
 }
-fmt.Println(outcome) // ba.WorkspaceDeletionCompleted, or ba.WorkspaceDeletionPending while cleanup finishes
 ```
 
 ## Gotchas
