@@ -152,7 +152,7 @@ if (tsFiles.length) {
 /** The pinned wheel, which `just sdk-pin` moves, unless SNIPPETS_PYTHON_SDK names another. */
 function pythonSdk() {
   const sdk = process.env.SNIPPETS_PYTHON_SDK;
-  if (!sdk) return join(snippets, "vendor/blazing_agents-0.30.1-py3-none-any.whl");
+  if (!sdk) return join(snippets, "vendor/blazing_agents-0.31.0-py3-none-any.whl");
   console.log(`Python snippets use ${sdk}`);
   return resolve(sdk);
 }
