@@ -54,7 +54,7 @@ current value on that page.
 | --- | --- | --- |
 | Artifact file ([row][artifact-file]) | 10 MiB | Larger deliverables need splitting. |
 | Artifacts per publish call ([row][artifact-batch]) | 10 | |
-| Artifacts per Session ([row][artifacts-session]) | 100 | A long-lived Session that publishes often reaches it; start a new Session. |
+| Artifacts per Session ([row][artifacts-session]) | 50 | A long-lived Session that publishes often reaches it; start a new Session. |
 | Artifact download URL ([row][artifact-download-url]) | Expires after 5 minutes | Create one per download; never store it. |
 | Workspace idle stop ([row][workspace-idle-stop]) | About 10 minutes without an operation | Core files are lost at the stop. |
 | Plus Workspace files ([workspaces][ws]) | Discarded after 29 days unused | Keep anything important in an Artifact or in git. |
