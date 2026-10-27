@@ -20,8 +20,7 @@ Pick the sign-in type your server needs:
 | --- | --- | --- |
 | `none` | The server needs no credentials. | Nothing extra |
 | `bearer` | The server takes a static token. | `bearerToken` |
-| `oauth_client_credentials` | The server issues tokens to a machine client. | `clientId`, `clientSecret`, optional `scope` |
-| `oauth_authorization_code` | A person must sign in and grant access. | Nothing extra; finish sign-in in the dashboard |
+| `oauth_authorization_code` | A person must sign in and grant access. | Optional `clientId` and `clientSecret` together, optional `scope`; finish sign-in in the dashboard |
 
 1. Create the Connection once, on your backend. Connections are Tenant administration, so steps 1 and 3 use the unscoped client. For every type except `oauth_authorization_code`, Blazing Agents checks the server first and saves nothing if the check fails.
 

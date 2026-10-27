@@ -107,7 +107,7 @@ A scoped client cannot reach these; make the calls from the unscoped client in t
 - MCP Connections: create, update, test, reconnect, delete. A scoped client can still list and toggle the MCP attachments of the user's own Agent.
 - Chat Connections (Slack and Telegram).
 - The merchant connection, customer bindings, and merchant usage events.
-- Tenant settings and the quota.
+- Tenant settings.
 - Tenant and Agent model spending limits.
 - The usage overview across all users.
 - The Admin Agent.

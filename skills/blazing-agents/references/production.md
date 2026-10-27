@@ -15,7 +15,7 @@ Work through this checklist before real users reach your agent. Each item links 
 - [ ] [Every Task run submission carries an idempotency key.](#submit-task-runs-with-an-idempotency-key)
 - [ ] [You log request IDs, error codes, and resource IDs, and nothing secret.](#log-request-ids-for-support)
 - [ ] [Your rollout plan accounts for Agent edits reaching only new work.](#agent-edits-reach-new-work-only)
-- [ ] [A tenant quota is set with headroom, and your code handles quota outcomes.](#set-quotas-and-handle-quota-outcomes)
+- [ ] [A model spending limit is set with headroom, and your code handles limit outcomes.](#set-a-spending-limit-and-handle-limit-outcomes)
 - [ ] [Your code handles Stop and Task run cancellation, including side effects that already happened.](#handle-cancellation)
 - [ ] [Your design fits the limits, and your code does not hard-code them.](#respect-limits)
 
@@ -72,7 +72,7 @@ To tag one request with your own correlation ID, derive a copy with `client.with
 Your API key identifies your Tenant, not your end user. A `userId` and `metadata` you pass on a turn, Session, or Task are Attribution: labels for filtering Sessions and breaking down usage. They grant nothing.
 
 - Authenticate each request and run every call made for a signed-in user on the End-user scoped client: `client.forUser(verifiedUserId)` in TypeScript, `client.for_user(verified_user_id)` in Python, `client.for_user(verified_user_id)?` in Rust, `client.ForUser(verifiedUserID)` in Go. That covers chat, approvals, history, Session inputs and Stop, Artifacts, Memories, the user's usage, and Task runs for that user. BA checks ownership on reads and writes: another user's resource returns `not_found` (404), and a conflicting `userId` fails with `invalid_request` (400).
-- Keep Tenant administration (Providers, connections, spending limits, quotas, usage across all users) on the unscoped client in trusted backend code. A scoped client cannot reach it; such a request fails with `forbidden` (403).
+- Keep Tenant administration (Providers, connections, spending limits, usage across all users) on the unscoped client in trusted backend code. A scoped client cannot reach it; such a request fails with `forbidden` (403).
 - Derive the scope from your verified session. A browser-supplied header or `userId` is not proof of identity.
 - If an integration uses an unscoped client, keep its own resource access checks. A list filter does not restrict later reads by ID.
 - The `userId` on a Session is fixed after its first turn. A Task run snapshots the Task's `userId` and `metadata` when it is queued.
@@ -142,13 +142,12 @@ An edit to an Agent's model, instructions, tools, approval policies, or compacti
 
 When a Session or run behaves as if an edit never happened, read the configuration it used from trusted backend code: `(await client.sessions.get({ agentId, sessionId })).agentConfig` or `(await client.tasks.getRun({ taskId, runId })).agentConfig`. Provider keys, MCP credentials, Skills, Memories, and the Workspace are always current.
 
-## Set quotas and handle quota outcomes
+## Set a spending limit and handle limit outcomes
 
-A tenant quota sets a monthly token ceiling, a request ceiling, or both, with a reset day from 1 to 28. Set it with `client.tenant.patch()`. With no quota, usage is unlimited.
+A model spending limit is an estimated dollar allowance for one Agent or the whole Tenant, with a reset schedule. Set it with `client.tenant.updateSpendingLimit()` or `client.agents.updateSpendingLimit()`. With no limit, spending is unlimited.
 
-- Blazing Agents checks the quota before each turn starts. It does not stop a turn that crosses the ceiling while running, and concurrent turns can overshoot. Leave headroom.
-- A chat or generation call over the ceiling fails with `quota_exceeded` (HTTP 429). Show your user a clear message; retrying before the reset fails the same way.
-- A Task run over the ceiling ends as `blocked`, not `failed`, and never runs. Treat `blocked` as its own outcome in your alerts.
+- Blazing Agents checks the limit before each model request. A running turn can finish one request past it, and concurrent turns can overshoot. Leave headroom.
+- A Task run refused by a limit, your plan or your usage credit ends as `blocked`, not `failed`, and never runs. Treat `blocked` as its own outcome in your alerts.
 - A model spending limit returns `model_spending_limit_exceeded` (HTTP 429) before streaming, or a `data-ba-error` part with that code when it stops a chat mid-stream. Show the user when it resets and never retry automatically; see [chat in your app](recipes/chat-in-your-app.md) and [model spending limits](recipes/usage-dashboards.md#model-spending-limits).
 - Without an active plan, almost every API call returns `subscription_required` (HTTP 402), reads included; only stopping a Turn and cancelling a Task run still work. Used-up usage credit returns `usage_credit_required` (HTTP 402) for a Turn. Both end a Task run as `blocked`.
 - Too many interactive turns at once returns `rate_limited` (HTTP 429) with no `Retry-After`; stateless calls share that limit. Extra Task runs wait as `queued` instead.
@@ -179,7 +178,7 @@ Check the design against [Limits](limits.md) before launch: concurrency, the 30-
 - [Limits and reliability](https://docs.blazingagents.com/platform/limits-and-reliability)
 - [Security and credentials](https://docs.blazingagents.com/platform/security-and-credentials)
 - [Tenancy and end-user attribution](https://docs.blazingagents.com/platform/tenancy-and-attribution)
-- [Usage and quotas](https://docs.blazingagents.com/platform/usage-and-quotas)
+- [Usage and spending limits](https://docs.blazingagents.com/platform/usage-and-spending-limits)
 - [Configuration snapshots and lifecycle](https://docs.blazingagents.com/agents/configuration-snapshots)
 - [Task runs](https://docs.blazingagents.com/automation/task-runs)
 - [Errors](https://docs.blazingagents.com/api-reference/protocols/errors)

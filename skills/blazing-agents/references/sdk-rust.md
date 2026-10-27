@@ -405,7 +405,7 @@ A network policy is `NetworkPolicy::Unrestricted`, `NetworkPolicy::allowlist(hos
 | `test(mcp_connection_id)` | `McpConnectionTest` (`Passed { server, tool_names, ... }` or `Failed { error }`) |
 | `reconnect(mcp_connection_id, McpReconnect)` | `McpConnectionReconnectResult` (`status`, `connection`) |
 
-`NewMcpConnection` has one struct variant per auth type (`None`, `Bearer`, `OAuthAuthorizationCode`, `OAuthClientCredentials`) with only the fields that auth type takes; `McpReconnect` is the same set for reconnecting. Attach a connection to an Agent through `agents().create()` / `update()` `.mcp_connection_ids(...)`. OAuth sign-in for an `oauth_authorization_code` connection happens in the dashboard: a Tenant administrator opens MCP connections, clicks **Connect**, and signs in to the server. The connection stays `needs_auth` until then, and an API key cannot start this sign-in.
+`NewMcpConnection` has one struct variant per auth type (`None`, `Bearer`, `OAuthAuthorizationCode`) with only the fields that auth type takes; `McpReconnect` is the same set for reconnecting. Attach a connection to an Agent through `agents().create()` / `update()` `.mcp_connection_ids(...)`. OAuth sign-in for an `oauth_authorization_code` connection happens in the dashboard: a Tenant administrator opens MCP connections, clicks **Connect**, and signs in to the server. The connection stays `needs_auth` until then, and an API key cannot start this sign-in.
 
 ### `client.memories()`
 
@@ -464,10 +464,10 @@ Run a saved Prompt with `client.chat(agent_id, SavedPrompt::new(prompt_id).var("
 | `usage().get_for_agent(agent_id)`, `.range(from, to)`, `.session_id(...)`, `.user_id(...)`, `.group_by(...)`, `.limit(...)` | `Usage` |
 | `usage().sessions(session_ids)`, `.range(from, to)` | `SessionUsage` (`data`: one `SessionUsageEntry` per ID; 1 to 100 IDs) |
 | `tenant().get()` | `TenantSettings` |
-| `tenant().update()`, `.name(...)`, `.monetization_enabled(...)`, `.quota(QuotaInput)`, `.clear_quota()` | `TenantSettings`. Turning `monetization_enabled` off drops usage events the merchant has not accepted |
+| `tenant().update()`, `.name(...)`, `.monetization_enabled(...)` | `TenantSettings`. Turning `monetization_enabled` off drops usage events the merchant has not accepted |
 | `tenant().get_spending_limit()` / `tenant().update_spending_limit(Option<SpendingLimitInput>)` | `SpendingLimitStatus` |
 
-`group_by` is `UsageGroupBy::Day`, `Agent`, `Model`, `Session`, or `User`. `range(from, to)` takes `YYYY-MM-DD` dates. `QuotaInput::new(reset_day)` sets the reset day and takes `.monthly_token_limit(...)` and `.monthly_request_limit(...)`; set at least one limit, and a limit you do not set goes out as `null`, which means unlimited. `.clear_quota()` sends `null` for the whole quota and removes it.
+`group_by` is `UsageGroupBy::Day`, `Agent`, `Model`, `Session`, or `User`. `range(from, to)` takes `YYYY-MM-DD` dates.
 
 ### `client.merchant_connection()`, `client.merchant_bindings()`, `client.merchant_usage_events()`
 
@@ -491,7 +491,7 @@ Monetization: bill your end users through your own Polar or Dodo account. Setup,
 
 ## Partial updates: unset keeps, `clear_*` sends null
 
-A setter you never call is not sent, so the server keeps the current value (or its default on create). A nullable field has a `clear_*` setter (`clear_model()`, `clear_thinking_level()`, `clear_agent_id()`, `clear_name()`, `clear_schedule()`, `clear_quota()`) that sends JSON `null` and clears it.
+A setter you never call is not sent, so the server keeps the current value (or its default on create). A nullable field has a `clear_*` setter (`clear_model()`, `clear_thinking_level()`, `clear_agent_id()`, `clear_name()`, `clear_schedule()`) that sends JSON `null` and clears it.
 
 ```rust
 use blazing_agents::Client;

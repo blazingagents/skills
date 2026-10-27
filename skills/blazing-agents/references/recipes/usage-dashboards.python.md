@@ -73,7 +73,7 @@ def customer_usage(signed_in_user_id: str) -> dict[str, object]:
     }
 ```
 
-## Step 4: Handle quota and plan outcomes
+## Step 4: Handle limit and plan outcomes
 
 ```python
 from blazing_agents import APIStatusError, BlazingAgents
@@ -88,8 +88,6 @@ def ask(prompt: str, verified_user_id: str) -> str:
             prompt=prompt,
         )
     except APIStatusError as error:
-        if error.code == "quota_exceeded":
-            return "Monthly limit reached."
         if error.code == "model_spending_limit_exceeded":
             return "Spending limit reached. Try again after it resets."
         if error.code in ("subscription_required", "usage_credit_required"):
@@ -107,7 +105,7 @@ def ask(prompt: str, verified_user_id: str) -> str:
 
 def run_status(verified_user_id: str, task_id: str, run_id: str) -> str:
     run = client.for_user(verified_user_id).tasks.get_run(task_id, run_id)
-    return "Paused by quota or billing" if run.status == "blocked" else run.status
+    return "Paused by a spending limit or billing" if run.status == "blocked" else run.status
 ```
 
 ## Step 5: Connect your Polar or Dodo account, then turn on the billing switch

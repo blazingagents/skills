@@ -46,7 +46,7 @@ Not the same as: an agent for your product. Build your own agents for your users
 
 ### Turn
 
-One run of an agent, whatever started it: a chat message, a one-off completion or structured-output call, a task run, a chat bot message, or a continuation after a tool approval. Every turn is checked against your quota before it runs and metered after, even if it fails or is stopped. A chat turn saves its messages only when it finishes. A failed or stopped turn saves nothing, except that a model spending limit stop keeps the output completed before it. Read the whole stream.
+One run of an agent, whatever started it: a chat message, a one-off completion or structured-output call, a task run, a chat bot message, or a continuation after a tool approval. Every turn is checked against your model spending limits before it runs and metered after, even if it fails or is stopped. A chat turn saves its messages only when it finishes. A failed or stopped turn saves nothing, except that a model spending limit stop keeps the output completed before it. Read the whole stream.
 
 Not the same as: a Session. A session holds many turns; one-off generation runs a turn with no session at all.
 
@@ -152,7 +152,7 @@ Not the same as: a Turn or a Session. A task is a definition you run many times.
 
 ### Task run
 
-One background execution of a task (`tr_...`), started on demand or by its schedule. It moves through `queued`, `running`, then `succeeded`, `failed`, `canceled`, or `blocked`, and gets a fresh session holding its transcript. `blocked` means a quota or billing check stopped it before running; it is not a failure. A task has at most one active run, and you pass an idempotency key so retries do not start duplicates.
+One background execution of a task (`tr_...`), started on demand or by its schedule. It moves through `queued`, `running`, then `succeeded`, `failed`, `canceled`, or `blocked`, and gets a fresh session holding its transcript. `blocked` means a spending limit or billing check stopped it before running; it is not a failure. A task has at most one active run, and you pass an idempotency key so retries do not start duplicates.
 
 Not the same as: a chat session. You poll or read a run later instead of streaming it to a user.
 
@@ -184,11 +184,11 @@ The token, request, and duration counts BA records for every turn, automatically
 
 Not the same as: your BA bill or plan credit. Usage is what your turns consumed; model costs are billed by your own Provider account.
 
-### Quota
+### Model spending limit
 
-An optional monthly ceiling on tokens, requests, or both that you set on your tenant, with a reset day. BA checks it before each turn; over the ceiling, chat and generation calls fail with `quota_exceeded` (HTTP 429) and task runs end as `blocked`. It is a safety valve against runaway loops: with no quota usage is unlimited, and a turn already running may overshoot.
+An optional estimated dollar allowance for one agent or for the whole tenant that resets on a schedule you choose. BA checks it before each model request; once it is spent, chat and generation calls fail with `model_spending_limit_exceeded` (HTTP 429) and task runs end as `blocked`. It is a safety valve against runaway loops: with no limit spending is unlimited, and a turn already running may overshoot by about one request. See [model spending limits](recipes/usage-dashboards.md#model-spending-limits).
 
-Not the same as: your plan, usage credit, or rate limits. A quota is a limit you choose, not one BA sells you. Also not a model spending limit, which is an estimated dollar allowance per agent or for the whole tenant that resets on its own schedule and fails turns with `model_spending_limit_exceeded`. See [model spending limits](recipes/usage-dashboards.md#model-spending-limits).
+Not the same as: your plan, usage credit, or rate limits. A spending limit is one you choose, not one BA sells you, and it counts model tokens only.
 
 ## How they fit together
 
@@ -208,13 +208,13 @@ Tenant ── API key (your backend only)
   │
   ├─ Prompt (template used on any generation call)
   ├─ Admin Agent (managed by BA)
-  └─ Usage (per Turn, by agent/model/session/userId) ── checked against Quota
+  └─ Usage (per Turn, by agent/model/session/userId) ── checked against spending limits
 
 Attribution (userId, metadata) labels Agents, Workspaces, Prompts, Sessions,
 Tasks, Task runs, Memories, Artifacts, and Usage so you can filter per end user.
 ```
 
-Every path ends in a Turn: that is the unit BA runs, meters, and checks against your quota.
+Every path ends in a Turn: that is the unit BA runs, meters, and checks against your spending limits.
 
 ## Go deeper
 

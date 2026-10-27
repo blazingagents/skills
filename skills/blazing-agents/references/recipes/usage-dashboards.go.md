@@ -121,7 +121,7 @@ if err != nil {
 fmt.Println(string(body))
 ```
 
-## Step 4: Handle quota and plan outcomes
+## Step 4: Handle limit and plan outcomes
 
 ```go
 scoped, err := client.ForUser("app:user-42") // the verified signed-in user
@@ -132,8 +132,6 @@ answer, err := scoped.Generation.Completion(ctx, agentID, ba.Text("Summarize thi
 var apiErr *ba.APIError
 if errors.As(err, &apiErr) {
 	switch apiErr.Code {
-	case ba.ErrorCodeQuotaExceeded:
-		answer = "Monthly limit reached."
 	case ba.ErrorCodeModelSpendingLimitExceeded:
 		answer = "Spending limit reached. Try again after it resets."
 	case ba.ErrorCodeSubscriptionRequired, ba.ErrorCodeUsageCreditRequired:
@@ -156,7 +154,7 @@ if err != nil {
 }
 status := string(run.Status)
 if run.Status == ba.TaskRunStatusBlocked {
-	status = "Paused by quota or billing"
+	status = "Paused by a spending limit or billing"
 }
 fmt.Println(status)
 ```

@@ -412,7 +412,7 @@ A network policy is `ba.NetworkPolicyUnrestricted{}`, `ba.NetworkPolicyAllowlist
 | `Test(mcpConnectionID)` | `*ba.MCPConnectionTest` (`OK`; `Server`, `ToolNames`, `Latency`, `ToolCount` when it passed; `Error` when it failed) |
 | `Reconnect(mcpConnectionID, ba.ReconnectMCPConnectionParams{URL, Auth})` | `*ba.MCPConnectionReconnectResult` (`Status`, `Connection`) |
 
-`Auth` is a `ba.MCPAuth`, one value per auth type with only the fields that type takes: `ba.MCPAuthNone{}`, `ba.MCPAuthBearer{Token}`, `ba.MCPAuthOAuthAuthorizationCode{ClientID, ClientSecret, Scope}`, or `ba.MCPAuthOAuthClientCredentials{ClientID, ClientSecret, Scope}`; every secret is a `ba.Secret`. A nil `Auth` fails with `*ba.ArgumentError`. Attach a connection to an Agent through `client.Agents.Create` / `Update` `MCPConnectionIDs`. OAuth sign-in for an `oauth_authorization_code` connection happens in the dashboard: a Tenant administrator opens MCP connections, clicks **Connect**, and signs in to the server. The connection stays `needs_auth` until then, and an API key cannot start this sign-in.
+`Auth` is a `ba.MCPAuth`, one value per auth type with only the fields that type takes: `ba.MCPAuthNone{}`, `ba.MCPAuthBearer{Token}`, or `ba.MCPAuthOAuthAuthorizationCode{ClientID, ClientSecret, Scope}`; every secret is a `ba.Secret`. A nil `Auth` fails with `*ba.ArgumentError`. Attach a connection to an Agent through `client.Agents.Create` / `Update` `MCPConnectionIDs`. OAuth sign-in for an `oauth_authorization_code` connection happens in the dashboard: a Tenant administrator opens MCP connections, clicks **Connect**, and signs in to the server. The connection stays `needs_auth` until then, and an API key cannot start this sign-in.
 
 ### `client.Memories` (both clients)
 
@@ -473,11 +473,11 @@ Every bot token and signing secret is a `ba.Secret` built with `ba.NewSecret`. S
 | `Usage.ForAgent(agentID, ba.AgentUsageParams{DateRange, SessionID, UserID, GroupBy, Limit})` | `*ba.Usage` |
 | `Usage.Sessions(ba.SessionUsageParams{SessionIDs, DateRange})` | `*ba.SessionUsage` (`Data`: one `ba.SessionUsageEntry` per ID; 1 to 100 IDs); also on `UserClient.Usage` |
 | `Tenant.Get()` | `*ba.TenantSettings` |
-| `Tenant.Update(ba.UpdateTenantParams{Name, MonetizationEnabled, Quota})` | `*ba.TenantSettings`. Turning `MonetizationEnabled` off drops usage events the merchant has not accepted |
+| `Tenant.Update(ba.UpdateTenantParams{Name, MonetizationEnabled})` | `*ba.TenantSettings`. Turning `MonetizationEnabled` off drops usage events the merchant has not accepted |
 | `SpendingLimits.GetTenant()` / `SpendingLimits.UpdateTenant(ba.UpdateSpendingLimitParams{SpendingLimit})` | `*ba.ModelSpendingLimitStatus` |
 | `SpendingLimits.GetAgent(agentID)` / `SpendingLimits.UpdateAgent(agentID, ba.UpdateSpendingLimitParams{SpendingLimit})` | `*ba.ModelSpendingLimitStatus`. See [model spending limits](recipes/usage-dashboards.md#model-spending-limits) |
 
-`GroupBy` is `ba.UsageGroupByDay`, `Agent`, `Model`, `Session`, or `User`. `DateRange` is an embedded `*ba.DateRange{From, To}` of `ba.Date{Year, Month, Day}` values; `nil` sends neither bound. `SessionID` and `UserID` filters are `*string`, and `new("")` sends an empty filter that matches usage with no label. `Quota` is a `ba.Nullable[ba.QuotaInput]`; `ba.QuotaInput{ResetDay, MonthlyTokenLimit, MonthlyRequestLimit}` needs at least one limit set, and sends `null` for a limit you leave `nil`, which means unlimited. `ba.Null[ba.QuotaInput]()` sends `null` for the whole quota and removes it. `SpendingLimit` is a `*ba.ModelSpendingLimit{AmountUSD, ResetStartDate, ResetInterval}`; `nil` removes the limit.
+`GroupBy` is `ba.UsageGroupByDay`, `Agent`, `Model`, `Session`, or `User`. `DateRange` is an embedded `*ba.DateRange{From, To}` of `ba.Date{Year, Month, Day}` values; `nil` sends neither bound. `SessionID` and `UserID` filters are `*string`, and `new("")` sends an empty filter that matches usage with no label. `SpendingLimit` is a `*ba.ModelSpendingLimit{AmountUSD, ResetStartDate, ResetInterval}`; `nil` removes the limit.
 
 ### `client.MerchantConnection`, `client.MerchantBindings`, `client.MerchantUsageEvents`
 

@@ -342,7 +342,7 @@ What each receipt state means and how the client-held queue works are in [Add ch
 | `test(mcp_connection_id)` | `McpConnectionTestResult` |
 | `reconnect(mcp_connection_id, *, url, auth_type, bearer_token=..., client_id=..., client_secret=..., scope=...)` | `McpConnectionReconnectResult` |
 
-`auth_type` is `"none"`, `"bearer"` (needs `bearer_token`), `"oauth_client_credentials"` (needs `client_id` and `client_secret`), or `"oauth_authorization_code"`. Attach a connection to an Agent through `agents.create/update(mcp_connection_ids=[...])`. OAuth sign-in for an `oauth_authorization_code` connection happens in the dashboard: a Tenant administrator opens MCP connections, clicks **Connect**, and signs in to the server. The connection stays `needs_auth` until then, and an API key cannot start this sign-in.
+`auth_type` is `"none"`, `"bearer"` (needs `bearer_token`), or `"oauth_authorization_code"` (optional `client_id` and `client_secret` together, optional `scope`). Attach a connection to an Agent through `agents.create/update(mcp_connection_ids=[...])`. OAuth sign-in for an `oauth_authorization_code` connection happens in the dashboard: a Tenant administrator opens MCP connections, clicks **Connect**, and signs in to the server. The connection stays `needs_auth` until then, and an API key cannot start this sign-in.
 
 ### `client.memories`
 
@@ -401,7 +401,7 @@ Run a saved Prompt with `client.chat(prompt_id=..., variables={...})` or the oth
 | `usage.get_for_agent(agent_id, *, from_=..., to=..., session_id=..., user_id=..., group_by=..., limit=...)` | `Usage` |
 | `usage.sessions(session_ids, *, from_=..., to=...)` | `SessionUsageList` (`data`: one `SessionUsage` with `session_id` and `totals` per ID, in request order; 1 to 100 distinct IDs; any missing or out-of-scope Session raises `not_found` for the whole call) |
 | `tenant.get()` | `TenantSettings` |
-| `tenant.update(*, name=..., quota=..., monetization_enabled=...)` | `TenantSettings` (`name`, `quota`, `monetization_enabled`, `deletion`). Turning `monetization_enabled` off drops usage events the merchant has not accepted. |
+| `tenant.update(*, name=..., monetization_enabled=...)` | `TenantSettings` (`name`, `monetization_enabled`, `deletion`). Turning `monetization_enabled` off drops usage events the merchant has not accepted. |
 | `tenant.get_spending_limit()` / `tenant.update_spending_limit(*, spending_limit)` | `SpendingLimitResponse` |
 
 `group_by` is `"day"`, `"agent"`, `"model"`, `"session"`, or `"user"`. `from_` has a trailing underscore because `from` is a Python keyword.
@@ -501,7 +501,7 @@ All SDK exceptions inherit from `BlazingAgentsError`. Import them from `blazing_
 | `ObjectJSONDecodeError` | Structured output is invalid JSON (subclass of `StreamError`) | `json_error` |
 | `ObjectValidationError` | Structured output does not match `output_type` (subclass of `StreamError`) | `validation_error` |
 
-The SDK raises plain `ValueError` or `TypeError` before sending only when it cannot build the request: an empty, `.` or `..` path ID, an invalid `for_user()` ID, an upload without a filename, or arguments that cannot form one request body, such as both `message` and `prompt_id`. The API checks every other rule, such as `provider_id` without `model`, an empty update, or a malformed Task `schedule` or tenant `quota`, and rejects it with `APIStatusError` (400, `validation_failed`).
+The SDK raises plain `ValueError` or `TypeError` before sending only when it cannot build the request: an empty, `.` or `..` path ID, an invalid `for_user()` ID, an upload without a filename, or arguments that cannot form one request body, such as both `message` and `prompt_id`. The API checks every other rule, such as `provider_id` without `model`, an empty update, or a malformed Task `schedule`, and rejects it with `APIStatusError` (400, `validation_failed`).
 
 ```python
 from blazing_agents import (

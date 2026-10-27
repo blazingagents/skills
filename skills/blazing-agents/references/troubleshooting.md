@@ -42,10 +42,9 @@ Use `BlazingAgentsError.isInstance(error)` instead of `instanceof`, which fails 
 | `provider_required` (400) | The saved Agent configuration has no Provider and model. | [Set a Provider and model](#agent-without-a-provider-or-model). |
 | `model_not_found` (400) or `model_validation_unavailable` (503) | The model ID is not in the Provider's list, or the Provider could not be reached or rejected the stored key. | [Fix the model or the Provider](#provider-credential-rejected). |
 | Turn fails right after it starts, no code | The Provider rejected the stored key or the request during the turn. | [Replace the Provider](#provider-credential-rejected). |
-| `quota_exceeded` (429), or a Task run ends `blocked` | Usage in the current window is at or above your tenant quota. | [Wait for reset or raise the quota](#quota-blocked). |
-| `model_spending_limit_exceeded` (429), a `data-ba-error` part with that code in a chat stream, or a Task run ends `blocked` with a spending-limit `error` | The Agent's or the account's model spending limit has nothing left this period. | [Wait for the reset or change the limit](#quota-blocked). |
-| `subscription_required` or `usage_credit_required` (402) | No active plan, or no usage credit left. | [Fix billing](#quota-blocked). |
-| `rate_limited` (429) | Too many interactive turns at once, or resources created too fast. | [Back off](#quota-blocked). |
+| `model_spending_limit_exceeded` (429), a `data-ba-error` part with that code in a chat stream, or a Task run ends `blocked` with a spending-limit `error` | The Agent's or the account's model spending limit has nothing left this period. | [Wait for the reset or change the limit](#limit-and-billing-blocked). |
+| `subscription_required` or `usage_credit_required` (402) | No active plan, or no usage credit left. | [Fix billing](#limit-and-billing-blocked). |
+| `rate_limited` (429) | Too many interactive turns at once, or resources created too fast. | [Back off](#limit-and-billing-blocked). |
 | `session_busy` (409) | Read `details.reason`: `turn_running` (another turn holds the Session), `approval_pending`, or `continuation_waiting`. | [Steer or wait for `turn_running`; decide the approval round for the others](#session-busy). |
 | `tenant_deleting` (409) | Account deletion is scheduled. New turns and Task runs are refused and queued runs are cancelled. | Cancel the deletion in the dashboard within 24 hours to resume service. |
 | `session_turn_unresponsive` (409) | The Session's previous turn stopped responding and still holds the Session. The Session frees within a minute. | [Wait for `Retry-After`, read the history, then resend under a new message ID](#session-busy). |
@@ -113,9 +112,8 @@ To fix it:
 2. Update each Agent with the new `providerId` and `model` together.
 3. Delete the old Provider. `provider_in_use` (409) lists Agents still on it in `details.agentIds`. `provider_historical_use` (409) lists saved Sessions and queued or running Task runs in `details.sessionIds` and `details.taskRunIds`. Move those first, or delete with `confirmSnapshotInvalidation: true` (`confirm_snapshot_invalidation=True` in Python, `.confirm_snapshot_invalidation(true)` in Rust, `ConfirmSnapshotInvalidation: new(true)` in Go) and accept that work needing the deleted Provider then fails with `provider_not_found`.
 
-## Quota blocked
+## Limit and billing blocked
 
-- `quota_exceeded` (429): usage in the current window reached the tenant quota you set, so the turn did not start. A Task run in the same situation ends as `blocked`, not `failed`. Wait for the reset day, or raise or remove the quota with `client.tenant.patch()` (`client.tenant.update()` in Python, `client.tenant().update()` in Rust, `client.Tenant.Update()` in Go). Retrying before the reset fails the same way.
 - `model_spending_limit_exceeded` (429): a model spending limit stopped the turn. `error.details` holds the `scope` (`agent`, `tenant`, or `both`), the `reason` (`exhausted`, or `unpriced` when the model has no price or a response's cost was not reported), and `nextResetAt`. Show those to the user and never retry automatically. A Task run refused before any model work ends `blocked`; one stopped after model work started ends `failed`, and the work that finished stays in its transcript. Only a person who owns the limit should raise it; see [model spending limits](recipes/usage-dashboards.md#model-spending-limits).
 - `subscription_required` (402): no active paid plan. Choose one in the dashboard.
 - `usage_credit_required` (402): the plan is active but its usage credit is used up. Add credit in the dashboard.
@@ -250,6 +248,6 @@ See [Slack and Telegram](recipes/slack-and-telegram.md) for setup.
 - [Tool approvals](https://docs.blazingagents.com/agents/tools/tool-approvals)
 - [MCP tools](https://docs.blazingagents.com/agents/tools/mcp-tools)
 - [Providers and models](https://docs.blazingagents.com/agents/providers-and-models)
-- [Usage and quotas](https://docs.blazingagents.com/platform/usage-and-quotas)
+- [Usage and spending limits](https://docs.blazingagents.com/platform/usage-and-spending-limits)
 - [Slack and Telegram](https://docs.blazingagents.com/platform/chat-integrations)
 - [Build a chatbot](https://docs.blazingagents.com/getting-started/chatbot)

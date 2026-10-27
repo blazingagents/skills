@@ -102,7 +102,7 @@ let body = serde_json::json!({
 });
 ```
 
-## Step 4: Handle quota and plan outcomes
+## Step 4: Handle limit and plan outcomes
 
 ```rust
 use blazing_agents::error::ErrorCode;
@@ -116,7 +116,6 @@ let answer = match client
 {
     Ok(text) => text,
     Err(Error::Api(error)) => match error.code() {
-        ErrorCode::QuotaExceeded => "Monthly limit reached.".to_owned(),
         ErrorCode::ModelSpendingLimitExceeded => {
             "Spending limit reached. Try again after it resets.".to_owned()
         }
@@ -135,7 +134,7 @@ let run = client
     .get_run("tk_0123456789abcdef", "tr_0123456789abcdef")
     .await?;
 let status = if run.status == TaskRunStatus::Blocked {
-    "Paused by quota or billing".to_owned()
+    "Paused by a spending limit or billing".to_owned()
 } else {
     run.status.as_str().to_owned()
 };

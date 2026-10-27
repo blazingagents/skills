@@ -199,14 +199,13 @@ the chat. A message sent while the Agent answers is steered into that answer.
 Build: [Slack and Telegram](recipes/slack-and-telegram.md),
 [Chat in your app](recipes/chat-in-your-app.md).
 
-## Cost controls: quota, spending limit, or End-user guardrail
+## Cost controls: spending limit or End-user guardrail
 
-- **Quota**: a token or request ceiling for the whole Tenant.
 - **Model spending limit**: an estimated dollar ceiling per Agent or Tenant.
 - **Merchant guardrail**: refuse Turns for End-users whose own plan or balance
   fails, when the user bills End-users through Polar or Dodo.
 
-Deciding facts: all three can be overshot by a Turn already running. To stop
+Deciding facts: both can be overshot by a Turn already running. To stop
 spend at once, disable the Agent, stop the Turn with `sessions.stop()`, or
 cancel the Task run. BA refuses Turns with `usage_credit_required` (402) when
 the Tenant's own Usage credit runs out. A model

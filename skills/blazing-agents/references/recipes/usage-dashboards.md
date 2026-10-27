@@ -1,6 +1,6 @@
 # Show usage and bill your users
 
-You will build a usage dashboard from one call, drill into usage by user, Agent, or model, handle quota outcomes, and charge each of your users for their model tokens through your own Polar or Dodo account.
+You will build a usage dashboard from one call, drill into usage by user, Agent, or model, handle limit outcomes, and charge each of your users for their model tokens through your own Polar or Dodo account.
 
 ## When to use this
 
@@ -8,7 +8,7 @@ You want an internal page that shows token and request trends, a per-customer us
 
 ## How it works
 
-Every Turn records input tokens, output tokens, one request, and duration, together with its Agent, model, Session, and Attribution. Failed and canceled Turns are recorded too. `usage.overview()` returns what a dashboard needs in one call: exact totals, one bucket per day, the top Agents, top users, and a model mix. `usage.get()` covers your whole account and `usage.getForAgent()` covers one Agent; both group by one dimension and filter by date, Agent, Session, or `userId`. A quota is an optional monthly ceiling checked before each Turn starts. When it is reached, new chat and generation calls fail with `quota_exceeded` and new Task runs end as `blocked`.
+Every Turn records input tokens, output tokens, one request, and duration, together with its Agent, model, Session, and Attribution. Failed and canceled Turns are recorded too. `usage.overview()` returns what a dashboard needs in one call: exact totals, one bucket per day, the top Agents, top users, and a model mix. `usage.get()` covers your whole account and `usage.getForAgent()` covers one Agent; both group by one dimension and filter by date, Agent, Session, or `userId`. A model spending limit is an optional dollar allowance checked before each model request. When it is spent, new chat and generation calls fail with `model_spending_limit_exceeded` and new Task runs end as `blocked`.
 
 Billing is off until you turn on the tenant switch `monetizationEnabled`. Once on, each Turn sends one `ba.model_tokens.v1` usage event to your Polar or Dodo account, tagged with the customer you linked to the Turn's `userId`. Your provider sets prices, allowances, and invoices; Blazing Agents never handles your customers' payments. An optional guard checks the user's plan or balance before each Turn starts. Set billing up from the dashboard or either SDK.
 
@@ -134,7 +134,7 @@ export async function customerUsage(signedInUserId: string) {
 }
 ```
 
-4. Handle quota and plan outcomes. A chat or generation call that starts over the ceiling throws `quota_exceeded`, one stopped by a model spending limit throws `model_spending_limit_exceeded`, and one refused by the billing guard from step 7 throws a `merchant_*` code. A Task run refused before it runs, by the quota, your Blazing Agents plan, the billing guard, or a model spending limit, ends with status `blocked` instead of `failed`. A spending limit that stops a Task run after model work started ends it `failed`. Make these calls on the signed-in user's End-user scoped client with an Agent that belongs to them. The scope sets the Turn's `userId`, which the billing guard checks.
+4. Handle limit and plan outcomes. A chat or generation call stopped by a model spending limit throws `model_spending_limit_exceeded`, and one refused by the billing guard from step 7 throws a `merchant_*` code. A Task run refused before it runs, by a model spending limit, your Blazing Agents plan, the billing guard, or a model spending limit, ends with status `blocked` instead of `failed`. A spending limit that stops a Task run after model work started ends it `failed`. Make these calls on the signed-in user's End-user scoped client with an Agent that belongs to them. The scope sets the Turn's `userId`, which the billing guard checks.
 
 ```ts
 import { BlazingAgents, BlazingAgentsError } from "@blazingagents/sdk";
@@ -153,8 +153,6 @@ export async function ask(prompt: string, verifiedUserId: string): Promise<strin
   } catch (error) {
     if (BlazingAgentsError.isInstance(error)) {
       switch (error.code) {
-        case "quota_exceeded":
-          return "Monthly limit reached.";
         case "model_spending_limit_exceeded":
           return "Spending limit reached. Try again after it resets.";
         case "subscription_required":
@@ -175,7 +173,7 @@ export async function ask(prompt: string, verifiedUserId: string): Promise<strin
 
 export async function runStatus(verifiedUserId: string, taskId: string, runId: string) {
   const run = await tenant.forUser(verifiedUserId).tasks.getRun({ taskId, runId });
-  return run.status === "blocked" ? "Paused by quota or billing" : run.status;
+  return run.status === "blocked" ? "Paused by a spending limit or billing" : run.status;
 }
 ```
 
@@ -277,8 +275,8 @@ Send 1 to 100 distinct IDs per request. The response preserves their order and r
 - `userId: ""` in a bucket is real usage with no user label. `userId: null` means the query was not grouped by user. Show `""` as a row such as "No user".
 - `from` and `to` are inclusive UTC dates. Pass both or neither (the default is the last 30 days), and keep the range to 31 days or fewer, or the call fails with `validation_failed`. Page longer periods month by month.
 - Usage from `client.usage` is summed per day and includes finished Turns only. Show it to people, but charge customers from the events your provider receives, not from these numbers.
-- The quota and guard checks run before a Turn starts, so concurrent or long Turns can overshoot a ceiling or balance. Alert well before the limit.
-- A `blocked` Task run did not execute. Do not retry it in a loop; the next scheduled fire runs normally once the quota allows.
+- The spending limit and guard checks run before a Turn starts, so concurrent or long Turns can overshoot a limit or balance. Alert well before the limit.
+- A `blocked` Task run did not execute. Do not retry it in a loop; the next scheduled fire runs normally once the limit allows.
 - `subscription_required` and `usage_credit_required` are about your own Blazing Agents plan. `merchant_*` codes are about your end user's plan in your provider. Show them different messages.
 - A Turn with no `userId`, or a `userId` you never linked, records its event as `discarded` with `lastErrorCode` `MERCHANT_CUSTOMER_UNMAPPED`, and that usage is never billed. Link the user in step 6 before their first Turn, or turn on the guard so such a Turn fails with `merchant_customer_unmapped`.
 - Turning `monetizationEnabled` off discards every event your provider has not accepted yet, and turning it back on does not backfill them.
@@ -289,13 +287,13 @@ Send 1 to 100 distinct IDs per request. The response preserves their order and r
 - Run a chat on the scoped client for `app:test-user`, then call `usage.get()` on that client. `totals.requestCount` has grown by one.
 - Call `usage.overview()` and add up every `byModel` bucket, including the remainder. The sums match `totals`.
 - Call `usage.overview()` with a 7-day range. `daily` has exactly 7 buckets, including days with zero usage.
-- Set a very low quota on a test account, then start a chat. Your app shows the `quota_exceeded` message, and a submitted Task run ends as `blocked`.
+- Set a very low spending limit on a test account, then start a chat. Your app shows the `model_spending_limit_exceeded` message, and a submitted Task run ends as `blocked`.
 - With a sandbox connection, link a test user and run one chat as them. `merchantUsageEvents.list()` shows an `accepted` event with the Turn's tokens, and the event appears on the customer in your provider.
 - Run a chat as a user you never linked. Its event is `discarded` with `lastErrorCode` `MERCHANT_CUSTOMER_UNMAPPED`.
 
 ## Go deeper
 
-- [Usage and quotas](https://docs.blazingagents.com/platform/usage-and-quotas)
+- [Usage and spending limits](https://docs.blazingagents.com/platform/usage-and-spending-limits)
 - [Bill your users for model tokens](https://docs.blazingagents.com/platform/monetization)
 - [Usage: TypeScript](https://docs.blazingagents.com/sdk/typescript/usage), [Python](https://docs.blazingagents.com/sdk/python/usage), [REST](https://docs.blazingagents.com/api-reference/rest-api/usage)
 - [Tenant settings: TypeScript](https://docs.blazingagents.com/sdk/typescript/tenant)

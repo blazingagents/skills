@@ -53,7 +53,7 @@ developer wants to write the agent loop step by step.
 | A person or a reviewing model approving risky tool calls | [Human approval](references/recipes/human-approval.md) |
 | The same agent in Slack or Telegram | [Slack and Telegram](references/recipes/slack-and-telegram.md) |
 | Better instructions, reusable prompts, Skills, Memory, saved configuration snapshots | [Shape agent behavior](references/recipes/shape-agent-behavior.md) |
-| Usage dashboards, quotas, and billing end users for tokens | [Usage and billing](references/recipes/usage-dashboards.md) |
+| Usage dashboards, spending limits, and billing end users for tokens | [Usage and billing](references/recipes/usage-dashboards.md) |
 
 ## Workflow
 

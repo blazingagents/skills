@@ -132,7 +132,7 @@ export async function waitForRun(verifiedUserId: string, taskId: string, runId: 
 }
 ```
 
-Handle each final status: `succeeded` means the last assistant message is the result. `failed` carries `error`; redact it before logging. `blocked` means a quota or billing check stopped the run before it started; it is not a failure and its transcript may be empty. `canceled` means you stopped it.
+Handle each final status: `succeeded` means the last assistant message is the result. `failed` carries `error`; redact it before logging. `blocked` means a spending limit or billing check stopped the run before it started; it is not a failure and its transcript may be empty. `canceled` means you stopped it.
 
 5. Find runs the schedule started. List a Task's runs, newest first, or list the user's Tasks with each one's `latestRun` embedded. The scoped list returns only that user's Tasks.
 
@@ -195,6 +195,6 @@ Cancel asks the run to stop at its next safe point. Keep polling until a final s
 
 - [Tasks](https://docs.blazingagents.com/automation/tasks), [Task runs](https://docs.blazingagents.com/automation/task-runs), [Schedules](https://docs.blazingagents.com/automation/schedules)
 - [Tool approvals](https://docs.blazingagents.com/agents/tools/tool-approvals) for `approvalInTasks`
-- [Limits and reliability](https://docs.blazingagents.com/platform/limits-and-reliability) and [Usage and quotas](https://docs.blazingagents.com/platform/usage-and-quotas) for retries and `blocked` runs
+- [Limits and reliability](https://docs.blazingagents.com/platform/limits-and-reliability) and [Usage and spending limits](https://docs.blazingagents.com/platform/usage-and-spending-limits) for retries and `blocked` runs
 - [Tenancy and end-user attribution](https://docs.blazingagents.com/platform/tenancy-and-attribution)
 - SDK reference: [TypeScript](https://docs.blazingagents.com/sdk/typescript/tasks), [Python](https://docs.blazingagents.com/sdk/python/tasks)
