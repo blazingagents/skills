@@ -152,7 +152,7 @@ if (tsFiles.length) {
 /** The pinned PyPI release, which `just sdk-release` moves, unless SNIPPETS_PYTHON_SDK names a wheel. */
 function pythonSdk() {
   const sdk = process.env.SNIPPETS_PYTHON_SDK;
-  if (!sdk) return "blazing_agents==0.31.0";
+  if (!sdk) return "blazing_agents==0.32.0";
   console.log(`Python snippets use ${sdk}`);
   return resolve(sdk);
 }
