@@ -28,7 +28,7 @@ current value on that page.
 | Shell command in the Workspace ([row][shell-command]) | 30 seconds, then killed | Split `npm install`, builds, and test suites into commands that each finish within 30 seconds, or prepare them before the Agent needs them. |
 | Backend function call ([row][backend-function-call]) | 60 seconds | The handler must answer in time; hand slow work to a Task. |
 | MCP tool call ([row][mcp-timeouts]) | 60 seconds | Make slow MCP tools start work and return quickly. |
-| Task run lifetime ([row][task-life]) | 35 minutes | The 30-minute Turn deadline fires first. |
+| Task run lifetime ([row][task-life]) | 30 minutes from the run starting `running`, fixed | The run ends `failed` with `Task run deadline exceeded`. Time spent `queued` does not count. |
 | Active runs per Task ([row][active-run]) | 1 | A schedule fire that lands while a run is active is skipped, not queued. |
 | Schedule interval ([row][interval]) | At least 1 minute | Fires can start up to about 30 seconds late ([row][scheduled-run-start]). Missed fires are not caught up. |
 

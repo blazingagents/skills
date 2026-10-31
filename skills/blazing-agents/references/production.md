@@ -147,7 +147,7 @@ When a Session or run behaves as if an edit never happened, read the configurati
 A model spending limit is an estimated dollar allowance for one Agent or the whole Tenant, with a reset schedule. Set it with `client.tenant.updateSpendingLimit()` or `client.agents.updateSpendingLimit()`. With no limit, spending is unlimited.
 
 - Blazing Agents checks the limit before each model request. A running turn can finish one request past it, and concurrent turns can overshoot. Leave headroom.
-- A Task run refused by a limit, your plan or your usage credit ends as `blocked`, not `failed`, and never runs. Treat `blocked` as its own outcome in your alerts.
+- A Task run refused before it starts ends as `blocked`, not `failed`, and never runs: no plan, no usage credit, a spent model spending limit, a monetization guard refusal, a disabled Agent, or a Tenant being deleted. Its `errorCode` names the refusal. Treat `blocked` as its own outcome in your alerts.
 - A model spending limit returns `model_spending_limit_exceeded` (HTTP 429) before streaming, or a `data-ba-error` part with that code when it stops a chat mid-stream. Show the user when it resets and never retry automatically; see [chat in your app](recipes/chat-in-your-app.md) and [model spending limits](recipes/usage-dashboards.md#model-spending-limits).
 - Without an active plan, almost every API call returns `subscription_required` (HTTP 402), reads included; only stopping a Turn and cancelling a Task run still work. Used-up usage credit returns `usage_credit_required` (HTTP 402) for a Turn. Both end a Task run as `blocked`.
 - Too many interactive turns at once returns `rate_limited` (HTTP 429) with no `Retry-After`; stateless calls share that limit. Extra Task runs wait as `queued` instead.
