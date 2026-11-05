@@ -24,6 +24,8 @@ const banned = [
   "ba-platform",
   "`ba[ `]",
   "@blazingagents/cli",
+  "on Developer",
+  "100 on Pro",
 ].map((term) => ({ term, pattern: new RegExp(term, "i") }));
 
 let failures = 0;

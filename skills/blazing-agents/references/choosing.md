@@ -21,11 +21,11 @@ case, and say what would change the answer.
 
 Deciding facts:
 
-- Interactive Turns and stateless generation share one concurrency pool (25
-  on Developer, 50 on Pro). A request over it fails at once with
-  `429 rate_limited` and no `Retry-After`, so back off in your backend. Task
-  runs have their own pool (50 or 100), and extra runs wait as `queued`. Move background work to
-  Tasks so it never takes a chat user's slot.
+- Interactive Turns and stateless generation share one concurrency pool of
+  50. A request over it fails at once with `429 rate_limited` and no
+  `Retry-After`, so back off in your backend. Task runs have their own pool
+  of 40, and extra runs wait as `queued`. Move background work to Tasks so
+  it never takes a chat user's slot.
 - Every Turn stops at the Turn deadline (30 minutes) and after 64 model
   steps. Split longer work into several Task runs.
 - A Task has at most one active run; a schedule fire that lands while one runs
