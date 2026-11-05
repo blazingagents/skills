@@ -181,6 +181,14 @@ test("terms validation reports banned terms with location and accepts clean pros
   const stalePlan = run(dir, "check-terms.mjs");
   assert.equal(stalePlan.status, 1);
   assert.match(stalePlan.stderr, /banned term "on Developer"/);
+  file(
+    dir,
+    "skills/example/SKILL.md",
+    "Each shell command is killed after 30 seconds.",
+  );
+  const staleShell = run(dir, "check-terms.mjs");
+  assert.equal(staleShell.status, 1);
+  assert.match(staleShell.stderr, /banned term "killed after 30 seconds"/);
 });
 
 test("snippet checker maps diagnostics and rejects compiler failures", async (t) => {

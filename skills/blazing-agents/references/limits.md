@@ -25,7 +25,7 @@ current value on that page.
 | --- | --- | --- |
 | Turn deadline ([row][deadline]) | 30 minutes, fixed | The Turn stops; no setting changes it. Split longer work into several Task runs. |
 | Model steps per Turn ([row][steps]) | 64 | A step is one model call; long tool loops end here. |
-| Shell command in the Workspace ([row][shell-command]) | 30 seconds, then killed | Split `npm install`, builds, and test suites into commands that each finish within 30 seconds, or prepare them before the Agent needs them. |
+| Shell command in the Workspace ([row][shell-command]) | no run-time kill; `bash` starts a job and returns after `yieldMs` (default 10 s, max 60 s) | Follow long work with `bash_output` / `bash_write` / `bash_kill`. At most 8 jobs run at once; a job lasts for the Turn. |
 | Backend function call ([row][backend-function-call]) | 60 seconds | The handler must answer in time; hand slow work to a Task. |
 | MCP tool call ([row][mcp-timeouts]) | 60 seconds | Make slow MCP tools start work and return quickly. |
 | Task run lifetime ([row][task-life]) | 30 minutes from the run starting `running`, fixed | The run ends `failed` with `Task run deadline exceeded`. Time spent `queued` does not count. |

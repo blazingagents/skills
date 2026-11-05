@@ -26,6 +26,7 @@ const banned = [
   "@blazingagents/cli",
   "on Developer",
   "100 on Pro",
+  "killed after 30 seconds",
 ].map((term) => ({ term, pattern: new RegExp(term, "i") }));
 
 let failures = 0;

@@ -151,8 +151,9 @@ API key and runs with full authority. Keys are created in the dashboard only.
 - **Plus**: files a later Session or Task run must find.
 - **Shared Workspace**: several Agents working on the same files.
 
-Deciding facts: the tier is permanent. Each shell command is killed after 30
-seconds, so long installs and test suites must be split or backgrounded. Plus
+Deciding facts: the tier is permanent. `bash` starts a followable job that is
+never killed for running long, so long installs can run across `bash_output`
+polls within the Turn. Plus
 discards saved files after 29 days unused, and a failed save starts the next
 run empty, so keep anything important in an Artifact or in git. Switching the
 network policy between unrestricted and restricted stops the Workspace, which
