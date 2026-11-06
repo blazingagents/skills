@@ -88,7 +88,7 @@ Not the same as: session history, a knowledge base, or files. Memory is small fa
 
 ### Workspace
 
-A file system and shell (`/workspace`) attached to an agent. Several agents can share one, and every session of every attached agent runs in the same `/workspace`, with no separation per session or per end user. On a shared agent without `forUser`, one end user's turn can read files another end user's turn wrote. Give users their own agent and Workspace when they must not see each other's files. The agent uses it only through the file tools you turn on, such as `read`, `write`, and `bash`. Compute starts on the first file or shell operation and is billed while the workspace runs; creating one is free. The workspace stops after about 10 minutes without an operation. Each shell command is killed after 30 seconds.
+A file system and shell (`/workspace`) attached to an agent. Several agents can share one, and every session of every attached agent runs in the same `/workspace`, with no separation per session or per end user. On a shared agent without `forUser`, one end user's turn can read files another end user's turn wrote. Give users their own agent and Workspace when they must not see each other's files. The agent uses it only through the file tools you turn on, such as `read`, `write`, and `bash`. Compute starts on the first file or shell operation and is billed while the workspace runs; creating one is free. The workspace stops after about 10 minutes without an operation. `bash` runs each command as a job that is never killed for running long: it returns when the command exits or after `yieldMs`, and the agent follows it with `bash_output`, `bash_write`, or `bash_kill`.
 
 Pick the tier when the workspace is created; it never changes:
 

@@ -168,7 +168,7 @@ Cancellation asks work to stop. It never undoes what already happened.
 
 ## Respect limits
 
-Check the design against [Limits](limits.md) before launch: concurrency, the 30-minute Turn deadline, the 30-second shell command limit, the creation rate for per-user Agents, and the shared Memory pool. Limits can change, so do not hard-code them in your code; validate against the values on [service limits](https://docs.blazingagents.com/api-reference/protocols/service-limits) and handle the error when one is reached.
+Check the design against [Limits](limits.md) before launch: concurrency, the 30-minute Turn deadline, the Workspace job limit (8 at once per Workspace), the creation rate for per-user Agents, and the shared Memory pool. Limits can change, so do not hard-code them in your code; validate against the values on [service limits](https://docs.blazingagents.com/api-reference/protocols/service-limits) and handle the error when one is reached.
 
 - Treat pagination cursors as opaque. Pass `nextCursor` back to the same call with the same filters.
 - Validate user input against the documented sizes before you send it, so your users see your message instead of `validation_failed`.
