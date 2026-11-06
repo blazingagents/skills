@@ -11,8 +11,8 @@ current value on that page.
 
 | Limit | Value | What it means for a design |
 | --- | --- | --- |
-| Interactive Turns running at once, per Tenant ([row][concurrent-turns]) | 25 on Developer, 50 on Pro | Chat, approval continuations, and stateless `completion()` / `object()` calls share this pool. Over it, the call fails at once with `429 rate_limited` and no `Retry-After`; nothing queues. 200 users connected is not 200 Turns, but bursts need backoff in your backend. |
-| Task runs running at once, per Tenant ([row][concurrent-task-runs]) | 50 on Developer, 100 on Pro | A separate pool. Extra runs wait as `queued` instead of failing, so move background work out of chat. |
+| Interactive Turns running at once, per Tenant ([row][concurrent-turns]) | 50 | Chat, approval continuations, and stateless `completion()` / `object()` calls share this pool. Over it, the call fails at once with `429 rate_limited` and no `Retry-After`; nothing queues. 200 users connected is not 200 Turns, but bursts need backoff in your backend. |
+| Task runs running at once, per Tenant ([row][concurrent-task-runs]) | 40 | A separate pool. Extra runs wait as `queued` instead of failing, so move background work out of chat. |
 | Agent, Task, and Workspace creation ([row][creation]) | 60 per minute and 1,000 per day, each kind | `429 rate_limited` with `Retry-After`. Create per-user Agents lazily on first use; bulk provisioning 10,000 users takes 10 days. |
 | Agents per Tenant | No plan cap | Per-user Agents are allowed. An idle Agent runs no compute. |
 | API keys per Tenant ([row][keys]) | 5 | Created only in the dashboard. |

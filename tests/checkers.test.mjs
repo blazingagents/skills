@@ -173,6 +173,14 @@ test("terms validation reports banned terms with location and accepts clean pros
   assert.equal(result.status, 1);
   assert.match(result.stderr, /SKILL.md:1:5: banned term "Supabase"/);
   assert.match(result.stderr, /1 banned term/);
+  file(
+    dir,
+    "skills/example/SKILL.md",
+    "Interactive Turns share one pool (25 on Developer, 50 on Pro).",
+  );
+  const stalePlan = run(dir, "check-terms.mjs");
+  assert.equal(stalePlan.status, 1);
+  assert.match(stalePlan.stderr, /banned term "on Developer"/);
 });
 
 test("snippet checker maps diagnostics and rejects compiler failures", async (t) => {
