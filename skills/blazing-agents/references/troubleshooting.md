@@ -57,7 +57,8 @@ Use `BlazingAgentsError.isInstance(error)` instead of `instanceof`, which fails 
 | A message sent while a turn ran never reaches the agent | BA holds no queue; the message was still waiting in the client. | [Send waiting messages after the turn settles](#session-input-errors). |
 | `invalid_cursor` (400) | The cursor was altered, came from another list, or was reused with different filters. | [Restart pagination](#invalid-cursor). |
 | Tool call never runs; the agent reports it was denied | The approval policy for this surface is `deny`, or `manual`/`auto` in a Task or stateless generation, where no person can approve. | [Change the policy or use chat](#tool-blocked-by-approval-policy). |
-| Turn fails with `mcp_connection_discovery_failed` (502), or the connection shows `needs_auth` | An attached MCP connection needs OAuth sign-in, or its server is down. | [Finish sign-in or detach](#mcp-authorization-missing). |
+| `mcp_connection_needs_auth` (409) on a turn, or a Task run ends `blocked` with it | An attached MCP connection has status `needs_auth`. The message and `details.connections` name it. Retrying fails until it is reconnected. | [Reconnect the named connection](#mcp-authorization-missing). |
+| `mcp_connection_discovery_failed` (502) on a turn | An attached MCP server is down or its tool list failed. | [Check the server or detach](#mcp-authorization-missing). |
 | Chat stream ends without a `finish` chunk, ends with a `data-ba-error` part with code `turn_interrupted`, or `stream_error` | The stream broke after it started: network drop, server error, a turn the platform cut, or your Stop. | [Reload history and let the user resend](#stream-ended-without-finish). |
 | Slack or Telegram bot stays silent; a health check shows `unknown` | The health check could not verify a setting. | [Check that setting by hand](#chat-connection-health-unknown). |
 
@@ -122,7 +123,7 @@ To fix it:
 
 ## Session busy
 
-`session_busy` (409) means the Session cannot take a new turn yet. Regeneration and deletion wait too. `error.details.reason` says why, and only the first reason clears by waiting:
+`session_busy` (409) means the Session cannot take a new turn yet. Regeneration waits too. `error.details.reason` says why, and only the first reason clears by waiting:
 
 - `turn_running`: another turn holds the Session, or an approval continuation is running. Steer it with `sessions.submitInput()`, or hold the message until the Session is idle.
 - `approval_pending`: a tool approval waits for a decision. List the Session's pending tool approvals and decide the round with `continueChat`. See [human approval](recipes/human-approval.md).
@@ -131,7 +132,7 @@ To fix it:
 - Show the error to your user, keep their draft, and let them send again once the work settles.
 - `session_version_mismatch` (409) means two turns ran on the same Session at once and this one was not saved. Read the Session's messages to see what was saved, then resend if needed.
 - To prevent both, steer the running turn with `sessions.submitInput()` or hold new messages in your client until the Session is idle, and send one chat turn at a time per Session.
-- Deleting a Session returns `session_busy` while any turn runs, or `session_turn_unresponsive` when the last turn stopped responding.
+- Deleting a Session returns `session_busy` with `turn_running` while a turn runs, a Task run's turn or an approval continuation included, or `session_turn_unresponsive` when the last turn stopped responding. An approval round never blocks deletion: deleting the Session fails a round that waits for its continue call.
 - `session_turn_unresponsive` (409) means the Session's previous turn stopped responding, for example because the platform restarted, and still holds the Session. The Session frees within a minute. A `session_busy` can come first while the stopped turn still looks busy. New chat, regeneration, approval continuations, and deletes all return the new code.
   - Wait for the `Retry-After` header (`error.headers` in TypeScript). It holds whole seconds, at most a minute, and `error.details.retryAfterSeconds` repeats the value. Sending earlier fails the same way.
   - Read the Session's messages before you resend, because the stopped turn may have saved its work.
@@ -171,7 +172,10 @@ To fix it:
 
 ## MCP authorization missing
 
-An MCP connection has a `status`: `connected`, `needs_auth`, or `error`. A connection using `oauth_authorization_code` starts as `needs_auth`, and returns to it after `reconnect()`. At the start of every turn, Blazing Agents loads the tools of every attached connection. A connection that needs sign-in, or a server that cannot be reached, fails the whole turn with `mcp_connection_discovery_failed` (502). Blazing Agents never runs the turn with fewer tools.
+An MCP connection has a `status`: `connected`, `needs_auth`, or `error`. A connection using `oauth_authorization_code` starts as `needs_auth`, and returns to it after `reconnect()`. At the start of every turn, Blazing Agents loads the tools of every attached connection. A failing connection fails the whole turn before the model runs, and Blazing Agents never runs the turn with fewer tools. The error message names the connection, and `error.details.connections` lists each failing one as `{ connectionId, status }`:
+
+- `mcp_connection_needs_auth` (409): the connection has status `needs_auth`. Retrying fails until someone reconnects the connection it names. A Task run that fails this way ends `blocked` with this `errorCode`.
+- `mcp_connection_discovery_failed` (502): the server could not be reached or its tool list failed. A retry can succeed once the server is back.
 
 Check the connection and run a live test:
 
