@@ -71,7 +71,7 @@ The client itself has the generation methods. Each call runs one metered Turn. T
 
 ### Chat returns raw SSE bytes and a Session ID
 
-`chat()` returns a `ChatStream`. It is a `Stream` whose items are the server's AI SDK UI message stream as raw SSE `Bytes`, one complete event per item, exactly as sent. The SDK does not decode it. Relay those bytes to your frontend, where `useChat` from `@ai-sdk/react` reads them.
+`chat()` returns a `ChatStream`. It is a `Stream` whose items are the server's AI SDK UI message stream as raw SSE `Bytes`, one complete event per item, exactly as sent. The SDK does not decode it. Relay those bytes to your frontend, where `useBlazingAgentsChat` from `@blazingagents/sdk/react` reads them.
 
 Call `chat` on `client.for_user(verified_user_id)?` whenever the Session belongs to one of your users. The scoped `UserClient` sends the user on every request, so BA answers `404` for a Session ID, Agent, or Workspace that user does not own, and a `sessionId` from the browser is safe to pass back. On the unscoped `Client` the same call would resume any Session in your Tenant.
 
@@ -99,7 +99,7 @@ async fn start_chat(
 }
 ```
 
-To relay, turn the stream into your framework's streaming body. In axum that is `Body::from_stream(stream)` with the `x-vercel-ai-ui-message-stream: v1` header, plus `x-ba-turn-id` (the running Turn's `turn_...` ID, used for Stop). When the call started a new Session, also copy the response's `location` header from `stream.meta().headers()`: `BlazingAgentsChatTransport` in your frontend reads the new Session ID from that header.
+To relay, turn the stream into your framework's streaming body. In axum that is `Body::from_stream(stream)` with the `x-vercel-ai-ui-message-stream: v1` header, plus `x-ba-turn-id` (the running Turn's `turn_...` ID, used for Stop). When the call started a new Session, also copy the response's `location` header from `stream.meta().headers()`: `useBlazingAgentsChat` in your frontend reads the new Session ID from that header. The relay in [Add chat to your app: Rust code](recipes/chat-in-your-app.rust.md) answers every operation the hook sends.
 
 ```rust
 use axum::body::Body;

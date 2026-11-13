@@ -48,7 +48,7 @@ await client.agents.update({
 });
 ```
 
-2. After a chat stream ends, list the Session's approvals on your backend and send the pending ones to the reviewer. In a `useChat` UI, the paused Turn ends with a tool part in the `approval-requested` state; use that as the cue to fetch this list. Here the signed-in user reviews their own Session: the backend reads the user's Agent ID from trusted state, validates the Session ID, and calls BA under that user's scope, so BA rejects another user's Session. For a separate reviewer role, check it in your backend and scope the calls to the Session's owner.
+2. After a chat stream ends, list the Session's approvals on your backend and send the pending ones to the reviewer. In a chat UI built on `useBlazingAgentsChat`, the paused Turn ends with a tool part in the `approval-requested` state; use that as the cue to fetch this list. Here the signed-in user reviews their own Session: the backend reads the user's Agent ID from trusted state, validates the Session ID, and calls BA under that user's scope, so BA rejects another user's Session. For a separate reviewer role, check it in your backend and scope the calls to the Session's owner.
 
 ```ts
 import { BlazingAgents } from "@blazingagents/sdk";
@@ -138,7 +138,7 @@ export async function sendDecisions(input: {
 }
 ```
 
-In a `useChat` UI, `BlazingAgentsChatTransport` and `BlazingAgentsDirectChatTransport` can do this instead: once `addToolApprovalResponse` has answered every call in the round, the next `sendMessages` posts the answered assistant message. The transport does it for you only with a backend built on `createChatRelay` (or the direct transport's own client), which turns that message into `continueChat` and streams the continuation through the same endpoint. A hand-written chat handler must accept the assistant message and call `continueChat` itself, as the handler in [chat in your app](chat-in-your-app.md) does.
+In the browser, `useBlazingAgentsChat` can do this instead. Once `addToolApprovalResponse` has answered every approval of the round, the hook posts the answered assistant message as `op: "chat"`. The relay turns that message into `continueChat` and streams the continuation through the same endpoint. `createChatRelay` does this, and so do the Python, Go, and Rust relays in [chat in your app](chat-in-your-app.md). With AI SDK `useChat`, `BlazingAgentsChatTransport` and `BlazingAgentsDirectChatTransport` post the same message once `useChat` sends it, for example with `sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses`.
 
 ## Gotchas
 
@@ -147,7 +147,7 @@ In a `useChat` UI, `BlazingAgentsChatTransport` and `BlazingAgentsDirectChatTran
 - An override must name a tool the Agent has, once per policy. A built-in override must name a tool in the Agent's `tools`; `activate_skill` and `read` are also allowed while the Agent has a Skill. Removing a tool, detaching a Connection, or deleting the last Skill fails while a policy names an affected tool, so update the policy in the same change or first.
 - MCP overrides use the original tool name, not the generated name you see in saved messages. For display, prefer the approval's `tool` field, which has the MCP `connectionId` and original `name`; `toolName` is the generated name.
 - Send decisions through your backend with `continueChat`/`continue_chat`. Answering only in the browser with AI SDK `addToolApprovalResponse` does not resume the agent unless your chat path relays it, as described above.
-- While approvals are pending or a continuation runs, new chat messages and regeneration fail with `session_busy`, and a Session input fails with `steer_not_available`. An approval wait refuses steering, so a message sent then waits in your client's queue, as in [chat in your app](chat-in-your-app.md).
+- While approvals are pending or a continuation runs, new chat messages and regeneration fail with `session_busy`, and a Session input fails with `steer_not_available`. An approval wait refuses steering, so `useBlazingAgentsChat` holds a message sent then until the continuation ends.
 - A dropped stream does not prove the continuation stopped. Retry `continueChat`/`continue_chat` with the same decisions: identical decisions are idempotent and the first recorded `reason` stays authoritative, while reversing a decision returns `tool_approval_decision_conflict` (409). A running round returns `session_busy` and a settled one returns `tool_approval_continuation_settled` without running again. A round whose Turn stopped responding returns `session_turn_unresponsive` with a `Retry-After` header and keeps its recorded decisions, so repeat the same call after that wait. `toolApprovals()` also returns the Session's current `continuation` with its `id` and `state` (`waiting`, `running`, `succeeded`, `failed`).
 - Authenticate the reviewer and use the verified user scope from [multi-user apps](multi-user-apps.md) for approval reads, decisions, and continuation. Keep additional reviewer roles in your backend. The decision cannot change the saved call's arguments.
 - `auto` review runs on the Agent's model and counts toward the Turn's usage.
