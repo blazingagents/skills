@@ -15,7 +15,7 @@ Each Agent has two approval policies: `approvalInChat` for chat and stateless ge
 | `full` | Runs without approval. The default. |
 | `deny` | Is blocked. |
 | `manual` | Waits for a person. |
-| `auto` | The Agent's model allows it, denies it, or asks a person. A failed review blocks the call. |
+| `auto` | A review model allows it, denies it, or asks a person. A failed review blocks the call. |
 
 ## Build it
 
@@ -150,7 +150,7 @@ In the browser, `useBlazingAgentsChat` can do this instead. Once `addToolApprova
 - While approvals are pending or a continuation runs, new chat messages and regeneration fail with `session_busy`, and a Session input fails with `steer_not_available`. An approval wait refuses steering, so `useBlazingAgentsChat` holds a message sent then until the continuation ends.
 - A dropped stream does not prove the continuation stopped. Retry `continueChat`/`continue_chat` with the same decisions: identical decisions are idempotent and the first recorded `reason` stays authoritative, while reversing a decision returns `tool_approval_decision_conflict` (409). A running round returns `session_busy` and a settled one returns `tool_approval_continuation_settled` without running again. A round whose Turn stopped responding returns `session_turn_unresponsive` with a `Retry-After` header and keeps its recorded decisions, so repeat the same call after that wait. `toolApprovals()` also returns the Session's current `continuation` with its `id` and `state` (`waiting`, `running`, `succeeded`, `failed`).
 - Authenticate the reviewer and use the verified user scope from [multi-user apps](multi-user-apps.md) for approval reads, decisions, and continuation. Keep additional reviewer roles in your backend. The decision cannot change the saved call's arguments.
-- `auto` review runs on the Agent's model and counts toward the Turn's usage.
+- `auto` review runs on the Agent's model unless `autoApprovalModel` names a smaller model from the same Provider, and counts toward the Turn's usage. See the recommended review models in [concepts](../concepts.md#tool-approval).
 
 ## Check it works
 

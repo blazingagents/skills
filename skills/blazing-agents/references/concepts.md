@@ -140,6 +140,17 @@ Not the same as: an MCP Connection, whose tools live on a remote server and also
 
 The rules for which tool calls run freely, are blocked, wait for a person, or are reviewed by the model first. Each agent has one policy for chat (`approvalInChat`) and one for tasks (`approvalInTasks`), each with a default mode (`full`, `deny`, `manual`, `auto`) and per-tool overrides. When a person must decide, the chat turn pauses; your backend sends the decision and streams the resumed answer. Only interactive chat can wait for a person; in tasks and one-off generation such calls are blocked.
 
+`auto` review runs on the agent's own model unless you set `autoApprovalModel` (`auto_approval_model` in Python) to a smaller model from the same Provider; `null` uses the agent's model again. The agent needs a Provider and a model first. BA checks the review model against the Provider's model list, as it checks `model`. Changing `providerId` without sending `autoApprovalModel` resets it to `null`. Review tokens count toward the turn's usage and spending limits. Recommended review models:
+
+| Provider type | Review model |
+| --- | --- |
+| `openai` | `gpt-6-luna` |
+| `anthropic` | `claude-haiku-5-5` |
+| `openrouter` | `openai/gpt-6-luna` or `anthropic/claude-haiku-5.5` |
+| `vercel_ai_gateway` | `openai/gpt-6-luna` or `anthropic/claude-haiku-5.5` |
+
+For `google` and `custom` Providers, pick a small, fast model the Provider lists. The table is a recommendation that BA updates when vendors ship new small models; an agent keeps the value it was set to. See [choose the review model](https://docs.blazingagents.com/agents/tools/tool-approvals#review-model).
+
 Not the same as: access control for your users. Your backend still checks who may decide.
 
 ## Background work
