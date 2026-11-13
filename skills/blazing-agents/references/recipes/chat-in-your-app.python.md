@@ -1,6 +1,6 @@
 # Add chat to your app: Python code
 
-The Python code for the steps of [Add chat to your app](chat-in-your-app.md). Read that file first: it explains each step, its decisions, and its gotchas. Sections here match its steps and headings.
+The Python code for the steps of [Add chat to your app](chat-in-your-app.md). Read that file first: it explains each step, its decisions, and its gotchas. Step 3, the React chat, is the same for every backend.
 
 ## Step 1: Install the packages
 
@@ -8,42 +8,85 @@ The Python code for the steps of [Add chat to your app](chat-in-your-app.md). Re
 pip install blazing-agents fastapi uvicorn
 ```
 
-`client.for_user(verified_user_id)` returns the End-user scoped client; it sends the scope on every request, so the calls need no `user_id`. The SDK returns the raw stream bytes. Relay them unchanged and copy the `Location` header on the first Turn. Validate browser IDs with the same patterns the TypeScript handlers use.
+The Python SDK has no relay helper, so the backend implements the [browser relay contract](https://github.com/blazingagents/typescript-sdk/blob/main/docs/relay-contract.md) that `useBlazingAgentsChat` speaks. Every request is a JSON `POST` to one route, and its `op` selects the operation:
 
-For step 3, add three routes to the FastAPI app from step 2; the first lines repeat its client and sign-in hooks.
+| `op` | Body | Scoped client call | Answer |
+| --- | --- | --- | --- |
+| `chat` | `message`, and optional `sessionId`, `messageId`, `trigger` | `chat()` for a user message, `continue_chat()` for an assistant message that answers an approval round | The stream, with the `Location` header on a new Session |
+| `history` | `sessionId`, optional `cursor` | `sessions.messages(limit=200)` | `200` with `{"data": [...], "nextCursor": ...}`: one page, forwarded as it is |
+| `steer` | `sessionId`, `requestId`, `message` | `sessions.submit_input()` | `202` with `{"state": ...}` |
 
-## Step 2: Add the backend
+`client.for_user(user_id)` returns the End-user scoped client, which sends the scope on every request. Every error body is `{"error": {"code": ..., "message": ...}}`, with the API's status and code when the API refused the call. The browser reads the remaining history pages itself and validates the messages, so the relay forwards one page without a paging loop.
+
+## Step 2: Add the relay
 
 ```python
-from typing import Any, Literal, TypedDict
+import os
+from typing import Annotated, Any, Literal, TypedDict
 
 from blazing_agents import (
+    APIConnectionError,
     APIStatusError,
     AsyncBlazingAgents,
-    BlazingAgentsError,
+    AsyncUserClient,
+    StreamError,
     ToolApprovalDecisionInput,
 )
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import AfterValidator, BaseModel, Field, TypeAdapter, ValidationError
 
 client = AsyncBlazingAgents()  # reads BLAZING_AGENTS_API_KEY
-SESSION_ID = r"^ss_[0-9A-Za-z]{16}$"
 app = FastAPI()
+SESSION_ID = r"^ss_[0-9A-Za-z]{16}$"
 
 
-def current_user(request: Request) -> str:
-    """Your sign-in check. Return your user's ID or raise HTTPException(401)."""
+def signed_in_user_id(request: Request) -> str | None:
+    """Your sign-in check. Return the verified user's ID, or None."""
     raise NotImplementedError
 
 
-def agent_for_user(user_id: str) -> str:
-    """Read this user's Agent ID from trusted backend state."""
-    raise NotImplementedError
+async def agent_for(user: AsyncUserClient) -> str:
+    """Each user gets their own Agent, and with it their own Workspace."""
+    page = await user.agents.list(limit=1)
+    if page.data:
+        return page.data[0].id
+    agent = await user.agents.create(
+        name="Chat assistant",
+        provider_id=os.environ["BLAZING_AGENTS_PROVIDER_ID"],
+        model="openai/gpt-6-luna",
+    )
+    return agent.id
 
 
-class HistoryPagination(TypedDict, total=False):
-    cursor: str
+def not_dot_segment(value: str) -> str:
+    if value in (".", ".."):
+        raise ValueError("requestId must not be '.' or '..'")
+    return value
+
+
+class ChatOp(BaseModel):
+    op: Literal["chat"]
+    message: dict[str, Any]
+    messageId: str | None = Field(default=None, min_length=1)
+    sessionId: str | None = Field(default=None, pattern=SESSION_ID)
+    trigger: Literal["submit-message", "regenerate-message"] = "submit-message"
+
+
+class HistoryOp(BaseModel):
+    op: Literal["history"]
+    sessionId: str = Field(pattern=SESSION_ID)
+    cursor: str | None = Field(default=None, min_length=1)
+
+
+class SteerOp(BaseModel):
+    op: Literal["steer"]
+    sessionId: str = Field(pattern=SESSION_ID)
+    requestId: Annotated[str, Field(min_length=1, max_length=128), AfterValidator(not_dot_segment)]
+    message: dict[str, Any]
+
+
+RELAY_REQUEST = TypeAdapter(Annotated[ChatOp | HistoryOp | SteerOp, Field(discriminator="op")])
 
 
 class Approval(BaseModel):
@@ -61,7 +104,16 @@ class Part(BaseModel):
 PARTS = TypeAdapter(list[Part])
 
 
-def approval_decisions(message: dict[str, object]) -> list[ToolApprovalDecisionInput]:
+class HistoryPagination(TypedDict, total=False):
+    cursor: str
+
+
+def error(status: int, code: str, message: str, request_id: str | None = None) -> JSONResponse:
+    headers = {"x-request-id": request_id} if request_id else None
+    return JSONResponse({"error": {"code": code, "message": message}}, status_code=status, headers=headers)
+
+
+def approval_decisions(message: dict[str, Any]) -> list[ToolApprovalDecisionInput]:
     """The round's decisions: answered Tool parts after the last step-start."""
     parts = PARTS.validate_python(message.get("parts", []))
     starts = [i for i, part in enumerate(parts) if part.type == "step-start"]
@@ -79,193 +131,81 @@ def approval_decisions(message: dict[str, object]) -> list[ToolApprovalDecisionI
     return decisions
 
 
-class ChatBody(BaseModel):
-    message: dict[str, object] | None = None
-    messages: list[dict[str, object]] | None = None
-    messageId: str | None = None
-    sessionId: str | None = Field(default=None, pattern=SESSION_ID)
-    trigger: Literal["submit-message", "regenerate-message"] = "submit-message"
+async def relay_chat(user: AsyncUserClient, agent_id: str, body: ChatOp) -> Response:
+    role = body.message.get("role")
+    if role == "assistant":
+        decisions = approval_decisions(body.message)
+        if body.sessionId is None or not decisions:
+            return error(400, "invalid_request", "Invalid approval.")
+        stream = await user.continue_chat(
+            agent_id=agent_id, session_id=body.sessionId, decisions=decisions
+        )
+    elif role == "user":
+        extra: dict[str, Any] = {}
+        if body.messageId is not None:
+            extra["message_id"] = body.messageId
+        if body.sessionId is not None:
+            extra["session_id"] = body.sessionId
+            extra["trigger"] = body.trigger
+        stream = await user.chat(agent_id=agent_id, message=body.message, **extra)
+    else:
+        return error(400, "invalid_request", "Invalid chat message.")
+    headers = {"cache-control": "no-cache", "x-vercel-ai-ui-message-stream": "v1"}
+    if location := stream.headers.get("location"):
+        headers["location"] = location
+    if stream.request_id:
+        headers["x-request-id"] = stream.request_id
+    return StreamingResponse(
+        stream, status_code=stream.status_code, media_type="text/event-stream", headers=headers
+    )
+
+
+async def relay_history(user: AsyncUserClient, agent_id: str, body: HistoryOp) -> Response:
+    pagination: HistoryPagination = {} if body.cursor is None else {"cursor": body.cursor}
+    page = await user.sessions.messages(
+        agent_id=agent_id, session_id=body.sessionId, limit=200, **pagination
+    )
+    data = [m.model_dump(mode="json", by_alias=True, exclude_unset=True) for m in page.data]
+    return JSONResponse({"data": data, "nextCursor": page.next_cursor})
+
+
+async def relay_steer(user: AsyncUserClient, agent_id: str, body: SteerOp) -> Response:
+    if body.message.get("role") != "user":
+        return error(400, "invalid_request", "Steering requires a user message.")
+    receipt = await user.sessions.submit_input(
+        agent_id=agent_id,
+        session_id=body.sessionId,
+        request_id=body.requestId,
+        message=body.message,
+    )
+    return JSONResponse({"state": receipt.data.state}, status_code=202)
 
 
 @app.post("/api/chat")
-async def chat(body: ChatBody, user_id: str = Depends(current_user)):
-    raw = body.messages if body.messages is not None else ([body.message] if body.message else [])
-    approval = (
-        body.messages is None
-        and body.message is not None
-        and body.message.get("role") == "assistant"
-    )
-    if not raw or (not approval and any(m.get("role") != "user" for m in raw)):
-        raise HTTPException(400, "Invalid message.")
-    headers = {"cache-control": "no-cache", "x-vercel-ai-ui-message-stream": "v1"}
-    scoped = client.for_user(user_id)
-    extra: dict[str, Any] = {}
-    if body.messageId:
-        extra["message_id"] = body.messageId
+async def relay(request: Request) -> Response:
+    user_id = signed_in_user_id(request)
+    if user_id is None:
+        return error(401, "unauthorized", "Authentication required.")
     try:
-        if approval:
-            decisions = approval_decisions(raw[0])
-            if body.sessionId is None or not decisions:
-                raise HTTPException(400, "Invalid approval.")
-            stream = await scoped.continue_chat(
-                agent_id=agent_for_user(user_id),
-                session_id=body.sessionId,
-                decisions=decisions,
-            )
-        elif body.messages is not None:
-            if body.sessionId is None:
-                raise HTTPException(400, "A batch needs a Session.")
-            stream = await scoped.chat(
-                agent_id=agent_for_user(user_id),
-                session_id=body.sessionId,
-                messages=raw,
-                **extra,
-            )
-        elif body.sessionId is None:
-            stream = await scoped.chat(
-                agent_id=agent_for_user(user_id), message=raw[0], **extra
-            )
-            headers["location"] = stream.headers["location"]
-        else:
-            stream = await scoped.chat(
-                agent_id=agent_for_user(user_id),
-                session_id=body.sessionId,
-                message=raw[0],
-                trigger=body.trigger,
-                **extra,
-            )
-    except APIStatusError as exc:
-        error = {"code": exc.code, "message": str(exc)}
-        return JSONResponse({"error": error}, status_code=exc.status_code)
-    except BlazingAgentsError:
-        error = {"code": "upstream_error", "message": "Request failed."}
-        return JSONResponse({"error": error}, status_code=502)
-    return StreamingResponse(
-        stream,
-        status_code=stream.status_code,
-        media_type="text/event-stream",
-        headers=headers,
-    )
-
-
-@app.get("/api/chat/history")
-async def history(
-    session_id: str = Query(alias="sessionId", pattern=SESSION_ID),
-    cursor: str | None = Query(default=None),
-    user_id: str = Depends(current_user),
-):
-    pagination: HistoryPagination = {"cursor": cursor} if cursor is not None else {}
+        body = RELAY_REQUEST.validate_json(await request.body())
+    except ValidationError:
+        return error(400, "invalid_request", "Invalid request body.")
+    user = client.for_user(user_id)
     try:
-        page = await client.for_user(user_id).sessions.messages(
-            agent_id=agent_for_user(user_id), session_id=session_id, limit=200,
-            **pagination,
-        )
+        agent_id = await agent_for(user)
+        match body:
+            case ChatOp():
+                return await relay_chat(user, agent_id, body)
+            case HistoryOp():
+                return await relay_history(user, agent_id, body)
+            case SteerOp():
+                return await relay_steer(user, agent_id, body)
     except APIStatusError as exc:
-        raise HTTPException(exc.status_code, detail={"code": exc.code}) from exc
-    return {
-        "messages": [
-            m.model_dump(mode="json", by_alias=True, exclude_unset=True)
-            for m in page.data
-        ],
-        "nextCursor": page.next_cursor
-    }
+        return error(exc.status_code, exc.code, str(exc), exc.request_id)
+    except StreamError as exc:
+        return error(502, "stream_error", str(exc), exc.request_id)
+    except APIConnectionError:
+        return error(502, "network_error", "Unable to reach Blazing Agents.")
 ```
 
-## Step 3: Add the Session endpoints
-
-```python
-from typing import Annotated, Any
-
-from blazing_agents import APIStatusError, AsyncBlazingAgents, BlazingAgentsError
-from fastapi import Depends, FastAPI, HTTPException, Query
-from fastapi.responses import JSONResponse
-from pydantic import AfterValidator, BaseModel, Field
-
-client = AsyncBlazingAgents()
-app = FastAPI()
-SESSION_ID = r"^ss_[0-9A-Za-z]{16}$"
-TURN_ID = r"^turn_[0-9A-Za-z]{16}$"
-
-
-def not_dot_segment(value: str) -> str:
-    if value in (".", ".."):
-        raise ValueError("requestId must not be '.' or '..'")
-    return value
-
-
-RequestId = Annotated[str, Field(min_length=1, max_length=128), AfterValidator(not_dot_segment)]
-
-
-def current_user() -> str:
-    """Your sign-in check. Return your user's ID or raise HTTPException(401)."""
-    raise NotImplementedError
-
-
-def agent_for_user(user_id: str) -> str:
-    """Read this user's Agent ID from trusted backend state."""
-    raise NotImplementedError
-
-
-class SteerBody(BaseModel):
-    sessionId: str = Field(pattern=SESSION_ID)
-    requestId: RequestId
-    message: dict[str, object]
-
-
-class StopBody(BaseModel):
-    sessionId: str = Field(pattern=SESSION_ID)
-    turnId: str = Field(pattern=TURN_ID)
-
-
-def scope(user_id: str, session_id: str) -> dict[str, Any]:
-    return {
-        "agent_id": agent_for_user(user_id),
-        "session_id": session_id,
-    }
-
-
-@app.get("/api/chat/session")
-async def session(
-    session_id: str = Query(alias="sessionId", pattern=SESSION_ID),
-    user_id: str = Depends(current_user),
-):
-    try:
-        page = await client.for_user(user_id).sessions.inputs(
-            **scope(user_id, session_id), include_completed=True
-        )
-    except APIStatusError as exc:
-        raise HTTPException(exc.status_code, detail={"code": exc.code}) from exc
-    except BlazingAgentsError as exc:
-        raise HTTPException(502, detail={"code": "upstream_error"}) from exc
-    return page.model_dump(mode="json", by_alias=True)
-
-
-@app.post("/api/chat/steer")
-async def steer(body: SteerBody, user_id: str = Depends(current_user)):
-    if body.message.get("role") != "user":
-        raise HTTPException(400, "Invalid message.")
-    try:
-        result = await client.for_user(user_id).sessions.submit_input(
-            **scope(user_id, body.sessionId),
-            request_id=body.requestId,
-            message=body.message,
-        )
-    except APIStatusError as exc:
-        return JSONResponse({"error": {"code": exc.code}}, status_code=exc.status_code)
-    except BlazingAgentsError:
-        return JSONResponse({"error": {"code": "upstream_error"}}, status_code=502)
-    return result.model_dump(mode="json", by_alias=True)
-
-
-@app.post("/api/chat/stop")
-async def stop(body: StopBody, user_id: str = Depends(current_user)):
-    try:
-        result = await client.for_user(user_id).sessions.stop(
-            **scope(user_id, body.sessionId), turn_id=body.turnId
-        )
-    except APIStatusError as exc:
-        return JSONResponse({"error": {"code": exc.code}}, status_code=exc.status_code)
-    except BlazingAgentsError:
-        return JSONResponse({"error": {"code": "upstream_error"}}, status_code=502)
-    return result.model_dump(mode="json", by_alias=True)
-```
+Pydantic ignores body keys it does not know, as the contract requires. For a relay on another origin, add FastAPI's `CORSMiddleware` with `expose_headers=["Location", "X-Request-Id"]`, so the browser can read the new Session ID.

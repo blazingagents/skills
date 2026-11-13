@@ -1,6 +1,6 @@
 # Add chat to your app: Rust code
 
-The Rust code for the steps of [Add chat to your app](chat-in-your-app.md). Read that file first: it explains each step, its decisions, and its gotchas. Sections here match its steps and headings.
+The Rust code for the steps of [Add chat to your app](chat-in-your-app.md). Read that file first: it explains each step, its decisions, and its gotchas. Step 3, the React chat, is the same for every backend.
 
 ## Step 1: Install the crates
 
@@ -8,33 +8,57 @@ The Rust code for the steps of [Add chat to your app](chat-in-your-app.md). Read
 cargo add blazing-agents axum serde serde_json tokio --features tokio/full,serde/derive
 ```
 
-`client.for_user(user_id)?` returns a `UserClient` that sends the scope on every request. Relay the `ChatStream` bytes unchanged and copy the `Location` header on the first Turn. The SDK percent-encodes every path segment and rejects an empty, `.`, or `..` value as `Error::InvalidArgument`, so a browser ID cannot leave its segment.
+The Rust SDK has no relay helper, so the backend implements the [browser relay contract](https://github.com/blazingagents/typescript-sdk/blob/main/docs/relay-contract.md) that `useBlazingAgentsChat` speaks. Every request is a JSON `POST` to one route, and its `op` selects the operation:
 
-## Step 2: Add the backend
+| `op` | Body | Scoped client call | Answer |
+| --- | --- | --- | --- |
+| `chat` | `message`, and optional `sessionId`, `messageId`, `trigger` | `chat()` or `regenerate()` for a user message, `continue_chat()` for an assistant message that answers an approval round | The stream, with the `Location` header on a new Session |
+| `history` | `sessionId`, optional `cursor` | `sessions().messages()` with `.limit(200)` | `200` with `{"data": [...], "nextCursor": ...}`: one page, forwarded as it is |
+| `steer` | `sessionId`, `requestId`, `message` | `sessions().submit_input()` | `202` with `{"state": ...}` |
+
+`client.for_user(user_id)?` returns a `UserClient` that sends the scope on every request. The SDK percent-encodes every path segment and rejects an empty, `.`, or `..` value as `Error::InvalidArgument`, so a browser ID cannot leave its segment. Every error body is `{"error": {"code": ..., "message": ...}}`, with the API's status and code when the API refused the call. The browser reads the remaining history pages itself and validates the messages, so the relay forwards one page without a paging loop.
+
+## Step 2: Add the relay
 
 ```rust
-use axum::body::Body;
-use axum::extract::{Json, Query, State};
+use axum::body::{Body, Bytes};
+use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
-use axum::Router;
-use blazing_agents::chat::{ChatInput, ChatStream, ToolApprovalDecision};
+use axum::routing::post;
+use axum::{Json, Router};
+use blazing_agents::chat::{ChatStream, ToolApprovalDecision};
+use blazing_agents::ids::AgentId;
 use blazing_agents::messages::UserMessage;
-use blazing_agents::{Client, Error};
 use blazing_agents::pagination::Cursor;
+use blazing_agents::{Client, Error, UserClient};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
+/// One request body per op; serde ignores keys it does not know.
 #[derive(Deserialize)]
-struct ChatBody {
-    message: Option<Value>,
-    messages: Option<Vec<Value>>,
-    #[serde(rename = "sessionId")]
-    session_id: Option<String>,
-    #[serde(rename = "messageId")]
-    message_id: Option<String>,
-    trigger: Option<Trigger>,
+#[serde(tag = "op", rename_all = "lowercase")]
+enum RelayRequest {
+    Chat {
+        message: Value,
+        #[serde(rename = "sessionId")]
+        session_id: Option<String>,
+        #[serde(rename = "messageId")]
+        message_id: Option<String>,
+        trigger: Option<Trigger>,
+    },
+    History {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        cursor: Option<String>,
+    },
+    Steer {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        #[serde(rename = "requestId")]
+        request_id: String,
+        message: UserMessage,
+    },
 }
 
 #[derive(Deserialize, PartialEq)]
@@ -44,22 +68,24 @@ enum Trigger {
     RegenerateMessage,
 }
 
-#[derive(Deserialize)]
-struct HistoryQuery {
-    #[serde(rename = "sessionId")]
-    session_id: String,
-    cursor: Option<String>,
-}
-
-fn current_user(headers: &HeaderMap) -> String {
+fn signed_in_user_id(headers: &HeaderMap) -> Option<String> {
     // Your sign-in check: verify the session token and return its user ID.
     let _ = headers;
     todo!("verify the signed-in user")
 }
 
-fn agent_for_user(_user_id: &str) -> String {
-    // Read this user's Agent ID from trusted backend state.
-    "ag_0123456789abcdef".to_owned()
+/// The user's own Agent, which comes with its own Workspace.
+async fn agent_for(user: &UserClient) -> Result<AgentId, Error> {
+    if let Some(agent) = user.agents().list().limit(1).await?.data.into_iter().next() {
+        return Ok(agent.id);
+    }
+    let provider_id = std::env::var("BLAZING_AGENTS_PROVIDER_ID").unwrap_or_default();
+    let agent = user
+        .agents()
+        .create("Chat assistant")
+        .model(provider_id, "openai/gpt-6-luna")
+        .await?;
+    Ok(agent.id)
 }
 
 fn approval_decisions(message: &Value) -> Vec<ToolApprovalDecision> {
@@ -90,17 +116,55 @@ fn approval_decisions(message: &Value) -> Vec<ToolApprovalDecision> {
         .collect()
 }
 
-fn relay(stream: ChatStream, new_session: bool) -> Response {
+fn error(status: StatusCode, code: &str, message: &str) -> Response {
+    (
+        status,
+        Json(json!({ "error": { "code": code, "message": message } })),
+    )
+        .into_response()
+}
+
+fn failure(error_value: Error) -> Response {
+    match error_value {
+        Error::InvalidArgument(_) => error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "Invalid request body.",
+        ),
+        Error::Api(api) => {
+            let status = StatusCode::from_u16(api.status()).unwrap_or(StatusCode::BAD_GATEWAY);
+            let mut response = error(status, api.code().as_str(), api.message());
+            if let Some(request_id) = api.request_id().and_then(|id| id.parse().ok()) {
+                response.headers_mut().insert("x-request-id", request_id);
+            }
+            response
+        }
+        Error::Stream(_) => error(
+            StatusCode::BAD_GATEWAY,
+            "stream_error",
+            "The stream failed.",
+        ),
+        Error::Connection(_) | Error::Timeout => error(
+            StatusCode::BAD_GATEWAY,
+            "network_error",
+            "Unable to reach Blazing Agents.",
+        ),
+        _ => error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "internal_error",
+            "Internal error.",
+        ),
+    }
+}
+
+fn relay_stream(stream: ChatStream) -> Response {
     let mut response = Response::builder()
         .header("cache-control", "no-cache")
         .header("content-type", "text/event-stream")
         .header("x-vercel-ai-ui-message-stream", "v1");
-    if let Some(turn_id) = stream.meta().headers().get("x-ba-turn-id") {
-        response = response.header("x-ba-turn-id", turn_id.clone());
-    }
-    if new_session {
-        if let Some(location) = stream.meta().headers().get("location") {
-            response = response.header("location", location.clone());
+    for name in ["location", "x-ba-turn-id", "x-request-id"] {
+        if let Some(value) = stream.meta().headers().get(name) {
+            response = response.header(name, value.clone());
         }
     }
     response
@@ -108,122 +172,117 @@ fn relay(stream: ChatStream, new_session: bool) -> Response {
         .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
 
-fn failure(error: Error) -> Response {
-    match error {
-        Error::InvalidArgument(_) => StatusCode::BAD_REQUEST.into_response(),
-        Error::Api(api) => (
-            StatusCode::from_u16(api.status()).unwrap_or(StatusCode::BAD_GATEWAY),
-            Json(json!({ "error": { "code": api.code().as_str() } })),
-        )
-            .into_response(),
-        _ => (
-            StatusCode::BAD_GATEWAY,
-            Json(json!({ "error": { "code": "upstream_error" } })),
-        )
-            .into_response(),
-    }
-}
-
-async fn history(
-    State(client): State<Client>,
-    headers: HeaderMap,
-    Query(query): Query<HistoryQuery>,
-) -> Response {
-    let user_id = current_user(&headers);
-    let Ok(scoped) = client.for_user(&user_id) else {
-        return StatusCode::UNAUTHORIZED.into_response();
-    };
-    let mut call = scoped
-        .sessions()
-        .messages(agent_for_user(&user_id), query.session_id)
-        .limit(200);
-    if let Some(cursor) = query.cursor {
-        call = call.cursor(Cursor::from(cursor));
-    }
-    call.await
-        .map(|page| {
-            Json(json!({
-                "messages": page.data,
-                "nextCursor": page.next_cursor,
-            }))
-            .into_response()
-        })
-        .unwrap_or_else(failure)
-}
-
-async fn chat(
-    State(client): State<Client>,
-    headers: HeaderMap,
-    Json(body): Json<ChatBody>,
-) -> Response {
-    let user_id = current_user(&headers);
-    let Ok(scoped) = client.for_user(&user_id) else {
-        return StatusCode::UNAUTHORIZED.into_response();
-    };
-    let agent_id = agent_for_user(&user_id);
-
-    let message = body.message.clone().unwrap_or(Value::Null);
-    let is_approval = body.messages.is_none()
-        && message.get("role").and_then(Value::as_str) == Some("assistant");
-
-    let result = if is_approval {
-        // The frontend posts the answered assistant message; its tool parts
-        // after the last step-start carry the round's decisions.
+async fn relay_chat(
+    user: &UserClient,
+    agent_id: AgentId,
+    message: Value,
+    session_id: Option<String>,
+    message_id: Option<String>,
+    trigger: Option<Trigger>,
+) -> Result<Response, Error> {
+    if message.get("role").and_then(Value::as_str) == Some("assistant") {
         let decisions = approval_decisions(&message);
-        match (&body.session_id, decisions.is_empty()) {
-            (Some(session_id), false) => scoped
-                .continue_chat(agent_id, session_id, decisions)
-                .await
-                .map(|stream| relay(stream, false)),
-            _ => Err(Error::InvalidArgument("Invalid approval.".to_owned())),
-        }
-    } else {
-        let raw = match (&body.messages, body.message) {
-            (Some(messages), _) => messages.clone(),
-            (None, Some(message)) => vec![message],
-            _ => vec![],
+        return match session_id {
+            Some(session_id) if !decisions.is_empty() => Ok(relay_stream(
+                user.continue_chat(agent_id, session_id, decisions).await?,
+            )),
+            _ => Ok(error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "Invalid approval.",
+            )),
         };
-        let parsed: Result<Vec<UserMessage>, _> =
-            raw.iter().cloned().map(serde_json::from_value).collect();
-        match parsed {
-            Err(_) => Err(Error::InvalidArgument("Invalid message.".to_owned())),
-            Ok(messages) if body.messages.is_some() => match &body.session_id {
-                // Waiting messages go out as one batch once the Session is idle.
-                Some(session_id) => match ChatInput::try_from(messages) {
-                    Ok(input) => scoped
-                        .chat(agent_id, input)
-                        .session(session_id)
-                        .await
-                        .map(|stream| relay(stream, false)),
-                    Err(_) => Err(Error::InvalidArgument("Invalid message.".to_owned())),
-                },
-                None => Err(Error::InvalidArgument("A batch needs a Session.".to_owned())),
-            },
-            Ok(messages) => {
-                let Some(message) = messages.into_iter().next() else {
-                    return StatusCode::BAD_REQUEST.into_response();
-                };
-                match &body.session_id {
-                    None => scoped
-                        .chat(agent_id, message)
-                        .await
-                        .map(|stream| relay(stream, true)),
-                    Some(session_id) if body.trigger == Some(Trigger::RegenerateMessage) => {
-                        let call = scoped.regenerate(agent_id, session_id, message);
-                        let call = match &body.message_id {
-                            Some(message_id) => call.message_id(message_id),
-                            None => call,
-                        };
-                        call.await.map(|stream| relay(stream, false))
-                    }
-                    Some(session_id) => scoped
-                        .chat(agent_id, message)
-                        .session(session_id)
-                        .await
-                        .map(|stream| relay(stream, false)),
-                }
+    }
+    let Ok(message) = serde_json::from_value::<UserMessage>(message) else {
+        return Ok(error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "Invalid chat message.",
+        ));
+    };
+    let stream = match session_id {
+        None => user.chat(agent_id, message).await?,
+        Some(session_id) if trigger == Some(Trigger::RegenerateMessage) => {
+            let call = user.regenerate(agent_id, session_id, message);
+            match message_id {
+                Some(message_id) => call.message_id(message_id).await?,
+                None => call.await?,
             }
         }
+        Some(session_id) => user.chat(agent_id, message).session(session_id).await?,
+    };
+    Ok(relay_stream(stream))
+}
+
+async fn relay_history(
+    user: &UserClient,
+    agent_id: AgentId,
+    session_id: String,
+    cursor: Option<String>,
+) -> Result<Response, Error> {
+    let mut call = user.sessions().messages(agent_id, session_id).limit(200);
+    if let Some(cursor) = cursor {
+        call = call.cursor(Cursor::from(cursor));
+    }
+    let page = call.await?;
+    Ok(Json(json!({ "data": page.data, "nextCursor": page.next_cursor })).into_response())
+}
+
+async fn relay_steer(
+    user: &UserClient,
+    agent_id: AgentId,
+    session_id: String,
+    request_id: String,
+    message: UserMessage,
+) -> Result<Response, Error> {
+    let receipt = user
+        .sessions()
+        .submit_input(agent_id, session_id, request_id, message)
+        .await?;
+    let state = receipt.input.state.as_str();
+    Ok((StatusCode::ACCEPTED, Json(json!({ "state": state }))).into_response())
+}
+
+async fn relay(State(client): State<Client>, headers: HeaderMap, body: Bytes) -> Response {
+    let unauthorized = || {
+        error(
+            StatusCode::UNAUTHORIZED,
+            "unauthorized",
+            "Authentication required.",
+        )
+    };
+    let Some(user_id) = signed_in_user_id(&headers) else {
+        return unauthorized();
+    };
+    let Ok(user) = client.for_user(&user_id) else {
+        return unauthorized();
+    };
+    let Ok(request) = serde_json::from_slice::<RelayRequest>(&body) else {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "Invalid request body.",
+        );
+    };
+    let agent_id = match agent_for(&user).await {
+        Ok(agent_id) => agent_id,
+        Err(err) => return failure(err),
+    };
+    let result = match request {
+        RelayRequest::Chat {
+            message,
+            session_id,
+            message_id,
+            trigger,
+        } => relay_chat(&user, agent_id, message, session_id, message_id, trigger).await,
+        RelayRequest::History { session_id, cursor } => {
+            relay_history(&user, agent_id, session_id, cursor).await
+        }
+        RelayRequest::Steer {
+            session_id,
+            request_id,
+            message,
+        } => relay_steer(&user, agent_id, session_id, request_id, message).await,
     };
     result.unwrap_or_else(failure)
 }
@@ -231,8 +290,7 @@ async fn chat(
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let app = Router::new()
-        .route("/api/chat", post(chat))
-        .route("/api/chat/history", get(history))
+        .route("/api/chat", post(relay))
         .with_state(Client::from_env()?);
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
     axum::serve(listener, app).await?;
@@ -240,136 +298,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 }
 ```
 
-## Step 3: Add the Session endpoints
-
-```rust
-use axum::extract::{Json, Query, State};
-use axum::http::{HeaderMap, StatusCode};
-use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
-use axum::Router;
-use blazing_agents::messages::UserMessage;
-use blazing_agents::{Client, Error};
-use serde::Deserialize;
-use serde_json::json;
-
-#[derive(Deserialize)]
-struct SessionQuery {
-    #[serde(rename = "sessionId")]
-    session_id: String,
-}
-
-#[derive(Deserialize)]
-struct SteerBody {
-    #[serde(rename = "sessionId")]
-    session_id: String,
-    #[serde(rename = "requestId")]
-    request_id: String,
-    message: UserMessage,
-}
-
-#[derive(Deserialize)]
-struct StopBody {
-    #[serde(rename = "sessionId")]
-    session_id: String,
-    #[serde(rename = "turnId")]
-    turn_id: String,
-}
-
-fn current_user(headers: &HeaderMap) -> String {
-    // Your sign-in check: verify the session token and return its user ID.
-    let _ = headers;
-    todo!("verify the signed-in user")
-}
-
-fn agent_for_user(_user_id: &str) -> String {
-    // Read this user's Agent ID from trusted backend state.
-    "ag_0123456789abcdef".to_owned()
-}
-
-fn failure(error: Error) -> Response {
-    match error {
-        Error::Api(api) => (
-            StatusCode::from_u16(api.status()).unwrap_or(StatusCode::BAD_GATEWAY),
-            Json(json!({ "error": { "code": api.code().as_str() } })),
-        )
-            .into_response(),
-        _ => (
-            StatusCode::BAD_GATEWAY,
-            Json(json!({ "error": { "code": "upstream_error" } })),
-        )
-            .into_response(),
-    }
-}
-
-async fn session(
-    State(client): State<Client>,
-    headers: HeaderMap,
-    Query(query): Query<SessionQuery>,
-) -> Response {
-    let user_id = current_user(&headers);
-    let Ok(scoped) = client.for_user(&user_id) else {
-        return StatusCode::UNAUTHORIZED.into_response();
-    };
-    // Terminal receipts too: include_completed returns committed and
-    // not_placed inputs, and activity says what the Session is doing.
-    scoped
-        .sessions()
-        .inputs(agent_for_user(&user_id), query.session_id)
-        .include_completed(true)
-        .await
-        .map(|page| Json(json!(page)).into_response())
-        .unwrap_or_else(failure)
-}
-
-async fn steer(
-    State(client): State<Client>,
-    headers: HeaderMap,
-    Json(body): Json<SteerBody>,
-) -> Response {
-    let user_id = current_user(&headers);
-    let Ok(scoped) = client.for_user(&user_id) else {
-        return StatusCode::UNAUTHORIZED.into_response();
-    };
-    scoped
-        .sessions()
-        .submit_input(
-            agent_for_user(&user_id),
-            body.session_id,
-            body.request_id,
-            body.message,
-        )
-        .await
-        .map(|receipt| Json(json!(receipt)).into_response())
-        .unwrap_or_else(failure)
-}
-
-async fn stop(
-    State(client): State<Client>,
-    headers: HeaderMap,
-    Json(body): Json<StopBody>,
-) -> Response {
-    let user_id = current_user(&headers);
-    let Ok(scoped) = client.for_user(&user_id) else {
-        return StatusCode::UNAUTHORIZED.into_response();
-    };
-    scoped
-        .sessions()
-        .stop(agent_for_user(&user_id), body.session_id, body.turn_id)
-        .await
-        .map(|result| Json(json!(result)).into_response())
-        .unwrap_or_else(failure)
-}
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let app = Router::new()
-        .route("/api/chat/session", get(session))
-        .route("/api/chat/steer", post(steer))
-        .route("/api/chat/stop", post(stop))
-        .with_state(Client::from_env()?);
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
-    axum::serve(listener, app).await?;
-    Ok(())
-}
-```
+For a relay on another origin, expose the `Location` and `X-Request-Id` headers through CORS, for example with `tower-http`'s `CorsLayer::expose_headers`, so the browser can read the new Session ID.
