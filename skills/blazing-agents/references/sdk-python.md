@@ -83,7 +83,7 @@ The client itself has five generation methods. Each call runs one metered Turn. 
 
 ### Chat returns raw SSE bytes and a Session ID
 
-`chat()` returns a `ChatStream`. Iterating it yields the server's AI SDK UI message stream as raw SSE `bytes`, exactly as sent. The SDK does not decode it. Relay those bytes to your frontend, where `useBlazingAgentsChat` from `@blazingagents/sdk/react` reads them.
+`chat()` returns a `ChatStream`. Iterating it yields the server's AI SDK UI message stream as raw SSE `bytes`, exactly as sent. The SDK does not decode it. Relay those bytes to your frontend as they arrive. For a browser chat, serve the [browser chat relay](#browser-chat-relay) instead of relaying streams yourself.
 
 Call `chat()` on `client.for_user(verified_user_id)` whenever the Session belongs to one of your users. The scoped client sends the user on every request, so BA answers `404` for a Session ID, Agent, or Workspace that user does not own. A `session_id` from the browser is then safe to pass back. On the unscoped client the same call would resume any Session in your Tenant.
 
@@ -109,7 +109,7 @@ async def start_chat(
     return await scoped.chat(agent_id=agent_id, session_id=session_id, message=message)
 ```
 
-To relay, pass the stream object itself as the body of your framework's streaming response. In FastAPI that is `StreamingResponse(stream, media_type="text/event-stream", headers=headers)` with `headers = {"x-vercel-ai-ui-message-stream": "v1"}`. When the call started a new Session, also copy `stream.headers["location"]` into `headers["location"]`: `useBlazingAgentsChat` in your frontend reads the new Session ID from that header. The relay in [Add chat to your app: Python code](recipes/chat-in-your-app.python.md) answers every operation the hook sends. The [FastAPI example](https://github.com/blazingagents/examples/tree/main/vite-fastapi-ai-sdk) shows the full endpoint.
+To relay, pass the stream object itself as the body of your framework's streaming response. In FastAPI that is `StreamingResponse(stream, media_type="text/event-stream", headers=headers)` with `headers = {"x-vercel-ai-ui-message-stream": "v1"}`. When the call started a new Session, also copy `stream.headers["location"]` into `headers["location"]`, because the frontend reads the new Session ID from that header.
 
 Outside a web request, iterate the chunks yourself:
 
@@ -135,6 +135,17 @@ Chat rules the SDK enforces before sending:
 
 - `trigger="regenerate-message"` needs `session_id`. It can target a `message_id`.
 - `variables` needs `prompt_id`.
+
+### Browser chat relay
+
+`AsyncChatRelay(client=client, resolve_context=resolve_context)` is the one endpoint that `BlazingAgentsChat` and `useBlazingAgentsChat` from the TypeScript SDK post to. `ChatRelay` is the blocking twin with the same arguments. Both implement the [browser relay contract](https://github.com/blazingagents/typescript-sdk/blob/main/docs/relay-contract.md) and depend on no web framework.
+
+- `resolve_context(request)` receives your framework's request and returns a `RelayContext(agent_id=..., user_id=...)` from your verified sign-in, or `None`, which the relay answers with `401`. The Agent and its Workspace must belong to that user. The optional `functions` and `metadata` fields go to each chat and approval continuation.
+- The relay sends every API request through `client.for_user(context.user_id)` and never reads the user or the Agent from the request body.
+- `await relay.handle(request, body)` takes the raw body bytes and never raises. It returns an `AsyncRelayResponse` with `status_code`, `headers`, and an async iterator over the body. Pass it to your framework's streaming response without reading it first. Its `aclose()` closes the API request, which cancels the Turn.
+- Errors answer `{"error": {"code": ..., "message": ...}}`: `400 invalid_request` for a malformed body or unknown `op`, `401 unauthorized`, the API's own status and code with its `X-Request-Id`, `502 network_error` or `stream_error`, and `500 internal_error`, which names no cause and logs it to the `blazing_agents` logger.
+
+[Add chat to your app: Python code](recipes/chat-in-your-app.python.md) mounts it on a FastAPI route.
 
 ### Backend functions
 

@@ -2,8 +2,8 @@
 
 Use this page to write backend TypeScript that calls Blazing Agents: install the
 client, run chat, text, and structured output, call every resource method, page
-through lists, handle errors, and serve browser chat with `createChatRelay`
-and `useBlazingAgentsChat`.
+through lists, handle errors, and serve browser chat with `createChatRelay`,
+`BlazingAgentsChat`, and `useBlazingAgentsChat`.
 
 Check the installed version's types when a method here is missing.
 
@@ -19,9 +19,10 @@ npm install @blazingagents/sdk ai@^7 zod
 
 - `ai` (AI SDK 7) and `zod` are peer dependencies. The SDK re-exports the `UIMessage` type from `ai`.
 - The SDK requires Node.js 24 or newer and ships ESM only.
-- In a React frontend, also install `react` and `@ai-sdk/react`. They are
-  optional peer dependencies that only `@blazingagents/sdk/react` loads;
-  `@blazingagents/sdk` and `@blazingagents/sdk/rest` never load React.
+- In a React frontend, also install `react`. It is an optional peer
+  dependency that only `@blazingagents/sdk/react` loads;
+  `@blazingagents/sdk` and `@blazingagents/sdk/rest` never load React. The SDK
+  does not need `@ai-sdk/react`.
 - Runtime Zod schemas for request and response bodies live in
   `@blazingagents/sdk/contracts`. Types for the common bodies are exported from
   the root package.
@@ -334,7 +335,7 @@ means the result is `{ data, nextCursor }` (see [Pagination](#pagination)).
 
 Fork eligibility, retries, child contents, and error codes are in [Add a requested fork](recipes/chat-in-your-app.md#add-a-requested-fork).
 
-A `SessionInput` is a steer receipt: `requestId`, `sequence`, `message`, `state` (`accepted` while the running Turn may still read and save it, `committed` once in history, or `not_placed` when the Turn ended without saving it), the `turnId` it was bound to, `reason` (`stopped`, `failed`, `owner_lost`, `turn_finished`, or `null`), and timestamps. `activity` is `{ state, turnId }` with `state` one of `idle`, `running`, `stopping`, `approval`. In a browser, `useBlazingAgentsChat` acts on receipts for you, and `BlazingAgentsChatTransport` reports the `data-ba-steer-consumed` stream chunk through `onSteerConsumed`. See [Chat from a browser](#chat-from-a-browser).
+A `SessionInput` is a steer receipt: `requestId`, `sequence`, `message`, `state` (`accepted` while the running Turn may still read and save it, `committed` once in history, or `not_placed` when the Turn ended without saving it), the `turnId` it was bound to, `reason` (`stopped`, `failed`, `owner_lost`, `turn_finished`, or `null`), and timestamps. `activity` is `{ state, turnId }` with `state` one of `idle`, `running`, `stopping`, `approval`. In a browser, `BlazingAgentsChat` and `useBlazingAgentsChat` act on receipts for you, and `BlazingAgentsChatTransport` reports the `data-ba-steer-consumed` stream chunk through `onSteerConsumed`. See [Chat from a browser](#chat-from-a-browser).
 
 ### `client.tasks` (Tasks and Task runs)
 
@@ -350,6 +351,11 @@ A `SessionInput` is a steer receipt: `requestId`, `sequence`, `message`, `state`
 | `getRun({ taskId, runId })` | `GET /v1/tasks/{taskId}/runs/{runId}` | `TaskRunResponse` |
 | `runMessages({ taskId, runId, cursor?, after?, limit? })` | `GET /v1/tasks/{taskId}/runs/{runId}/messages` | Transcript page plus run `status`, `error`, `finishedAt` for polling. |
 | `cancelRun({ taskId, runId })` | `POST /v1/tasks/{taskId}/runs/{runId}/cancel` | `void` |
+
+For a cron `schedule`, the SDK checks only that `expression` has five numeric
+fields and that `timezone` is an IANA name. The API checks the field values and
+impossible dates, such as `60 9 * * *` or `0 0 31 2 *`, and `create` and
+`update` reject with `validation_failed` (400).
 
 ### `client.workspaces`
 
@@ -575,10 +581,13 @@ rejects with `stream_error`.
 The browser never holds the Tenant key. It chats through one endpoint on your
 backend, the relay. Every browser request is a JSON `POST` to that endpoint,
 and the body's `op` selects the operation. `createChatRelay` is the relay in
-TypeScript. `useBlazingAgentsChat` from `@blazingagents/sdk/react` is the React
-side, built on `BlazingAgentsChatTransport`. A relay in another language
-follows the same
-[browser relay contract](https://github.com/blazingagents/typescript-sdk/blob/main/docs/relay-contract.md).
+TypeScript. The Python, Go, and Rust SDKs ship their own: `AsyncChatRelay`,
+`ba.NewChatRelay`, and `blazing_agents::relay::ChatRelay`. `BlazingAgentsChat`
+is the browser side in any UI framework, and `useBlazingAgentsChat` from
+`@blazingagents/sdk/react` runs it in React. A relay in a language without a
+helper follows the
+[browser relay contract](https://github.com/blazingagents/typescript-sdk/blob/main/docs/relay-contract.md),
+which every SDK relay implements.
 [Add chat to your app](recipes/chat-in-your-app.md) builds the whole chat.
 
 ### The relay wire
@@ -641,45 +650,68 @@ answers with `401`. `RelayContext` fields:
 `createCompletionRelay({ client, resolveContext })` does the same for
 `{ prompt }` bodies and streams `completion()` text.
 
-### `useBlazingAgentsChat`
+### `BlazingAgentsChat`
 
-`react` and `@ai-sdk/react` are optional peer dependencies that only
-`@blazingagents/sdk/react` loads. `useBlazingAgentsChat(options?)` options:
+`new BlazingAgentsChat(options?)` runs a browser chat in any UI framework or
+plain JavaScript. The constructor reads no storage and makes no request, so it
+is safe in server rendering. Every method is bound, so you can pass it as a
+callback. Options:
 
 | Option | Notes |
 | --- | --- |
 | `api` | The relay endpoint. Default `/api/chat`. |
-| `headers` | Request headers, read at request time, so a new token applies to the next request. When their values change while history could not be read, the hook reads it again. |
+| `headers` | An object, a `Headers`, or a function that returns either, read at each request. When their values change while history could not be read, the chat reads it again. |
 | `credentials`, `fetch` | Request options. |
-| `storageKey` | The `localStorage` key for the Session ID. Default `blazing-agents-session`. `null` keeps the Session in memory only, as does storage that throws. Read after mount, so server rendering never touches storage. |
+| `storageKey` | The `localStorage` key for the Session ID. Default `blazing-agents-session`. `null` keeps the Session in memory only, as does storage that throws. Read by `start()`. |
 
-It returns:
+Members:
 
 | Member | Notes |
 | --- | --- |
+| `subscribe(listener)` | Runs `listener` after each snapshot change. Returns the function that removes it. |
+| `getSnapshot()` | What to render now. Returns the same object until a field changes, so `useSyncExternalStore`, Vue refs, and Angular signals can compare by identity. |
+| `start()` | Reads the stored Session and restores its transcript. Call it once the chat is in the page. Does nothing when already started, and may follow `dispose()`. |
+| `dispose()` | Cancels the running Turn and resolves every pending `send()` with `false`. Call it when the chat leaves the page. |
+| `setHeaders(headers)` | Replaces `headers`, so a new token applies to the next request. |
+| `send(input)` | Sends text, or `{ text, files }`. Idle: starts a Turn. While a reply streams: steers into it. Otherwise the message waits, and goes out as the next Turn or a steer. Never sends a message twice. Resolves `true` once the message is stored, and `false` when an error, Stop, New Session, `dispose()`, or a Turn that ended without storing it rolled it back. Never rejects. |
+| `stop()` | Cancels the running Turn and rolls back to the stored transcript. |
+| `regenerate()` | Replaces the last assistant reply. Does nothing unless `canRegenerate`. |
+| `newSession()` | Cancels any running Turn, forgets the stored Session, and clears the transcript. |
+| `addToolApprovalResponse({ id, approved, reason? })` | Answers a pending Tool approval. Once every approval of the round is answered, the continuation streams like any Turn. A manual approval holds new Turns until it is answered. |
+| `clearError()` | Clears `error`. When history could not be read, also reads it again. |
+
+The snapshot, a `BlazingAgentsChatSnapshot`:
+
+| Field | Notes |
+| --- | --- |
 | `messages` | What to render, oldest first: the stored transcript, the streaming reply, and sent messages not stored yet. |
-| `send(input)` | Sends text, or `{ text, files }`. Idle: starts a Turn. While a reply streams: steers into it. Otherwise the message waits, and goes out as the next Turn or a steer. Never sends a message twice. Resolves `true` once the message is stored, and `false` when an error, Stop, New Session, or a Turn that ended without storing it rolled it back. Never rejects. |
 | `status` | `restoring` while the stored transcript loads, or after that read failed (see `error`) until new `headers`, a `send`, or `clearError` reads it again. `running` while a Turn starts, streams, or is placed in stored history. `idle` otherwise. `send` works in every status. |
 | `pendingIds` | IDs in `messages` that are sent but not stored yet. |
 | `sessionId` | The Session, once restored or minted by the first reply. |
-| `stop()` | Cancels the running Turn and rolls back to the stored transcript. |
-| `regenerate()` | Replaces the last assistant reply. Does nothing unless `canRegenerate`. |
 | `canRegenerate` | True when idle with a stored assistant reply to replace. |
-| `newSession()` | Cancels any running Turn, forgets the stored Session, and clears the transcript. |
-| `addToolApprovalResponse({ id, approved, reason? })` | Answers a pending Tool approval. Once every approval of the round is answered, the continuation streams like any Turn. A manual approval holds new Turns until it is answered. |
 | `error` | The last failure: a failed Turn, steer, or history read. The next `send` clears it. |
-| `clearError()` | Clears `error`. When history could not be read, also reads it again. |
+
+### `useBlazingAgentsChat`
+
+`useBlazingAgentsChat(options?)` from `@blazingagents/sdk/react` runs one
+`BlazingAgentsChat` per component: it starts the chat after mount and disposes
+it on unmount. It takes the same options, except that `headers` is an object
+or a `Headers`. It reads `api`, `credentials`, `fetch`, and `storageKey` on the
+first render. New `headers`, or new values in the same `Headers` object, apply
+to the next request. It returns a `UseBlazingAgentsChatResult`: the snapshot's
+fields together with `send`, `stop`, `regenerate`, `newSession`,
+`addToolApprovalResponse`, and `clearError`.
 
 When a stream ends without a `finish` chunk, by Stop, an error, or a dropped
-connection, the hook reads history again and keeps each message the Turn
+connection, the chat reads history again and keeps each message the Turn
 stored. A steer the running Turn did not read is sent again as the next
 ordinary chat message, with a new message ID. A relay answer of `404` makes the
-hook forget the stored Session.
+chat forget the stored Session.
 
 ### `BlazingAgentsChatTransport`
 
-`BlazingAgentsChatTransport` is the browser side without React: an AI SDK
-`ChatTransport` for a `Chat` in another framework. It posts
+`BlazingAgentsChatTransport` is the transport alone: an AI SDK
+`ChatTransport` for a `Chat` that you run yourself. It posts
 `{ op: "chat", message, messageId, sessionId, trigger }` to `api`, reads the
 new Session ID from the first reply's `Location` header, and sends it on every
 later message. It holds no queue and does no rollback.
@@ -725,7 +757,7 @@ it for the messages your client held while the Session was busy.
   lost. Pass your end user's ID on every generation call.
 - `object` results are `unknown`. Validate before use.
 - The chat transport does not resume an interrupted stream; `reconnectToStream`
-  returns `null`. `useBlazingAgentsChat` reads history again when a stream ends
+  returns `null`. `BlazingAgentsChat` reads history again when a stream ends
   without `finish`. With the bare transport, call `loadHistory()` before
   resending.
 - `chat` on a busy Session fails with `session_busy`. Read `error.details?.reason`:

@@ -63,6 +63,8 @@ Pick the schedule kind that matches the need:
 | `interval` | `{ everyMs: 900000 }` (Python `every_ms`, Go `ba.ScheduleInterval{Every: 15 * time.Minute}`, minimum 60000) | Every N ms from creation |
 | `cron` | `{ expression, timezone?, staggerMs? }` (five numeric fields, IANA zone, default `UTC`) | On the calendar |
 
+The API checks cron values and answers `validation_failed` (400) for an out-of-range field or an impossible date, such as `60 9 * * *` or `0 0 31 2 *`.
+
 3. Start a run on demand through the same user's scoped client. Build the idempotency key from a stable business fact so a retried request returns the same run.
 
 ```ts

@@ -3,7 +3,7 @@ name: blazing-agents
 description: Build products on Blazing Agents (BA), the hosted platform that runs production AI agents behind your backend. Use when the user wants to add an agent, chat, background or scheduled agent work, structured output, Workspaces and files, Skills, Memory, Prompts, web search, backend functions, MCP tools, tool approvals, Slack/Telegram bots, multi-user apps, usage dashboards, or token billing to their app with the BA TypeScript, Python, Rust, or Go SDK; asks which BA feature or design fits, or what BA's limits are; debugs a BA error code; or asks what BA is or can do. Use ba-admin instead for one-off Tenant administration. Do not use for generic AI-agent work without BA.
 metadata:
   author: Blazing Agents
-  version: "0.9.0"
+  version: "0.10.0"
 ---
 
 # Blazing Agents
@@ -21,9 +21,10 @@ decides what each may access, and calls BA with a Tenant API key through the
 TypeScript SDK (`@blazingagents/sdk`), the Python SDK (`blazing-agents`),
 the Rust SDK (crate `blazing-agents`, import `blazing_agents`), or the Go SDK
 (module `github.com/blazingagents/golang-sdk`, package `blazingagents`).
-Chat streams use the Vercel AI SDK UI message format. In React,
-`useBlazingAgentsChat` from `@blazingagents/sdk/react` renders them through a
-relay on the developer's backend.
+Chat streams use the Vercel AI SDK UI message format. In the browser,
+`BlazingAgentsChat` from `@blazingagents/sdk`, or `useBlazingAgentsChat` in
+React, renders them through a relay on the developer's backend. Every SDK
+ships that relay.
 
 BA does not fit when the app must call it from the browser with no server, when
 every Turn must run inside the developer's own infrastructure, or when the
@@ -43,7 +44,7 @@ developer wants to write the agent loop step by step.
 | The product needs | Read |
 | --- | --- |
 | A first working agent, from API key to streamed answer | [Getting started](references/getting-started.md) |
-| Chat inside a web or mobile app, with saved history, steering, Stop, and forks | [Chat in your app](references/recipes/chat-in-your-app.md) |
+| Chat inside a web or mobile app in React or any other frontend framework, with saved history, steering, Stop, and forks | [Chat in your app](references/recipes/chat-in-your-app.md) |
 | Many end users behind one Tenant key, an inbox of conversations | [Multi-user apps](references/recipes/multi-user-apps.md) |
 | Agent work with no user present, on demand or on a schedule | [Background and scheduled work](references/recipes/background-and-scheduled.md) |
 | JSON in a fixed shape, such as extraction or classification | [Structured output](references/recipes/structured-output.md) |
@@ -99,14 +100,16 @@ Rules name the TypeScript method; each SDK page gives its language's spelling.
   them: one user's Turn can read files another user's Turn wrote. Use per-user
   Agents and Workspaces with `forUser`, or no file tools, when users must not
   see each other's files.
-- Relay BA's stream as it is (`createChatRelay` or `toResponse()` in
-  TypeScript) and let `useBlazingAgentsChat` render it. Never parse the stream
-  by hand.
+- Serve browser chat from the SDK's relay (`createChatRelay`,
+  `AsyncChatRelay`, `ba.NewChatRelay`, or Rust's `ChatRelay`) and let
+  `BlazingAgentsChat` or `useBlazingAgentsChat` render it. Elsewhere, relay
+  BA's stream as it is, such as `toResponse()` in TypeScript. Never parse the
+  stream by hand.
 - A chat Session ID arrives with the response. Save it and pass it back to
   continue the conversation. Load history from BA instead of storing your own
-  copy. In React, `useBlazingAgentsChat` does both.
+  copy. In the browser, `BlazingAgentsChat` does both.
 - A failed or stopped Turn saves nothing to history but is still metered.
-  In the browser, `stop()` from `useBlazingAgentsChat` aborts the chat request,
+  In the browser, `stop()` on `BlazingAgentsChat` aborts the chat request,
   which cancels the Turn. From backend code, stop a Turn with `sessions.stop()`
   and its Turn ID, and keep reading the stream until it ends.
 - A resend or retry is a new attempt, and tool side effects can happen again.
@@ -114,7 +117,7 @@ Rules name the TypeScript method; each SDK page gives its language's spelling.
   creation with `submit: true`.
 - BA holds no message queue. While a Turn runs, a new chat call fails with
   `session_busy`; steer the Turn or hold the message in the client.
-  `useBlazingAgentsChat` does both, as
+  `BlazingAgentsChat` does both, as
   [Chat in your app](references/recipes/chat-in-your-app.md#how-it-works)
   describes. Never retry `session_busy` blindly: its `details.reason` says
   whether it clears by itself (`turn_running`) or needs an approval decision

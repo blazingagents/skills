@@ -1,6 +1,6 @@
 # Add chat to your app
 
-You will have a streaming chat UI in your React app. Each signed-in user gets their own conversation, which comes back after a page reload. While the Agent answers, users can keep typing, and a message they send then steers the running Turn.
+You will have a streaming chat UI in your web app, built with React or any other frontend framework. Each signed-in user gets their own conversation, which comes back after a page reload. While the Agent answers, users can keep typing, and a message they send then steers the running Turn.
 
 ## When to use this
 
@@ -8,18 +8,18 @@ Your users chat with an Agent inside your own web product, and conversations mus
 
 ## How it works
 
-Your browser talks only to your backend, through one endpoint that `createChatRelay` serves. Each request is a JSON `POST` whose `op` names the operation: `chat` streams a Turn, `history` returns one page of the Session's stored messages, and `steer` sends a user message into the Turn running now. For each request the relay calls your `resolveContext`, which returns the signed-in user and their Agent. The relay then sends every API request through `client.forUser(userId)`, so BA answers `404` for another user's Session or Agent. BA stores the history, so a chat request carries only the newest message and the Session ID. The first reply names the new Session in its `Location` header.
+Your browser talks only to your backend, through one endpoint that the SDK's relay serves: `createChatRelay` in TypeScript, `AsyncChatRelay` in Python, `ba.NewChatRelay` in Go, and `ChatRelay` in Rust. Each request is a JSON `POST` whose `op` names the operation: `chat` streams a Turn, `history` returns one page of the Session's stored messages, and `steer` sends a user message into the Turn running now. For each request the relay calls your `resolveContext`, which returns the signed-in user and their Agent. The relay then sends every API request through `client.forUser(userId)`, so BA answers `404` for another user's Session or Agent. BA stores the history, so a chat request carries only the newest message and the Session ID. The first reply names the new Session in its `Location` header.
 
-`useBlazingAgentsChat` from `@blazingagents/sdk/react` is the browser side. It keeps the Session ID in `localStorage`, reads the stored transcript back after a reload, and turns the AI SDK UI message stream into `messages`. `send()` starts a Turn when the chat is idle and steers the running Turn while a reply streams. BA holds no queue. A message that can do neither, such as one sent while a Tool approval waits, stays in the hook and goes out as the next Turn. Stop aborts the chat request, which cancels the Turn.
+`BlazingAgentsChat` from `@blazingagents/sdk` is the browser side in any framework, and `useBlazingAgentsChat` from `@blazingagents/sdk/react` runs one per React component. The chat keeps the Session ID in `localStorage`, reads the stored transcript back after a reload, and turns the AI SDK UI message stream into `messages`. `send()` starts a Turn when the chat is idle and steers the running Turn while a reply streams. BA holds no queue. A message that can do neither, such as one sent while a Tool approval waits, stays in the chat and goes out as the next Turn. Stop aborts the chat request, which cancels the Turn.
 
 ## Build it
 
-For a Python, Rust, or Go backend, read the relay code for step 2 in [Python](chat-in-your-app.python.md), [Rust](chat-in-your-app.rust.md), [Go](chat-in-your-app.go.md). Step 3 is the same React code for every backend.
+For a Python, Rust, or Go backend, read the relay code for step 2 in [Python](chat-in-your-app.python.md), [Rust](chat-in-your-app.rust.md), [Go](chat-in-your-app.go.md). Step 3 is the same frontend code for every backend.
 
-1. Install the packages. Your backend needs `@blazingagents/sdk`, `ai`, and `zod`. Your React frontend also needs `react` and `@ai-sdk/react`, which only `@blazingagents/sdk/react` loads.
+1. Install the packages. Your backend and your frontend need `@blazingagents/sdk`, `ai`, and `zod`. A React frontend also needs `react`.
 
 ```bash
-npm install @blazingagents/sdk ai@^7 zod react @ai-sdk/react
+npm install @blazingagents/sdk ai@^7 zod react
 ```
 
 2. Add the relay. `resolveContext` reads the user ID from your verified sign-in and returns `null` when there is none, which the relay answers with `401`. It also returns the user's Agent. The Agent and its Workspace must belong to the same user, so `agentFor` creates the Agent on that user's scoped client the first time. `BLAZING_AGENTS_PROVIDER_ID` is the Provider from [Getting started](../getting-started.md).
@@ -52,7 +52,7 @@ export const relayChat = createChatRelay({
 
 Mount `relayChat` on one `POST` route. In Hono, that is `app.post("/api/chat", (c) => relayChat(c.req.raw))`. In the Next.js App Router, export it as `POST` from `app/api/chat/route.ts`. The relay never reads the user or the Agent from the request body.
 
-3. Add the React chat. The hook posts to `/api/chat` unless you pass `api`.
+3. Add the chat. In React, call `useBlazingAgentsChat`. It posts to `/api/chat` unless you pass `api`.
 
 ```tsx
 import { useBlazingAgentsChat } from "@blazingagents/sdk/react";
@@ -82,19 +82,47 @@ export function Chat() {
 }
 ```
 
+Without React, create a `BlazingAgentsChat`, render `getSnapshot()` each time a `subscribe` listener runs, call `start()` once the chat is in the page, and call `dispose()` when it leaves. The snapshot is a new object only when something in it changed. `useBlazingAgentsChat` returns the snapshot's fields and the chat's methods in one object, so the items in What to add next apply to both.
+
+```ts
+import { BlazingAgentsChat } from "@blazingagents/sdk";
+
+declare const transcript: HTMLElement;
+declare const form: HTMLFormElement;
+declare const input: HTMLInputElement;
+
+const chat = new BlazingAgentsChat();
+chat.subscribe(() => {
+  transcript.textContent = chat
+    .getSnapshot()
+    .messages.map((message) => {
+      const text = message.parts.map((part) => (part.type === "text" ? part.text : "")).join("");
+      return `${message.role}: ${text}`;
+    })
+    .join("\n");
+});
+form.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void chat.send(input.value);
+  input.value = "";
+});
+chat.start();
+```
+
+In Vue, keep the snapshot in a `shallowRef` that the listener sets, call `chat.start` in `onMounted`, and unsubscribe and call `chat.dispose()` in `onUnmounted`. In Angular, keep it in a `signal`, call `chat.start` in `afterNextRender`, and dispose in `DestroyRef.onDestroy`.
+
 ## What to add next
 
-- **Put a failed message back.** `send()` resolves `true` once BA stores the message and `false` when the hook rolled it back: after an error, Stop, New Session, or a Turn that ended without storing it. It never rejects. On `false`, put the text back in the input so the user can resend it.
-- **Stop.** `chat.stop()` aborts the chat request. The relay cancels the API request, which cancels the Turn, and the hook rolls back to the stored transcript. Disable the control unless `status` is `running`.
+- **Put a failed message back.** `send()` resolves `true` once BA stores the message and `false` when the chat rolled it back: after an error, Stop, New Session, or a Turn that ended without storing it. It never rejects. On `false`, put the text back in the input so the user can resend it.
+- **Stop.** `chat.stop()` aborts the chat request. The relay cancels the API request, which cancels the Turn, and the chat rolls back to the stored transcript. Disable the control unless `status` is `running`.
 - **New conversation and regenerate.** `newSession()` cancels a running Turn, forgets the stored Session, and clears the transcript. `regenerate()` replaces the last assistant reply, and does nothing unless `canRegenerate` is true.
 - **Errors.** `error` holds the last failed Turn, steer, or history read. The next `send()` clears it, and so does `clearError()`. A relay error response arrives as a `BlazingAgentsError` with the relay's `status` and `code`, such as `session_busy` (409) or `model_spending_limit_exceeded` (429). See [Troubleshooting](../troubleshooting.md) for each code.
 - **Pending and running state.** `status` is `restoring`, `idle`, or `running`, and `send()` works in each. `pendingIds` holds the IDs in `messages` that are sent but not stored yet, so you can dim those messages. While `status` is `running`, a send steers, so label the button Steer.
-- **Bearer-token sign-in.** Pass `headers`, such as ``{ authorization: `Bearer ${token}` }``. The hook reads them at request time. If the history read failed, a change to the header values reads it again, as when the user signs in after a reload.
-- **One conversation per user in a shared browser.** Pass ``storageKey: `chat-session:${userId}` ``, and render the chat component with `key={userId}`, so a sign-in change mounts a fresh hook that reads that user's Session. `storageKey: null` keeps the Session in memory only.
-- **Tool approvals.** A manual approval ends the reply with a Tool part in state `approval-requested`. Render it, then call `chat.addToolApprovalResponse({ id: part.approval.id, approved, reason })`. Once every approval of the round is answered, the hook sends the round and the continuation streams like any Turn. Messages sent while an approval waits go out after it. See [Human approval](human-approval.md).
+- **Bearer-token sign-in.** Pass `headers`, such as ``{ authorization: `Bearer ${token}` }``. The chat reads them at request time. For a new token, pass new `headers` to the hook, or call `chat.setHeaders()` on a `BlazingAgentsChat`. If the history read failed, a change to the header values reads it again, as when the user signs in after a reload.
+- **One conversation per user in a shared browser.** Pass ``storageKey: `chat-session:${userId}` ``, and render the chat component with `key={userId}`, so a sign-in change mounts a fresh hook that reads that user's Session. Without React, dispose the chat and create a new one for the new user. `storageKey: null` keeps the Session in memory only.
+- **Tool approvals.** A manual approval ends the reply with a Tool part in state `approval-requested`. Render it, then call `chat.addToolApprovalResponse({ id: part.approval.id, approved, reason })`. Once every approval of the round is answered, the chat sends the round and the continuation streams like any Turn. Messages sent while an approval waits go out after it. See [Human approval](human-approval.md).
 - **Backend functions and attribution.** Return `functions` and `metadata` from `resolveContext`. The relay passes `functions` to each chat and approval continuation, and `metadata` to each chat. See [Backend functions](backend-functions.md).
-- **A relay on another origin.** Expose the `Location` header through CORS, because the hook reads the new Session ID from it. For cookie sign-in, pass `credentials: "include"`.
-- **A frontend without React.** `BlazingAgentsChatTransport` is the same browser side for an AI SDK `Chat` in another framework. It reads history and steers through the relay, and leaves waiting messages and rollback to your code. See [the TypeScript SDK reference](../sdk-typescript.md#chat-from-a-browser).
+- **A relay on another origin.** Expose the `Location` header through CORS, because the chat reads the new Session ID from it. For cookie sign-in, pass `credentials: "include"`.
 
 ## Add a requested fork
 
@@ -102,7 +130,7 @@ The chat example ships no fork control. Add one only when the user asks to branc
 
 1. Check eligibility on your backend. Offer the action only on assistant messages that `sessions.messages()` returns with `branchable: true`. Never judge eligibility from the live stream or rendered parts. A reply that is streaming or waiting on an approval is not branchable; earlier replies stay branchable while the source runs.
 2. Save one idempotency key for the user's action, then fork on the signed-in user's scoped client: `client.forUser(userId).sessions.fork({ agentId, sessionId, messageId, idempotencyKey })` (Python: `client.for_user(user_id).sessions.fork(agent_id, session_id, message_id=..., idempotency_key=...)`; Rust: `client.for_user(&user_id)?.sessions().fork(agent_id, session_id, message_id, idempotency_key)`; Go: `scoped.Sessions.Fork(ctx, agentID, sessionID, ba.ForkSessionParams{MessageID: messageID, IdempotencyKey: key})` on the `*ba.UserClient`). After a lost response, retry with the same key and message. A retry returns the same child, even after the source is deleted. Never mint a new key for a retry.
-3. Switch the chat to the child. Write the returned child Session ID to the hook's `storageKey` in `localStorage` (default `blazing-agents-session`), then remount the chat component with a new React `key`. The hook reads the stored Session ID when it mounts, loads the child's history, and sends the next message to the child.
+3. Switch the chat to the child. Write the returned child Session ID to the chat's `storageKey` in `localStorage` (default `blazing-agents-session`), then remount the chat component with a new React `key`, or dispose the `BlazingAgentsChat` and start a new one. The chat reads the stored Session ID when it starts, loads the child's history, and sends the next message to the child.
 
 The child is idle and holds history through the selected reply. Forking runs no model or Tool and records no usage. The child keeps the source's saved Agent configuration, `metadata`, and `userId`. It shares the Agent's Workspace files and Memories with the source, so a file change in one conversation shows in the other. Running Turns, pending approvals, and queued inputs are not copied. `forkedFrom` (`forked_from` in Python and Rust, `ForkedFrom` in Go) on the child names the source Session and message.
 
@@ -120,15 +148,15 @@ Handle these errors:
 - **Derive scope from verified sign-in.** `resolveContext` returns the user ID from your sign-in check, never from the request. The relay ignores body keys it does not know, so the transport's `body` extras cannot change the user or the Agent.
 - **The Agent must belong to the user.** `agentId` must name an Agent that `userId` owns, attached to a Workspace the same user owns. Otherwise the API answers `404`. An unscoped Agent shared by several users shares one Workspace, so one user's Turn can read another user's files.
 - **Resend is a new attempt.** A failed or stopped Turn stores nothing, so a resend sends the text again under a new message ID. Stop cannot undo a Tool call that already ran, and a resend can run it again, such as a second email. Make side-effecting Tools safe to repeat, or gate them with [human approval](human-approval.md).
-- **A steer the Turn did not read becomes the next message.** When the running Turn ends before it reads a steer, or BA refuses the steer with `steer_not_available`, the hook sends it as the next ordinary chat message with a new message ID. After the Turn finishes, a steered message shows where stored history places it. If the Turn read the steer and then failed, the resend can repeat Tool calls.
+- **A steer the Turn did not read becomes the next message.** When the running Turn ends before it reads a steer, or BA refuses the steer with `steer_not_available`, the chat sends it as the next ordinary chat message with a new message ID. After the Turn finishes, a steered message shows where stored history places it. If the Turn read the steer and then failed, the resend can repeat Tool calls.
 - **A steer sent just before Stop can land in the next Turn.** BA places a steer in the Turn that runs when the request arrives, so a Turn that starts while the steer is in flight stores it, even though `send()` already resolved `false`.
-- **Steering stops at Tool approvals.** BA refuses steers while an approval waits, so the hook holds messages sent then until the continuation ends.
+- **Steering stops at Tool approvals.** BA refuses steers while an approval waits, so the chat holds messages sent then until the continuation ends.
 - **Two tabs can share one Session.** A send from the second tab while the first tab's Turn runs fails with `session_busy` (409), and `send()` resolves `false`.
-- **A Turn that ended without `finish` keeps what it stored.** A Stop, an `error` chunk, a cut Turn (`turn_interrupted`), a mid-stream spending stop, or a dropped connection ends the stream without a `finish` chunk. The hook then reads history again. Each message sent for that Turn stays if history holds its ID, and rolls back if not. Never resend after a spending stop automatically. The user waits for the reset, or a Tenant admin changes the limit ([usage dashboards](usage-dashboards.md)).
+- **A Turn that ended without `finish` keeps what it stored.** A Stop, an `error` chunk, a cut Turn (`turn_interrupted`), a mid-stream spending stop, or a dropped connection ends the stream without a `finish` chunk. The chat then reads history again. Each message sent for that Turn stays if history holds its ID, and rolls back if not. Never resend after a spending stop automatically. The user waits for the reset, or a Tenant admin changes the limit ([usage dashboards](usage-dashboards.md)).
 - **`session_turn_unresponsive` (409)** means the Session's previous Turn stopped responding, so the Session is not free yet. It frees within a minute. Send again after that.
-- **A Session the relay answers `404` for is forgotten.** The hook drops the stored Session ID and starts the next message on a new Session. That happens when the Session was deleted or belongs to another user.
-- **Long histories load in pages.** On restore, the hook reads up to 50 pages of 200 messages, newest page first.
-- **Server rendering is safe.** The hook reads `localStorage` after mount, and keeps the Session in memory where storage throws.
+- **A Session the relay answers `404` for is forgotten.** The chat drops the stored Session ID and starts the next message on a new Session. That happens when the Session was deleted or belongs to another user.
+- **Long histories load in pages.** On restore, the chat reads up to 50 pages of 200 messages, newest page first.
+- **Server rendering is safe.** The chat reads `localStorage` in `start()`, never in its constructor, and keeps the Session in memory where storage throws.
 - **Proxies must not buffer the stream.** The relay sets `cache-control: no-cache`. Make sure every proxy in front of your backend passes chunks through as they arrive.
 
 ## Check it works
