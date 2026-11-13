@@ -8,7 +8,7 @@ Use this page when you have no Blazing Agents (BA) code yet and want to see an A
 
 ## How it works
 
-Your backend talks to BA through the TypeScript, Python, Rust, or Go SDK, authenticated with a Tenant API key. A Provider stores your model account key (here, OpenRouter) once, so later calls never resend it. An Agent pairs a Provider with a model and is reused on every call. `chat()` sends one user message and streams the reply. With no `sessionId`, BA starts a new Session and keeps its history for you. The stream uses the AI SDK UI message format, so a web app can hand it straight to `useChat`.
+Your backend talks to BA through the TypeScript, Python, Rust, or Go SDK, authenticated with a Tenant API key. A Provider stores your model account key (here, OpenRouter) once, so later calls never resend it. An Agent pairs a Provider with a model and is reused on every call. `chat()` sends one user message and streams the reply. With no `sessionId`, BA starts a new Session and keeps its history for you. The stream uses the AI SDK UI message format, so a React app renders it with `useBlazingAgentsChat`.
 
 ## What you need
 
@@ -104,7 +104,7 @@ for await (const chunk of result.toStream()) {
 // Raw AI SDK UI message stream: relay it, store it, or render it as you like.
 ```
 
-4. Hand off to your app. In a web backend, return `result.toResponse()` (TypeScript), the stream in a streaming response (Python), `Body::from_stream(stream)` in a Rust framework such as axum, or `stream.WriteTo(w)` in a Go `net/http` handler instead of printing it, and save the Session ID so the next message continues the conversation. [Add chat to your app](recipes/chat-in-your-app.md) walks through the endpoint, sign-in, user scope, and the `useChat` UI.
+4. Hand off to your app. In a web backend, return `result.toResponse()` (TypeScript), the stream in a streaming response (Python), `Body::from_stream(stream)` in a Rust framework such as axum, or `stream.WriteTo(w)` in a Go `net/http` handler instead of printing it, and save the Session ID so the next message continues the conversation. [Add chat to your app](recipes/chat-in-your-app.md) walks through the relay endpoint, sign-in, user scope, and the `useBlazingAgentsChat` UI.
 
 ## Gotchas
 

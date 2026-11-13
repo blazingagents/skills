@@ -54,7 +54,7 @@ Use `BlazingAgentsError.isInstance(error)` instead of `instanceof`, which fails 
 | `input_idempotency_conflict` (409) | A Session input reused a `requestId` with a different message, or reused a message ID under a new `requestId`. | [Retry with the original request](#session-input-errors). |
 | `message_id_conflict` (409) on chat | The submission contains a message ID already in accepted history; nothing ran. | The message is already saved; reload history instead of resending. Regeneration may reuse IDs. |
 | `steer_not_available` (409) on a Session input | No Turn can take a steer: the Session is idle or stopping, or an approval is waiting. | [Hold the message and send it as chat](#session-input-errors). |
-| A message sent while a turn ran never reaches the agent | BA holds no queue; the message was still waiting in the client. | [Send waiting messages after the turn settles](#session-input-errors). |
+| A message sent while a turn ran never reaches the agent | BA holds no queue; the message was still waiting in the client. `useBlazingAgentsChat` sends waiting messages itself. | In a client of your own, [send waiting messages after the turn settles](#session-input-errors). |
 | `invalid_cursor` (400) | The cursor was altered, came from another list, or was reused with different filters. | [Restart pagination](#invalid-cursor). |
 | Tool call never runs; the agent reports it was denied | The approval policy for this surface is `deny`, or `manual`/`auto` in a Task or stateless generation, where no person can approve. | [Change the policy or use chat](#tool-blocked-by-approval-policy). |
 | `mcp_connection_needs_auth` (409) on a turn, or a Task run ends `blocked` with it | An attached MCP connection has status `needs_auth`. The message and `details.connections` name it. Retrying fails until it is reconnected. | [Reconnect the named connection](#mcp-authorization-missing). |
@@ -145,7 +145,7 @@ Session inputs are steer attempts on the running turn. Each carries your `reques
 - A `requestId` must be 1 to 128 characters and not exactly `.` or `..`, because a URL would collapse those path segments. Generate IDs instead of deriving them from user text.
 - `input_idempotency_conflict` (409): the `requestId` was reused with a changed message, or the message ID was already used under another `requestId`. When an acknowledgement was lost, retry with the original `requestId` and payload, or list the Session's inputs. Never mint a new `requestId` for a message whose outcome you do not know; that can deliver it twice.
 - `steer_not_available` (409): the submit was refused because no turn could take a steer: the Session is idle, stopping, or waiting on a tool approval. Nothing was saved. Keep the message in your client and send it as ordinary chat once activity is `idle`.
-- Read terminal receipts with `inputs({ includeCompleted: true })`. `inputs()` is receipts, not your queue. For receipt states and what to do with each, read [chat in your app](recipes/chat-in-your-app.md#how-it-works).
+- Read terminal receipts with `inputs({ includeCompleted: true })`. `inputs()` is receipts, not your queue. For receipt states, read [the TypeScript SDK reference](sdk-typescript.md#clientsessions). In a browser, `useBlazingAgentsChat` acts on receipts for you.
 - `message_id_conflict` (409) on chat: the submission contains a message ID already in accepted history, so it ran nothing. The message is already saved; reload history instead of resending. Regeneration may reuse IDs.
 
 ## Invalid cursor
@@ -208,7 +208,7 @@ A chat or approval-continuation turn that the platform cuts after it started end
 - The turn may have saved its work before the cut. Read the Session's messages before you resend.
 - The Session can stay busy for up to a minute. A resend in that time returns `session_busy`, then `session_turn_unresponsive`. See [session busy](#session-busy).
 
-- In a `useChat` frontend, `onFinish` receives `isAbort`, `isError`, `isDisconnect`, and `finishReason`. Treat the turn as failed when any flag is set, `finishReason` is missing, or it equals `"error"`. Restore the last good messages and keep the user's draft.
+- `useBlazingAgentsChat` handles this itself. It reads history again and keeps each message the turn stored, and `send()` resolves `false` for one it rolled back. With AI SDK `useChat` and `BlazingAgentsChatTransport`, `onFinish` receives `isAbort`, `isError`, `isDisconnect`, and `finishReason`. Treat the turn as failed when any flag is set, `finishReason` is missing, or it equals `"error"`, then call `loadHistory()` and keep the user's draft.
 - Completion and object streams carry no `data-ba-error` part. A cut one fails the stream. In TypeScript, awaiting `result.text` or `result.object` rejects with `stream_error`. A network failure before any response is `network_error`, and your own abort is `request_aborted`. In Python, these are `StreamError` and `APIConnectionError`; in Rust, `Error::Stream` and `Error::Connection`; in Go, `*ba.StreamError` and `*ba.ConnectionError`.
 - A failed or cancelled turn adds nothing to Session history, but a dropped connection can hide a turn that finished and was saved. Reload the Session's messages before you assume the reply was lost.
 - A resend is an ordinary new message with a fresh message ID. It can repeat tool side effects.

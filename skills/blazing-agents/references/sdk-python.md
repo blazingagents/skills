@@ -83,7 +83,7 @@ The client itself has five generation methods. Each call runs one metered Turn. 
 
 ### Chat returns raw SSE bytes and a Session ID
 
-`chat()` returns a `ChatStream`. Iterating it yields the server's AI SDK UI message stream as raw SSE `bytes`, exactly as sent. The SDK does not decode it. Relay those bytes to your frontend, where `useChat` from `@ai-sdk/react` reads them.
+`chat()` returns a `ChatStream`. Iterating it yields the server's AI SDK UI message stream as raw SSE `bytes`, exactly as sent. The SDK does not decode it. Relay those bytes to your frontend, where `useBlazingAgentsChat` from `@blazingagents/sdk/react` reads them.
 
 Call `chat()` on `client.for_user(verified_user_id)` whenever the Session belongs to one of your users. The scoped client sends the user on every request, so BA answers `404` for a Session ID, Agent, or Workspace that user does not own. A `session_id` from the browser is then safe to pass back. On the unscoped client the same call would resume any Session in your Tenant.
 
@@ -109,7 +109,7 @@ async def start_chat(
     return await scoped.chat(agent_id=agent_id, session_id=session_id, message=message)
 ```
 
-To relay, pass the stream object itself as the body of your framework's streaming response. In FastAPI that is `StreamingResponse(stream, media_type="text/event-stream", headers=headers)` with `headers = {"x-vercel-ai-ui-message-stream": "v1"}`. When the call started a new Session, also copy `stream.headers["location"]` into `headers["location"]`: `BlazingAgentsChatTransport` in your frontend reads the new Session ID from that header. The [FastAPI example](https://github.com/blazingagents/examples/tree/main/vite-fastapi-ai-sdk) shows the full endpoint.
+To relay, pass the stream object itself as the body of your framework's streaming response. In FastAPI that is `StreamingResponse(stream, media_type="text/event-stream", headers=headers)` with `headers = {"x-vercel-ai-ui-message-stream": "v1"}`. When the call started a new Session, also copy `stream.headers["location"]` into `headers["location"]`: `useBlazingAgentsChat` in your frontend reads the new Session ID from that header. The relay in [Add chat to your app: Python code](recipes/chat-in-your-app.python.md) answers every operation the hook sends. The [FastAPI example](https://github.com/blazingagents/examples/tree/main/vite-fastapi-ai-sdk) shows the full endpoint.
 
 Outside a web request, iterate the chunks yourself:
 

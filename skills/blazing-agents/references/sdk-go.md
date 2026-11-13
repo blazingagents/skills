@@ -97,7 +97,7 @@ Options:
 
 ### Chat returns raw SSE bytes and a Session ID
 
-`client.Chat.Send` returns a `*ba.ChatStream`. `Events()` yields the server's AI SDK UI message stream as raw SSE frames, one complete event per iteration, exactly as sent. The SDK does not decode it. Relay those bytes to your frontend, where `useChat` from `@ai-sdk/react` reads them.
+`client.Chat.Send` returns a `*ba.ChatStream`. `Events()` yields the server's AI SDK UI message stream as raw SSE frames, one complete event per iteration, exactly as sent. The SDK does not decode it. Relay those bytes to your frontend, where `useBlazingAgentsChat` from `@blazingagents/sdk/react` reads them.
 
 Send through `client.ForUser(verifiedUserID)` whenever the Session belongs to one of your users. The scoped `*ba.UserClient` sends the user on every request, so BA answers `404` for a Session ID, Agent, or Workspace that user does not own, and a `sessionId` from the browser is safe to pass back. On the unscoped `*ba.Client` the same call would resume any Session in your Tenant.
 
@@ -125,7 +125,7 @@ defer stream.Close()
 fmt.Println(stream.SessionID(), stream.TurnID())
 ```
 
-To relay, write the stream into your framework's response. In `net/http`, call `stream.SetRelayHeaders(w.Header())`, which sets `Content-Type`, `Cache-Control`, `X-Vercel-AI-UI-Message-Stream: v1`, and `X-BA-Turn-Id` (the running Turn's `turn_...` ID, used for Stop), then `stream.WriteTo(w)`, which flushes after every event. When the call started a new Session, also copy the response's `Location` header from `stream.Meta().Header`: `BlazingAgentsChatTransport` in your frontend reads the new Session ID from that header.
+To relay, write the stream into your framework's response. In `net/http`, call `stream.SetRelayHeaders(w.Header())`, which sets `Content-Type`, `Cache-Control`, `X-Vercel-AI-UI-Message-Stream: v1`, and `X-BA-Turn-Id` (the running Turn's `turn_...` ID, used for Stop), then `stream.WriteTo(w)`, which flushes after every event. When the call started a new Session, also copy the response's `Location` header from `stream.Meta().Header`: `useBlazingAgentsChat` in your frontend reads the new Session ID from that header. The relay in [Add chat to your app: Go code](recipes/chat-in-your-app.go.md) answers every operation the hook sends.
 
 ```go
 package main

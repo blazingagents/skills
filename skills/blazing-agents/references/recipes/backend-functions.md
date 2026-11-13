@@ -91,7 +91,7 @@ export async function continueAfterDecisions(): Promise<Response> {
 - Nothing is saved on the Agent. Send `functions` on every chat call and rebuild the map per request so handlers capture that request's verified user.
 - Never trust a user ID the model supplies as an argument; build handlers after authenticating and query with the verified ID.
 - Backend functions follow `approvalInChat.default`; per-tool `overrides` name built-in and MCP tools only.
-- Messages that waited while the Session was busy go out through your own `chat()` calls, so attach the same `functions` map to each one, including a multi-message `chat({ messages: [...] })`. See [chat in your app](chat-in-your-app.md).
+- Every chat request needs the map, including a message that waited while the Session was busy. With `createChatRelay`, return `functions` from `resolveContext`, and the relay passes it to each chat and approval continuation. See [chat in your app](chat-in-your-app.md).
 - Nothing about a function is saved. The continuation uses the `functions` you pass to `continueChat`, so keep their names and schemas compatible with the paused call. A missing handler or invalid input reaches the agent as a tool error.
 - Each call has a 60-second deadline, including claim time. Cancellation is cooperative (pass `signal`, check `cancelled` in a synchronous Python handler, or honor the handler's `ctx` in Go) and cannot undo a side effect that already happened.
 - The idempotency key marks one execution. A user resend gets a fresh key, so payments and other business operations need your own stable transaction ID.
