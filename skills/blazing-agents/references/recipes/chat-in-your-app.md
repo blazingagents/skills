@@ -1,6 +1,6 @@
 # Add chat to your app
 
-You will have a streaming chat UI in your React app. Each signed-in user gets their own conversation, which comes back after a page reload. While the Agent answers, users can keep typing: a message sent then steers the running Turn.
+You will have a streaming chat UI in your React app. Each signed-in user gets their own conversation, which comes back after a page reload. While the Agent answers, users can keep typing, and a message they send then steers the running Turn.
 
 ## When to use this
 
@@ -10,7 +10,7 @@ Your users chat with an Agent inside your own web product, and conversations mus
 
 Your browser talks only to your backend, through one endpoint that `createChatRelay` serves. Each request is a JSON `POST` whose `op` names the operation: `chat` streams a Turn, `history` returns one page of the Session's stored messages, and `steer` sends a user message into the Turn running now. For each request the relay calls your `resolveContext`, which returns the signed-in user and their Agent. The relay then sends every API request through `client.forUser(userId)`, so BA answers `404` for another user's Session or Agent. BA stores the history, so a chat request carries only the newest message and the Session ID. The first reply names the new Session in its `Location` header.
 
-`useBlazingAgentsChat` from `@blazingagents/sdk/react` is the browser side. It keeps the Session ID in `localStorage`, reads the stored transcript back after a reload, and renders the AI SDK UI message stream. `send()` starts a Turn when the chat is idle and steers the running Turn while a reply streams. BA holds no queue. A message that can go neither way, such as one sent while a Tool approval waits, waits in the hook and goes out as the next Turn. Stop aborts the chat request, which cancels the Turn.
+`useBlazingAgentsChat` from `@blazingagents/sdk/react` is the browser side. It keeps the Session ID in `localStorage`, reads the stored transcript back after a reload, and turns the AI SDK UI message stream into `messages`. `send()` starts a Turn when the chat is idle and steers the running Turn while a reply streams. BA holds no queue. A message that can do neither, such as one sent while a Tool approval waits, stays in the hook and goes out as the next Turn. Stop aborts the chat request, which cancels the Turn.
 
 ## Build it
 
@@ -124,7 +124,7 @@ Handle these errors:
 - **A steer sent just before Stop can land in the next Turn.** BA places a steer in the Turn that runs when the request arrives, so a Turn that starts while the steer is in flight stores it, even though `send()` already resolved `false`.
 - **Steering stops at Tool approvals.** BA refuses steers while an approval waits, so the hook holds messages sent then until the continuation ends.
 - **Two tabs can share one Session.** A send from the second tab while the first tab's Turn runs fails with `session_busy` (409), and `send()` resolves `false`.
-- **A Turn that ended without `finish` keeps what it stored.** A Stop, an `error` chunk, a cut Turn (`turn_interrupted`), a mid-stream spending stop, or a dropped connection ends the stream without a `finish` chunk. The hook then reads history again: each message sent for that Turn stays if history holds its ID, and rolls back if not. Never resend after a spending stop automatically. The user waits for the reset, or a Tenant admin changes the limit ([usage dashboards](usage-dashboards.md)).
+- **A Turn that ended without `finish` keeps what it stored.** A Stop, an `error` chunk, a cut Turn (`turn_interrupted`), a mid-stream spending stop, or a dropped connection ends the stream without a `finish` chunk. The hook then reads history again. Each message sent for that Turn stays if history holds its ID, and rolls back if not. Never resend after a spending stop automatically. The user waits for the reset, or a Tenant admin changes the limit ([usage dashboards](usage-dashboards.md)).
 - **`session_turn_unresponsive` (409)** means the Session's previous Turn stopped responding, so the Session is not free yet. It frees within a minute. Send again after that.
 - **A Session the relay answers `404` for is forgotten.** The hook drops the stored Session ID and starts the next message on a new Session. That happens when the Session was deleted or belongs to another user.
 - **Long histories load in pages.** On restore, the hook reads up to 50 pages of 200 messages, newest page first.
