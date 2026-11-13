@@ -71,7 +71,7 @@ The client itself has the generation methods. Each call runs one metered Turn. T
 
 ### Chat returns raw SSE bytes and a Session ID
 
-`chat()` returns a `ChatStream`. It is a `Stream` whose items are the server's AI SDK UI message stream as raw SSE `Bytes`, one complete event per item, exactly as sent. The SDK does not decode it. Relay those bytes to your frontend, where `useBlazingAgentsChat` from `@blazingagents/sdk/react` reads them.
+`chat()` returns a `ChatStream`. It is a `Stream` whose items are the server's AI SDK UI message stream as raw SSE `Bytes`, one complete event per item, exactly as sent. The SDK does not decode it. Relay those bytes to your frontend as they arrive. For a browser chat, serve the [browser chat relay](#browser-chat-relay) instead of relaying streams yourself.
 
 Call `chat` on `client.for_user(verified_user_id)?` whenever the Session belongs to one of your users. The scoped `UserClient` sends the user on every request, so BA answers `404` for a Session ID, Agent, or Workspace that user does not own, and a `sessionId` from the browser is safe to pass back. On the unscoped `Client` the same call would resume any Session in your Tenant.
 
@@ -99,74 +99,18 @@ async fn start_chat(
 }
 ```
 
-To relay, turn the stream into your framework's streaming body. In axum that is `Body::from_stream(stream)` with the `x-vercel-ai-ui-message-stream: v1` header, plus `x-ba-turn-id` (the running Turn's `turn_...` ID, used for Stop). When the call started a new Session, also copy the response's `location` header from `stream.meta().headers()`: `useBlazingAgentsChat` in your frontend reads the new Session ID from that header. The relay in [Add chat to your app: Rust code](recipes/chat-in-your-app.rust.md) answers every operation the hook sends.
+To relay one stream yourself, turn it into your framework's streaming body. In axum that is `Body::from_stream(stream)` with the `content-type: text/event-stream` and `x-vercel-ai-ui-message-stream: v1` headers, plus `x-ba-turn-id` (the running Turn's `turn_...` ID, used for Stop) and, when the call started a new Session, the `location` header, both from `stream.meta().headers()`.
 
-```rust
-use axum::body::Body;
-use axum::extract::{Json, State};
-use axum::http::{HeaderMap, StatusCode};
-use axum::response::Response;
-use axum::routing::post;
-use axum::Router;
-use blazing_agents::messages::UserMessage;
-use blazing_agents::Client;
-use serde::Deserialize;
+### Browser chat relay
 
-/// Your sign-in check: the verified user's ID and the Agent you provisioned
-/// for that user, or None when the request is not signed in.
-fn authenticate(headers: &HeaderMap) -> Option<(String, String)> {
-    unimplemented!()
-}
+`blazing_agents::relay::ChatRelay` is the endpoint that `BlazingAgentsChat` and `useBlazingAgentsChat` from the TypeScript SDK post to. It implements the [browser relay contract](https://github.com/blazingagents/typescript-sdk/blob/main/docs/relay-contract.md). Cloning it is cheap, so keep it in your router state.
 
-#[derive(Deserialize)]
-struct ChatBody {
-    message: UserMessage,
-    #[serde(rename = "sessionId")]
-    session_id: Option<String>,
-}
+- `ChatRelay::new(client, resolve_context)` calls `resolve_context` with each `http::Request<Bytes>` and its whole body. It returns `Ok(Some(RelayContext::new(agent_id, user_id)))` from your verified sign-in, `Ok(None)`, which the relay answers with `401`, or an error, which the relay answers with `500`, so an outage does not sign users out. The Agent and its Workspace must belong to that user. `RelayContext::functions` and `RelayContext::metadata` add backend functions and attribution.
+- The relay sends every API request through `client.for_user(user_id)` and never reads the user or the Agent from the request body.
+- `relay.handle(request).await` takes an `http::Request` with any `http_body::Body` and never fails. It returns a `Response<RelayBody>`. `RelayBody` is both an `http_body::Body` and a `Stream` of bytes, so axum, hyper, and tower serve it as it is. Dropping the response closes the API request, which cancels the Turn.
+- Errors answer `{"error": {"code", "message"}}`: `400 invalid_request` for a bad body or an unknown `op`, `401 unauthorized`, the API's own status and code, `502` when the API cannot be reached or answers something the SDK cannot read, and `500 internal_error`, which never names its cause.
 
-async fn chat(
-    State(client): State<Client>,
-    headers: HeaderMap,
-    Json(body): Json<ChatBody>,
-) -> Result<Response, StatusCode> {
-    let (user_id, agent_id) = authenticate(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let user = client.for_user(&user_id).map_err(|_| StatusCode::BAD_REQUEST)?;
-    let call = user.chat(&agent_id, body.message);
-    let stream = match &body.session_id {
-        Some(session_id) => call.session(session_id),
-        None => call,
-    }
-    .await
-    .map_err(|_| StatusCode::BAD_GATEWAY)?;
-    let mut response = Response::builder()
-        .header("content-type", "text/event-stream")
-        .header("x-vercel-ai-ui-message-stream", "v1");
-    if let Some(turn_id) = stream.meta().headers().get("x-ba-turn-id") {
-        response = response.header("x-ba-turn-id", turn_id.clone());
-    }
-    if body.session_id.is_none() {
-        if let Some(location) = stream.meta().headers().get("location") {
-            response = response.header("location", location.clone());
-        }
-    }
-    response
-        .body(Body::from_stream(stream))
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
-}
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let app = Router::new()
-        .route("/api/chat", post(chat))
-        .with_state(Client::from_env()?);
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
-    axum::serve(listener, app).await?;
-    Ok(())
-}
-```
-
-The full endpoint, including batches and approval continuations, is in [Add chat to your app](recipes/chat-in-your-app.md).
+[Add chat to your app: Rust code](recipes/chat-in-your-app.rust.md) mounts it on an axum route with the per-user Agent lookup.
 
 Outside a web request, iterate the chunks yourself:
 
@@ -614,4 +558,4 @@ match client.agents().get("ag_0123456789abcdef").await {
 - [Rust SDK repository](https://github.com/blazingagents/rust-sdk)
 - [Error codes](https://docs.blazingagents.com/api-reference/protocols/errors)
 - [Connect Blazing Agents to your app](https://docs.blazingagents.com/getting-started/connect-your-app)
-- [Add chat to your app](recipes/chat-in-your-app.md) for a full axum relay endpoint
+- [Add chat to your app](recipes/chat-in-your-app.md) for the axum relay endpoint

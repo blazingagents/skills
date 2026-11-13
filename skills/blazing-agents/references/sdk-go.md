@@ -97,7 +97,7 @@ Options:
 
 ### Chat returns raw SSE bytes and a Session ID
 
-`client.Chat.Send` returns a `*ba.ChatStream`. `Events()` yields the server's AI SDK UI message stream as raw SSE frames, one complete event per iteration, exactly as sent. The SDK does not decode it. Relay those bytes to your frontend, where `useBlazingAgentsChat` from `@blazingagents/sdk/react` reads them.
+`client.Chat.Send` returns a `*ba.ChatStream`. `Events()` yields the server's AI SDK UI message stream as raw SSE frames, one complete event per iteration, exactly as sent. The SDK does not decode it. Relay those bytes to your frontend as they arrive. For a browser chat, serve the [browser chat relay](#browser-chat-relay) instead of relaying streams yourself.
 
 Send through `client.ForUser(verifiedUserID)` whenever the Session belongs to one of your users. The scoped `*ba.UserClient` sends the user on every request, so BA answers `404` for a Session ID, Agent, or Workspace that user does not own, and a `sessionId` from the browser is safe to pass back. On the unscoped `*ba.Client` the same call would resume any Session in your Tenant.
 
@@ -125,75 +125,18 @@ defer stream.Close()
 fmt.Println(stream.SessionID(), stream.TurnID())
 ```
 
-To relay, write the stream into your framework's response. In `net/http`, call `stream.SetRelayHeaders(w.Header())`, which sets `Content-Type`, `Cache-Control`, `X-Vercel-AI-UI-Message-Stream: v1`, and `X-BA-Turn-Id` (the running Turn's `turn_...` ID, used for Stop), then `stream.WriteTo(w)`, which flushes after every event. When the call started a new Session, also copy the response's `Location` header from `stream.Meta().Header`: `useBlazingAgentsChat` in your frontend reads the new Session ID from that header. The relay in [Add chat to your app: Go code](recipes/chat-in-your-app.go.md) answers every operation the hook sends.
+To relay, write the stream into your framework's response. In `net/http`, call `stream.SetRelayHeaders(w.Header())`, then `stream.WriteTo(w)`, which flushes after every event. `SetRelayHeaders` sets `Content-Type`, `Cache-Control`, `X-Vercel-AI-UI-Message-Stream: v1`, `X-Accel-Buffering: no`, `X-BA-Turn-Id` (the running Turn's `turn_...` ID, used for Stop), and the API's `Location` and `X-Request-Id`.
 
-```go
-package main
+### Browser chat relay
 
-import (
-	"encoding/json"
-	"log"
-	"net/http"
+`ba.NewChatRelay(client, resolveContext)` returns the `http.Handler` that `BlazingAgentsChat` and `useBlazingAgentsChat` from the TypeScript SDK post to. Mount it for `POST` on one path, such as `/api/chat`. It implements the [browser relay contract](https://github.com/blazingagents/typescript-sdk/blob/main/docs/relay-contract.md).
 
-	ba "github.com/blazingagents/golang-sdk"
-)
+- `resolveContext` is a `func(*http.Request) (*ba.RelayContext, error)`. It returns `&ba.RelayContext{AgentID: agentID, UserID: userID}` from your verified sign-in, or `nil, nil`, which the relay answers with `401`. The Agent and its Workspace must belong to that user. The optional `Functions` and `Metadata` fields go to each chat and approval continuation. An error it returns is answered like any other failure, so an `*ba.APIError` keeps its status and code.
+- The relay sends every API request through `client.ForUser(UserID)` and never reads the user or the Agent from the request body.
+- Errors answer `{"error":{"code","message"}}`: `400 invalid_request` before any API call, `401 unauthorized`, the API's own status and code with its `X-Request-Id`, `499 request_aborted` when the browser disconnects, which cancels the Turn, `502` for another failed API request, and `500 internal_error`, which names no cause and goes to the client's `WithLogger` logger.
+- The body limit is 15 MiB, the API's own. Wrap the handler in `http.MaxBytesHandler` for a smaller one.
 
-// authenticate is your sign-in check. It returns the verified user's ID and the Agent you
-// provisioned for that user, or ok == false when the request is not signed in.
-func authenticate(r *http.Request) (userID string, agentID ba.AgentID, ok bool) {
-	panic("replace with your sign-in check")
-}
-
-type chatBody struct {
-	Message   ba.UserMessage `json:"message"`
-	SessionID ba.SessionID   `json:"sessionId"` // "" starts a Session
-}
-
-func chat(client *ba.Client) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		userID, agentID, ok := authenticate(r)
-		if !ok {
-			http.Error(w, "Sign in first.", http.StatusUnauthorized)
-			return
-		}
-		user, err := client.ForUser(userID)
-		if err != nil {
-			http.Error(w, "Invalid user.", http.StatusBadRequest)
-			return
-		}
-		var body chatBody
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			http.Error(w, "Invalid message.", http.StatusBadRequest)
-			return
-		}
-		stream, err := user.Chat.Send(r.Context(), agentID, ba.Messages(body.Message),
-			ba.ChatParams{SessionID: body.SessionID})
-		if err != nil {
-			http.Error(w, "Request failed.", http.StatusBadGateway)
-			return
-		}
-		defer stream.Close()
-		stream.SetRelayHeaders(w.Header())
-		if body.SessionID == "" {
-			w.Header().Set("Location", stream.Meta().Header.Get("Location"))
-		}
-		if _, err := stream.WriteTo(w); err != nil {
-			log.Printf("relay ended: %v", err)
-		}
-	}
-}
-
-func main() {
-	client, err := ba.NewClient()
-	if err != nil {
-		log.Fatal(err)
-	}
-	http.Handle("POST /api/chat", chat(client))
-	log.Fatal(http.ListenAndServe(":3000", nil))
-}
-```
-
-The full endpoint, including batches and approval continuations, is in [Add chat to your app](recipes/chat-in-your-app.md).
+[Add chat to your app: Go code](recipes/chat-in-your-app.go.md) mounts it with the per-user Agent lookup.
 
 Outside a web request, iterate the events yourself:
 
@@ -614,4 +557,4 @@ default:
 - [Go SDK repository](https://github.com/blazingagents/golang-sdk)
 - [Error codes](https://docs.blazingagents.com/api-reference/protocols/errors)
 - [Connect Blazing Agents to your app](https://docs.blazingagents.com/getting-started/connect-your-app)
-- [Add chat to your app](recipes/chat-in-your-app.md) for a full `net/http` relay endpoint
+- [Add chat to your app](recipes/chat-in-your-app.md) for the `net/http` relay endpoint

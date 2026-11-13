@@ -86,10 +86,7 @@ func chat(client *ba.Client) http.HandlerFunc {
 			return
 		}
 		defer stream.Close()
-		stream.SetRelayHeaders(w.Header())
-		if body.SessionID == "" {
-			w.Header().Set("Location", stream.Meta().Header.Get("Location"))
-		}
+		stream.SetRelayHeaders(w.Header()) // also copies Location for a new Session
 		if _, err := stream.WriteTo(w); err != nil {
 			log.Printf("relay ended: %v", err)
 		}
