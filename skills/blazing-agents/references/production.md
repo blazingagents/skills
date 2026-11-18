@@ -138,7 +138,7 @@ Every response carries an `X-Request-Id` header. It is not in the JSON body. Rea
 
 ## Agent edits reach new work only
 
-An edit to an Agent's model, instructions, tools, approval policies, or compaction settings applies to new Sessions, Task runs queued after the edit, and stateless calls. An existing Session keeps the configuration from its first Turn, and a queued Task run keeps the one from when it was queued. To roll a change out to users mid-conversation, start them a new Session. Because saved Sessions keep their Provider, deleting a Provider they name fails with `provider_historical_use`; see [Rotate keys](#rotate-keys).
+An edit to an Agent's model, instructions, tools, approval policies, or compaction settings applies to new Sessions, Task runs queued after the edit, and stateless calls. An existing Session keeps the configuration from its first Turn, and a queued Task run keeps the one from when it was queued. To roll a change out to users mid-conversation, start them a new Session. Detaching an MCP Connection is the exception: existing Sessions lose its tools at their next Turn. Because saved Sessions keep their Provider, deleting a Provider they name fails with `provider_historical_use`; see [Rotate keys](#rotate-keys).
 
 When a Session or run behaves as if an edit never happened, read the configuration it used from trusted backend code: `(await client.sessions.get({ agentId, sessionId })).agentConfig` or `(await client.tasks.getRun({ taskId, runId })).agentConfig`. Provider keys, MCP credentials, Skills, Memories, and the Workspace are always current.
 

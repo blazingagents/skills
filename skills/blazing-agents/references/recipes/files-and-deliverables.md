@@ -141,6 +141,7 @@ await client.workspaces.delete({ workspaceId });
 ## Gotchas
 
 - One Agent, one Workspace, shared by every Session. Without `forUser` and per-user Agents, a shared Agent's users read and overwrite each other's files, and on Plus those files persist. Give each user their own Agent and Workspace when files are private, or keep file tools off the shared Agent.
+- A download URL always answers as an attachment with the Artifact's filename, so a browser saves the file and does not render it.
 - `bash` runs each command as a job that is never killed for running long; it returns when the command exits or after `yieldMs`, and you follow it with `bash_output`, `bash_write`, or `bash_kill`. At most 8 jobs run at once per Workspace, and a job still running dies when the Workspace idle-stops about 10 minutes after the Turn ends.
 - Switching a Workspace's network policy between unrestricted and restricted stops it if it is running; Core files are lost, Plus saves them first.
 - The Agent says it wrote a file but nothing happened. It lacks `write`. Add it to `tools`. The same goes for `publish_artifacts` when nothing was published.
