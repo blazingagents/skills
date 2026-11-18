@@ -59,6 +59,8 @@ Use `BlazingAgentsError.isInstance(error)` instead of `instanceof`, which fails 
 | Tool call never runs; the agent reports it was denied | The approval policy for this surface is `deny`, or `manual`/`auto` in a Task or stateless generation, where no person can approve. | [Change the policy or use chat](#tool-blocked-by-approval-policy). |
 | `mcp_connection_needs_auth` (409) on a turn, or a Task run ends `blocked` with it | An attached MCP connection has status `needs_auth`. The message and `details.connections` name it. Retrying fails until it is reconnected. | [Reconnect the named connection](#mcp-authorization-missing). |
 | `mcp_connection_discovery_failed` (502) on a turn | An attached MCP server is down or its tool list failed. | [Check the server or detach](#mcp-authorization-missing). |
+| `mcp_connection_discovery_failed` (400) on a turn | An approval override names a tool its MCP connection no longer lists. | [Fix the override or the server](#mcp-authorization-missing). |
+| A `data-ba-error` part with code `tool_approval_outdated` in a continuation stream | A connection, Skill, or Workspace of the Agent changed while the approval waited. The approved tool did not run and the round failed. | Send the message again so the Agent asks again. |
 | Chat stream ends without a `finish` chunk, ends with a `data-ba-error` part with code `turn_interrupted`, or `stream_error` | The stream broke after it started: network drop, server error, a turn the platform cut, or your Stop. | [Reload history and let the user resend](#stream-ended-without-finish). |
 | Slack or Telegram bot stays silent; a health check shows `unknown` | The health check could not verify a setting. | [Check that setting by hand](#chat-connection-health-unknown). |
 
@@ -176,6 +178,7 @@ An MCP connection has a `status`: `connected`, `needs_auth`, or `error`. A conne
 
 - `mcp_connection_needs_auth` (409): the connection has status `needs_auth`. Retrying fails until someone reconnects the connection it names. A Task run that fails this way ends `blocked` with this `errorCode`.
 - `mcp_connection_discovery_failed` (502): the server could not be reached or its tool list failed. A retry can succeed once the server is back.
+- `mcp_connection_discovery_failed` (400): an approval override names a tool the connection no longer lists, and `error.details.issues` names the override, the connection, and the tool. Have the server list the tool again, or remove the override and start a new Session. An existing Session keeps its saved override, so detach the connection to let it run without those tools.
 
 Check the connection and run a live test:
 

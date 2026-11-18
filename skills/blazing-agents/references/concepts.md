@@ -32,7 +32,7 @@ Not the same as: a Session. The agent is configuration; a session is one convers
 
 ### Agent configuration snapshot
 
-The Agent settings saved with a Session at its first Turn or with a Task run when queued. It includes the model, instructions, tools, approval policies, and compaction settings. Later Agent edits affect new work; existing Sessions and queued runs keep their saved settings. Read `agentConfig` with `sessions.get()` or `tasks.getRun()`, including before a Task run has a Session.
+The Agent settings saved with a Session at its first Turn or with a Task run when queued. It includes the model, instructions, tools, approval policies, and compaction settings. Later Agent edits affect new work; existing Sessions and queued runs keep their saved settings. MCP attachments are the exception: a Turn receives a saved Connection only while the Agent still attaches it, so detaching takes its tools from existing Sessions too, and a Connection attached later reaches only new work. A saved approval override is skipped while the Skill or Connection that supplied its tool is gone. Read `agentConfig` with `sessions.get()` or `tasks.getRun()`, including before a Task run has a Session.
 
 Not the same as a copy of every dependency. Provider keys, MCP credentials and connection details, Workspace attachment, Skills, and Memories use their current state. Local callback functions come from each SDK request; pass them again on the approval continuation call.
 
