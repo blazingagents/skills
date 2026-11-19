@@ -259,7 +259,7 @@ Required inputs are arguments; optional inputs are setters on the returned `Call
 
 | Method | Returns |
 | --- | --- |
-| `create(path, content)` | `SkillDetail` (`path` must be `"SKILL.md"`; `content` starts with YAML frontmatter that sets `name` and `description`) |
+| `create(path, content)` | `SkillDetail` (`path` must be `"SKILL.md"`; `content` starts with YAML frontmatter that sets `name` and `description`). `create`, `upload`, and `copy` take `.idempotency_key(key)`: a retry with the same key and content returns the first request's Skill. |
 | `upload(ArchiveType, Upload)` | `SkillDetail` (`ArchiveType::Zip`, `Tar`, `TarGz`) |
 | `list()`, `.limit(...)` | `Page<Skill>` |
 | `get(skill_id)` | `SkillDetail` |

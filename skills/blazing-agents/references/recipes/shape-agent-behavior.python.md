@@ -54,7 +54,11 @@ from blazing_agents import BlazingAgents
 
 def add_skill(client: BlazingAgents, agent_id: str) -> None:
     skills = client.agent(agent_id).skills
-    skill = skills.upload(archive_type="zip", file="release-notes.zip")
+    skill = skills.upload(
+        archive_type="zip",
+        file="release-notes.zip",
+        idempotency_key="release-notes-v1",
+    )
     print(skill.name, [f.path for f in skill.files])
 
     skills.replace_file(

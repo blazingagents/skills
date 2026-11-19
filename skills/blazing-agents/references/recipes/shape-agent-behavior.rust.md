@@ -69,6 +69,7 @@ let agent_handle = client.agent("ag_0123456789abcdef");
 let skills = agent_handle.skills();
 let skill = skills
     .upload(ArchiveType::Zip, Upload::file("release-notes.zip").await?)
+    .idempotency_key("release-notes-v1")
     .await?;
 println!("{} {:?}", skill.name, skill.files.iter().map(|f| &f.path).collect::<Vec<_>>());
 
