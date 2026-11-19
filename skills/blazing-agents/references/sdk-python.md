@@ -254,8 +254,8 @@ Signatures below drop `extra_headers` and `timeout`, which every method accepts.
 
 | Method | Returns |
 | --- | --- |
-| `create(*, path, content)` | `SkillDetail` (`path` must be `"SKILL.md"`; `content` starts with YAML frontmatter that sets `name` and `description`) |
-| `upload(*, archive_type, file, filename=None)` | `SkillDetail` (`archive_type`: `"zip"`, `"tar"`, `"tar.gz"`) |
+| `create(*, path, content, idempotency_key=None)` | `SkillDetail` (`path` must be `"SKILL.md"`; `content` starts with YAML frontmatter that sets `name` and `description`). `create`, `upload`, and `copy` take an optional `idempotency_key`: a retry with the same key and content returns the first request's Skill. |
+| `upload(*, archive_type, file, filename=None, idempotency_key=None)` | `SkillDetail` (`archive_type`: `"zip"`, `"tar"`, `"tar.gz"`) |
 | `list(*, cursor=..., limit=...)` | `SkillsPage` |
 | `iter(*, cursor=..., limit=...)` | `Iterator[Skill]` |
 | `get(*, skill_id)` | `SkillDetail` |
@@ -263,7 +263,7 @@ Signatures below drop `extra_headers` and `timeout`, which every method accepts.
 | `read_file(*, skill_id, path)` | `bytes` |
 | `replace_file(*, skill_id, path, content: bytes)` | `SkillDetail` |
 | `delete_file(*, skill_id, path)` | `SkillDetail` |
-| `copy(*, skill_id, destination_agent_ids)` | `list[SkillCopyResult]` |
+| `copy(*, skill_id, destination_agent_ids, idempotency_key=None)` | `list[SkillCopyResult]` |
 
 ### `client.sessions`
 

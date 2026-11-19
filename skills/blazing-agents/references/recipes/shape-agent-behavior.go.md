@@ -59,8 +59,9 @@ for _, p := range page.Data {
 
 ```go
 skill, err := client.Skills.Upload(ctx, agentID, ba.UploadSkillParams{
-	Type: ba.ArchiveTypeZip,
-	File: ba.UploadFile("release-notes.zip"),
+	Type:           ba.ArchiveTypeZip,
+	File:           ba.UploadFile("release-notes.zip"),
+	IdempotencyKey: "release-notes-v1",
 })
 if err != nil {
 	return err

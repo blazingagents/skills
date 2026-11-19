@@ -421,7 +421,7 @@ A `Memory` carries timestamps including `lastAccessedAt`; `get` does not touch `
 | Method | HTTP | Returns / notes |
 | --- | --- | --- |
 | `list({ cursor?, limit? })` | `GET /v1/agents/{agentId}/skills` | Page of `Skill` |
-| `create(body)` | `POST /v1/agents/{agentId}/skills` | `SkillDetail` |
+| `create(body)` | `POST /v1/agents/{agentId}/skills` | `SkillDetail`. `create`, `upload`, and `copy` take an optional `idempotencyKey`: a retry with the same key and content returns the first request's Skill. |
 | `upload({ source: { file, type } })` | `POST /v1/agents/{agentId}/skills/upload` | `SkillDetail`. `type` is `"zip"`, `"tar"`, or `"tar.gz"`. |
 | `get({ skillId })` | `GET /v1/agents/{agentId}/skills/{skillId}` | `SkillDetail` |
 | `delete({ skillId })` | `DELETE /v1/agents/{agentId}/skills/{skillId}` | `void` |

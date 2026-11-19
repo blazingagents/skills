@@ -69,7 +69,7 @@ console.log(prompts.map(({ name }) => name));
 
 These list calls show the first page. Follow `nextCursor` or `next_cursor` for the remaining Prompts.
 
-3. Upload a runtime Skill: a ZIP (or tar, tar.gz) with `SKILL.md` at the archive root plus any reference files. Edit one file later with `putFile()`.
+3. Upload a runtime Skill: a ZIP (or tar, tar.gz) with `SKILL.md` at the archive root plus any reference files. Edit one file later with `putFile()`. Pass an idempotency key so a retry after a lost response returns the Skill the first request created.
 
 ```text
 release-notes/            zip the contents, not the folder
@@ -86,6 +86,7 @@ const skills = client.agent({ agentId: "ag_0123456789abcdef" }).skills;
 
 const skill = await skills.upload({
   source: { file: await readFile("release-notes.zip"), type: "zip" },
+  idempotencyKey: "release-notes-v1",
 });
 console.log(skill.name, skill.files.map(({ path }) => path));
 
@@ -143,6 +144,7 @@ await client.agents.enable({ agentId });
 - A Prompt call must supply every variable and no extras (`prompt_variable_missing`, `prompt_variable_unknown`). A call uses `promptId` or a literal `prompt`, never both.
 - Deleting an Agent deletes its linked Prompts. Set the Prompt's `agentId` to `null` first to keep it.
 - Uploading a Skill whose `name` already exists on the Agent fails with `skill_name_conflict`. Edit it with `putFile()` / `replace_file()` / `Skills.ReplaceFile()`, or delete it and upload again.
+- A create, upload, or copy that timed out may have saved the Skill, and a plain retry then fails with `skill_name_conflict`. Retry with the same idempotency key (`idempotencyKey`, `idempotency_key`, `.idempotency_key()`, `IdempotencyKey`; 1 to 200 characters) and the same content to get that Skill back. The same key with different content fails with `idempotency_conflict`. A key belongs to one Agent and lasts as long as its Skill.
 - Skills and Memory use their current content; the saved Agent configuration holds neither file contents nor notes.
 - Memory `userId` labels notes. Use the verified user scope from [multi-user apps](multi-user-apps.md) for user-owned Memory and Turns. A scoped Turn sees only that user's notes, never the general ones. An unscoped Turn sees the general notes plus those of its Session's `userId`.
 - Memory search matches words, not meaning. Each Agent keeps up to 500 notes in one pool shared by all its End-users, and evicts the least recently used one silently when full, so busy users can push out other users' notes. Each note is at most 10 KiB, and notes are deleted with the Agent.

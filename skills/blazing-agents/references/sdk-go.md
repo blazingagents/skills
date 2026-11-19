@@ -265,15 +265,15 @@ On `Create` and `Update`, `ProviderID` and `Model` are `ba.Nullable`. On `Create
 
 | Method | Returns |
 | --- | --- |
-| `Create(agentID, ba.CreateSkillParams{Content})` | `*ba.Skill` (the SDK sends `path: "SKILL.md"`; `Content` starts with YAML frontmatter that sets `name` and `description`) |
-| `Upload(agentID, ba.UploadSkillParams{Type, File})` | `*ba.Skill` (`ba.ArchiveTypeZip`, `ba.ArchiveTypeTar`, `ba.ArchiveTypeTarGz`) |
+| `Create(agentID, ba.CreateSkillParams{Content, IdempotencyKey})` | `*ba.Skill` (the SDK sends `path: "SKILL.md"`; `Content` starts with YAML frontmatter that sets `name` and `description`). `IdempotencyKey` on the `Create`, `Upload`, and `Copy` params makes a retry with the same key and content return the first request's Skill. |
+| `Upload(agentID, ba.UploadSkillParams{Type, File, IdempotencyKey})` | `*ba.Skill` (`ba.ArchiveTypeZip`, `ba.ArchiveTypeTar`, `ba.ArchiveTypeTarGz`) |
 | `List(agentID, ba.ListSkillsParams{Limit, Cursor})` / `All(...)` | `*ba.Page[ba.SkillSummary]` / `iter.Seq2[ba.SkillSummary, error]` |
 | `Get(agentID, skillID)` | `*ba.Skill` |
 | `Delete(agentID, skillID)` | `error` |
 | `ReadFile(agentID, skillID, path)` | `*ba.Download`, an `io.Reader` with `Close`, `ContentType`, and `ContentLength` |
 | `ReplaceFile(agentID, skillID, path, content io.Reader)` | `*ba.Skill` |
 | `DeleteFile(agentID, skillID, path)` | `*ba.Skill` |
-| `Copy(agentID, skillID, ba.CopySkillParams{AgentIDs})` | `[]ba.SkillCopyResult`, one per destination, in request order (`ba.SkillCopyCreated` or `ba.SkillCopyFailed`) |
+| `Copy(agentID, skillID, ba.CopySkillParams{AgentIDs, IdempotencyKey})` | `[]ba.SkillCopyResult`, one per destination, in request order (`ba.SkillCopyCreated` or `ba.SkillCopyFailed`) |
 
 A `ba.Upload` comes from `ba.UploadFile(path)`, `ba.UploadBytes(name, b)`, or `ba.UploadReader(name, r)`, with `.WithContentType(ct)`. The content type otherwise follows the file name's extension, and a file that does not open fails with `*ba.ArgumentError` before anything is sent.
 
