@@ -75,7 +75,7 @@ let page = client
     .agent_id("ag_0123456789abcdef")
     .session_id(session_id)
     .await?;
-let artifact_ids: Vec<_> = page.data.iter().map(|artifact| &artifact.artifact_id).collect();
+let artifact_ids: Vec<_> = page.data.iter().map(|artifact| &artifact.id).collect();
 ```
 
 ## Step 4: Serve downloads from your backend through the signed-in user's scoped client, then redirect to a fresh download URL

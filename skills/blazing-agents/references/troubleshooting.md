@@ -40,7 +40,7 @@ Use `BlazingAgentsError.isInstance(error)` instead of `instanceof`, which fails 
 | 403 | `merchant_customer_unmapped`: your monetization guard found no customer for the turn's `userId`. `forbidden`: a scoped client called a Tenant-only operation. `insufficient_scope`: a read-only key tried to create, change, or delete part of your setup, or to steer a turn a full key started. | [Link the user, use an unscoped client, or use a full key](#403-responses). |
 | `not_found` (404) for an ID you just created | The key is for a different Tenant, the ID is wrong, or an End-user scoped client asked for another user's resource. | [Check the key's Tenant](#404-for-a-resource-you-can-see-in-the-dashboard). |
 | `provider_required` (400) | The saved Agent configuration has no Provider and model. | [Set a Provider and model](#agent-without-a-provider-or-model). |
-| `model_not_found` (400) or `model_validation_unavailable` (503) | The model ID is not in the Provider's list, or the Provider could not be reached or rejected the stored key. | [Fix the model or the Provider](#provider-credential-rejected). |
+| `model_not_found` (422) or `model_validation_unavailable` (503) | The model ID is not in the Provider's list, or the Provider could not be reached or rejected the stored key. | [Fix the model or the Provider](#provider-credential-rejected). |
 | Turn fails right after it starts, no code | The Provider rejected the stored key or the request during the turn. | [Replace the Provider](#provider-credential-rejected). |
 | `model_spending_limit_exceeded` (429), a `data-ba-error` part with that code in a chat stream, or a Task run ends `blocked` with a spending-limit `error` | The Agent's or the account's model spending limit has nothing left this period. | [Wait for the reset or change the limit](#limit-and-billing-blocked). |
 | `subscription_required` or `usage_credit_required` (402) | No active plan, or no usage credit left. | [Fix billing](#limit-and-billing-blocked). |
@@ -90,7 +90,7 @@ A bad API key is always `unauthorized` (401), never 403. A 403 has one of three 
 - Check the ID's prefix, such as `ag_` or `ss_`.
 - Check that the key is for the same Tenant as the dashboard you are looking at.
 - Resuming a Session through a different Agent also returns `not_found`. Each Session is tied to one Agent.
-- An End-user scoped client gets `not_found` for every resource that user does not own, such as another user's Session or Artifact (`workspace_not_found` for a Workspace). A scoped chat needs an Agent created with that user's `userId` and, when the Agent has a Workspace, a Workspace created with the same `userId`. Check the scope ID you pass to `forUser` (`for_user`, `ForUser`) and the `userId` the Agent and Workspace were created with.
+- An End-user scoped client gets `not_found` for every resource that user does not own, such as another user's Session, Artifact, or Workspace. An Agent attached to a Workspace that user does not own answers `workspace_not_found` instead. A scoped chat needs an Agent created with that user's `userId` and, when the Agent has a Workspace, a Workspace created with the same `userId`. Check the scope ID you pass to `forUser` (`for_user`, `ForUser`) and the `userId` the Agent and Workspace were created with.
 - A scoped request whose body carries a different `userId` fails with `invalid_request` (400). Omit `userId`; the scope supplies it.
 
 ## Agent without a Provider or model
@@ -106,7 +106,7 @@ A bad API key is always `unauthorized` (401), never 403. A 403 has one of three 
 A Provider's key, type, and base URL are fixed after creation. When the key stops working, you replace the Provider.
 
 - **When you save an Agent or list models:** `model_validation_unavailable` (503) means Blazing Agents could not get a usable model list. The Provider may be down, or it rejected the stored key. Retry once after a short wait; if it persists, the key is the likely cause.
-- **When you save an Agent:** `model_not_found` (400) means the model ID is not in the Provider's current list. Check the spelling and prefix, such as `openai/`.
+- **When you save an Agent:** `model_not_found` (422) means the model ID is not in the Provider's current list. Check the spelling and prefix, such as `openai/`.
 - **During a turn:** a rejection surfaces as an `error` chunk in the chat stream, as `stream_error` when you await a completion, or as a Task run that ends `failed` with text in its `error` field. There is no dedicated error code.
 
 To fix it:

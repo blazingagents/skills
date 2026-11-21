@@ -87,7 +87,7 @@ export async function writeReport(agentId: string, verifiedUserId: string) {
   await turn.toResponse().text(); // In a chat UI, return turn.toResponse() instead.
 
   const { data } = await client.artifacts.list({ agentId, sessionId });
-  return data.map((a) => ({ id: a.artifactId, filename: a.filename, size: a.sizeBytes }));
+  return data.map((a) => ({ id: a.id, filename: a.filename, size: a.sizeBytes }));
 }
 ```
 

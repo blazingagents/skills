@@ -31,7 +31,7 @@ if err != nil {
 	return err
 }
 created, err := scoped.Tasks.Submit(ctx, ba.TaskID("tk_0123456789abcdef"), ba.SubmitTaskParams{
-	IdempotencyKey: new("weekly-report:" + week),
+	IdempotencyKey: "weekly-report:" + week,
 })
 var apiErr *ba.APIError
 switch {
@@ -55,7 +55,7 @@ created, err := scoped.Tasks.Create(ctx, ba.CreateTaskParams{
 	Name:           "Daily report",
 	Prompt:         "Summarize activity for " + reportDate + ".",
 	Submit:         new(true),
-	IdempotencyKey: new("daily-report:" + reportDate),
+	IdempotencyKey: "daily-report:" + reportDate,
 })
 if err != nil {
 	return err

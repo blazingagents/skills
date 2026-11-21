@@ -30,7 +30,7 @@ from blazing_agents import BlazingAgents
 client = BlazingAgents()
 
 provider_name = "Quickstart OpenRouter"
-providers = client.providers.list().providers
+providers = client.providers.list().data
 provider = next(
     (p for p in providers if p.name == provider_name), None
 ) or client.providers.create(

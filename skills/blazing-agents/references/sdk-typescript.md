@@ -283,13 +283,13 @@ means the result is `{ data, nextCursor }` (see [Pagination](#pagination)).
 | `create(body)` | `POST /v1/agents` | `Agent`. Omit `workspaceId` to get a default Workspace. |
 | `list({ userId?, workspaceId?, cursor?, limit? })` | `GET /v1/agents` | Page of Agents (`{ data, nextCursor }`). |
 | `get({ agentId })` | `GET /v1/agents/{agentId}` | `Agent` |
-| `update({ agentId, ...body })` | `PUT /v1/agents/{agentId}` | `Agent` |
-| `delete({ agentId, includeArtifacts })` | `DELETE /v1/agents/{agentId}` | `void`. `includeArtifacts` is required. The Workspace is kept. |
+| `update({ agentId, ...body })` | `PATCH /v1/agents/{agentId}` | `Agent`. Omitted fields keep their value. |
+| `delete({ agentId, deleteArtifacts })` | `DELETE /v1/agents/{agentId}` | `void`. `deleteArtifacts` is required. The Workspace is kept. |
 | `enable({ agentId })` | `POST /v1/agents/{agentId}/enable` | `Agent` |
 | `disable({ agentId })` | `POST /v1/agents/{agentId}/disable` | `Agent` |
 | `uploadAvatar({ agentId, file })` | `POST /v1/agents/{agentId}/avatar` | `Agent`. `file` is a `File`. |
 | `removeAvatar({ agentId })` | `DELETE /v1/agents/{agentId}/avatar` | `Agent` |
-| `listMcpAttachments({ agentId })` | `GET /v1/agents/{agentId}/mcp-attachments` | `McpAttachmentsResponse` |
+| `listMcpAttachments({ agentId })` | `GET /v1/agents/{agentId}/mcp-attachments` | `McpAttachmentsResponse` (`{ data }`) |
 | `updateMcpAttachment({ agentId, mcpConnectionId, ...body })` | `PATCH /v1/agents/{agentId}/mcp-attachments/{mcpConnectionId}` | `McpAttachmentResponse` |
 | `getSpendingLimit({ agentId })` | `GET /v1/agents/{agentId}/spending-limit` | `SpendingLimitResponse`. Unscoped client only. |
 | `updateSpendingLimit({ agentId, spendingLimit })` | `PUT /v1/agents/{agentId}/spending-limit` | `SpendingLimitResponse`. `null` disables the limit. See [model spending limits](recipes/usage-dashboards.md#model-spending-limits). |
@@ -301,11 +301,11 @@ means the result is `{ data, nextCursor }` (see [Pagination](#pagination)).
 | Method | HTTP | Returns / notes |
 | --- | --- | --- |
 | `create({ name, providerType, baseUrl, apiKey })` | `POST /v1/providers` | `ProviderResponse`. The key is write-only; responses show `keyFragment`. |
-| `list()` | `GET /v1/providers` | `{ providers }`. Not paginated. |
+| `list()` | `GET /v1/providers` | `{ data }`. Not paginated. |
 | `get({ providerId })` | `GET /v1/providers/{providerId}` | `ProviderResponse` |
 | `update({ providerId, ...body })` | `PATCH /v1/providers/{providerId}` | `ProviderResponse` |
 | `delete({ providerId, confirmSnapshotInvalidation? })` | `DELETE /v1/providers/{providerId}` | `void` |
-| `listModels({ providerId })` | `GET /v1/providers/{providerId}/models` | `ProviderModelsResponse` |
+| `listModels({ providerId })` | `GET /v1/providers/{providerId}/models` | `ProviderModelsResponse` (`{ data }`) |
 | `getThinkingLevels({ providerId, model })` | `GET /v1/providers/{providerId}/thinking-levels` | `{ known, levels }` |
 
 ### `client.prompts`
@@ -329,7 +329,7 @@ means the result is `{ data, nextCursor }` (see [Pagination](#pagination)).
 | `messages({ agentId, sessionId, cursor?, after?, limit? })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/messages` | `{ data: SessionMessage[], nextCursor, latestCursor }`; each message has required top-level `branchable`. `cursor` walks older pages; `after` walks forward. Not both. |
 | `delete({ agentId, sessionId, deleteArtifacts })` | `DELETE /v1/agents/{agentId}/sessions/{sessionId}` | `void`. `deleteArtifacts` is required. `session_busy` while any Turn runs, or `session_turn_unresponsive` when the last Turn stopped responding. |
 | `toolApprovals({ agentId, sessionId })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/tool-approvals` | `{ data, continuation }`. Each item has `approvalId`, `toolName`, `input`, `decision` (`pending`, `approved`, `denied`). `continuation` is `{ id, state }` with state `waiting`, `running`, `succeeded`, or `failed`, or `null`. |
-| `submitInput({ agentId, sessionId, requestId, message })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/inputs` | `{ data: SessionInput, activity }`. Steers the running Turn; `steer_not_available` (409) when no Turn can take a steer (idle, stopping, or an approval wait); keep the message in your own queue and send it as ordinary chat later. `requestId` is 1 to 128 characters and not `.` or `..`. Retrying with the same `requestId` and payload returns the same receipt; a changed payload returns `input_idempotency_conflict`. |
+| `submitInput({ agentId, sessionId, requestId, message })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/inputs` | `{ input: SessionInput, activity }`. Steers the running Turn; `steer_not_available` (409) when no Turn can take a steer (idle, stopping, or an approval wait); keep the message in your own queue and send it as ordinary chat later. `requestId` is 1 to 128 characters and not `.` or `..`. Retrying with the same `requestId` and payload returns the same receipt; a changed payload returns `input_idempotency_conflict`. |
 | `inputs({ agentId, sessionId, includeCompleted?, limit?, cursor? })` | `GET /v1/agents/{agentId}/sessions/{sessionId}/inputs` | `{ data, nextCursor, activity }`: steer receipts in submission order plus the Session's `activity`. Without `includeCompleted`, `data` lists only `accepted` receipts. Poll without `cursor` to see changes; `cursor` only pages. |
 | `stop({ agentId, sessionId, turnId })` | `POST /v1/agents/{agentId}/sessions/{sessionId}/stop` | `{ stoppedTurnId, activity }` as soon as the stop is recorded, not after the Turn ends. Keep reading the existing stream until it settles. An unknown `turnId` returns `not_found`; a settled Turn's ID never stops a later Turn. Take `turnId` from `ChatResult.turnId` or `onTurnId` in the client that started the Turn, or from `activity` anywhere else. |
 
@@ -366,14 +366,14 @@ impossible dates, such as `60 9 * * *` or `0 0 31 2 *`, and `create` and
 | `create(body?)` | `POST /v1/workspaces` | `Workspace` |
 | `list({ userId?, cursor?, limit? })` | `GET /v1/workspaces` | Page of `Workspace` |
 | `get({ workspaceId })` | `GET /v1/workspaces/{workspaceId}` | `Workspace` |
-| `update({ workspaceId, ...body })` | `PUT /v1/workspaces/{workspaceId}` | `Workspace` |
+| `update({ workspaceId, ...body })` | `PATCH /v1/workspaces/{workspaceId}` | `Workspace`. Omitted fields keep their value. |
 | `delete({ workspaceId })` | `DELETE /v1/workspaces/{workspaceId}` | `void`, once the Workspace and its files are deleted |
 
 ### `client.artifacts`
 
 | Method | HTTP | Returns / notes |
 | --- | --- | --- |
-| `list({ agentId?, sessionId?, cursor? })` | `GET /v1/artifacts` | Page of `ArtifactListItem` |
+| `list({ agentId?, sessionId?, cursor?, limit? })` | `GET /v1/artifacts` | Page of `ArtifactListItem`. `limit` is 1 to 100. |
 | `get({ artifactId })` | `GET /v1/artifacts/{artifactId}` | `ArtifactListItem` |
 | `createDownloadUrl({ artifactId })` | `POST /v1/artifacts/{artifactId}/download-url` | `{ url, expiresAt }` |
 | `delete({ artifactId })` | `DELETE /v1/artifacts/{artifactId}` | `void` |
@@ -383,9 +383,9 @@ impossible dates, such as `60 9 * * *` or `0 0 31 2 *`, and `create` and
 | Method | HTTP | Returns / notes |
 | --- | --- | --- |
 | `list({ agentId, search?, userId?, cursor?, limit? })` | `GET /v1/agents/{agentId}/memories` | Page of Memories |
-| `create({ agentId, ...body })` | `POST /v1/agents/{agentId}/memories` | `MemoryResponse` |
-| `get({ agentId, memoryId })` | `GET /v1/agents/{agentId}/memories/{memoryId}` | `MemoryResponse` |
-| `update({ agentId, memoryId, ...body })` | `PATCH /v1/agents/{agentId}/memories/{memoryId}` | `MemoryResponse` |
+| `create({ agentId, ...body })` | `POST /v1/agents/{agentId}/memories` | `Memory` |
+| `get({ agentId, memoryId })` | `GET /v1/agents/{agentId}/memories/{memoryId}` | `Memory` |
+| `update({ agentId, memoryId, ...body })` | `PATCH /v1/agents/{agentId}/memories/{memoryId}` | `Memory` |
 | `delete({ agentId, memoryId })` | `DELETE /v1/agents/{agentId}/memories/{memoryId}` | `void` |
 
 A `Memory` carries timestamps including `lastAccessedAt`; `get` does not touch `lastAccessedAt`, `update` does. An Agent holds at most 500 memories, shared by all its End-users. When it is full, creating one evicts the least recently used.
@@ -395,7 +395,7 @@ A `Memory` carries timestamps including `lastAccessedAt`; `get` does not touch `
 | Method | HTTP | Returns / notes |
 | --- | --- | --- |
 | `create(body)` | `POST /v1/mcp-connections` | `McpConnectionResponse` |
-| `list()` | `GET /v1/mcp-connections` | `{ mcpConnections }`. Not paginated. |
+| `list()` | `GET /v1/mcp-connections` | `{ data }`. Not paginated. |
 | `get({ mcpConnectionId })` | `GET /v1/mcp-connections/{mcpConnectionId}` | `McpConnectionResponse` |
 | `update({ mcpConnectionId, ...body })` | `PATCH /v1/mcp-connections/{mcpConnectionId}` | `McpConnectionResponse` |
 | `delete({ mcpConnectionId })` | `DELETE /v1/mcp-connections/{mcpConnectionId}` | `void` |
@@ -407,7 +407,7 @@ A `Memory` carries timestamps including `lastAccessedAt`; `get` does not touch `
 | Method | HTTP | Returns / notes |
 | --- | --- | --- |
 | `create(body)` | `POST /v1/chat-connections` | `ChatConnection` |
-| `list()` | `GET /v1/chat-connections` | `{ chatConnections }`. Not paginated. |
+| `list()` | `GET /v1/chat-connections` | `{ data }`. Not paginated. |
 | `get({ chatConnectionId })` | `GET /v1/chat-connections/{chatConnectionId}` | `ChatConnection` |
 | `update({ chatConnectionId, ...body })` | `PATCH /v1/chat-connections/{chatConnectionId}` | `ChatConnection` |
 | `rotateCredentials({ chatConnectionId, ...body })` | `POST /v1/chat-connections/{chatConnectionId}/credentials` | `ChatConnection` |
@@ -428,7 +428,7 @@ A `Memory` carries timestamps including `lastAccessedAt`; `get` does not touch `
 | `getFile({ skillId, path })` | `GET /v1/agents/{agentId}/skills/{skillId}/files?path=` | `Uint8Array` |
 | `putFile({ skillId, path, content })` | `PUT /v1/agents/{agentId}/skills/{skillId}/files?path=` | `SkillDetail`. `content` is `string`, `Blob`, or `Uint8Array`. |
 | `deleteFile({ skillId, path })` | `DELETE /v1/agents/{agentId}/skills/{skillId}/files?path=` | `SkillDetail` |
-| `copy({ skillId, to: { agentIds } })` | `POST /v1/agents/{agentId}/skills/{skillId}/copies` | `SkillCopyResults`, one result per target Agent. |
+| `copy({ skillId, to: { agentIds } })` | `POST /v1/agents/{agentId}/skills/{skillId}/copies` | `SkillCopyResults` (`{ data }`), one result per target Agent. |
 
 ### `client.tenant`
 
@@ -454,18 +454,18 @@ These bill your own customers through your Polar or Dodo account.
 
 | Method | HTTP | Returns / notes |
 | --- | --- | --- |
-| `merchantConnection.create(body)` | `POST /v1/merchant-connection` | `MerchantConnectionResponse`. One per Tenant; creating replaces the current connection and fails `merchant_connection_in_use` (409) while a request that started on it is still running or one of its usage events is `pending`. |
-| `merchantConnection.get()` | `GET /v1/merchant-connection` | `MerchantConnectionResponse` |
-| `merchantConnection.update(body)` | `PATCH /v1/merchant-connection` | `MerchantConnectionResponse` |
+| `merchantConnection.create(body)` | `POST /v1/merchant-connection` | `MerchantConnection`. One per Tenant; creating replaces the current connection and fails `merchant_connection_in_use` (409) while a request that started on it is still running or one of its usage events is `pending`. |
+| `merchantConnection.get()` | `GET /v1/merchant-connection` | `{ connection }`. `connection` is `null` while you have none. |
+| `merchantConnection.update(body)` | `PATCH /v1/merchant-connection` | `MerchantConnection` |
 | `merchantConnection.retire()` | `DELETE /v1/merchant-connection` | `void`. New usage is no longer recorded against it. Fails `merchant_connection_in_use` (409) while a request that started on the connection is still running or one of its usage events is `pending`. On success its `failed` events are discarded and the credential is deleted at once, so nothing more is delivered through it. |
-| `merchantBindings.list({ userId?, cursor?, limit? })` | `GET /v1/merchant-connection/bindings` | `{ bindings, nextCursor }` |
-| `merchantBindings.put({ userId, ...body })` | `PUT /v1/merchant-connection/bindings/{userId}` | `MerchantBindingResponse` |
+| `merchantBindings.list({ userId?, cursor?, limit? })` | `GET /v1/merchant-connection/bindings` | `{ data, nextCursor }` |
+| `merchantBindings.put({ userId, ...body })` | `PUT /v1/merchant-connection/bindings/{userId}` | `MerchantCustomerBinding` |
 | `merchantBindings.delete({ userId })` | `DELETE /v1/merchant-connection/bindings/{userId}` | `void` |
-| `merchantUsageEvents.list({ status?, cursor?, limit? })` | `GET /v1/merchant-usage-events` | `{ events, nextCursor }` |
-| `merchantUsageEvents.get({ eventId })` | `GET /v1/merchant-usage-events/{eventId}` | `MerchantUsageEventResponse` |
-| `merchantUsageEvents.summary({ days? })` | `GET /v1/merchant-usage-events/summary` | `MerchantUsageSummaryResponse` |
-| `merchantUsageEvents.retry({ eventId })` | `POST /v1/merchant-usage-events/{eventId}/retry` | `MerchantUsageEventResponse` |
-| `merchantUsageEvents.discard({ eventId })` | `POST /v1/merchant-usage-events/{eventId}/discard` | `MerchantUsageEventResponse` |
+| `merchantUsageEvents.list({ status?, cursor?, limit? })` | `GET /v1/merchant-usage-events` | `{ data, nextCursor }` |
+| `merchantUsageEvents.get({ eventId })` | `GET /v1/merchant-usage-events/{eventId}` | `MerchantUsageEvent` |
+| `merchantUsageEvents.summary({ days? })` | `GET /v1/merchant-usage-events/summary` | `MerchantUsageSummary` |
+| `merchantUsageEvents.retry({ eventId })` | `POST /v1/merchant-usage-events/{eventId}/retry` | `MerchantUsageEvent` |
+| `merchantUsageEvents.discard({ eventId })` | `POST /v1/merchant-usage-events/{eventId}/discard` | `MerchantUsageEvent` |
 
 Turn billing on with `client.tenant.patch({ monetizationEnabled: true })` after the connection exists, and off with `monetizationEnabled: false` to pause it. To switch providers without losing charges, retry each `failed` event you still want billed and each `pending` event whose `nextAction` is `retry` (automatic delivery stopped), wait until no event is `pending`, then replace the connection. Details: [Bill your users for model tokens](https://docs.blazingagents.com/platform/monetization).
 
@@ -751,8 +751,8 @@ it for the messages your client held while the Session was busy.
   `client.agent({ agentId })`.
 - Calling `toResponse()` after `toStream()` (or twice) throws `stream_error`.
   Pick one accessor per result.
-- `agents.delete` requires `includeArtifacts` and `sessions.delete` requires
-  `deleteArtifacts`. Decide explicitly whether published files go too.
+- `agents.delete` and `sessions.delete` require `deleteArtifacts`. Decide
+  explicitly whether published files go too.
 - Forgetting `userId` records every Turn at Tenant level, so per-user usage is
   lost. Pass your end user's ID on every generation call.
 - `object` results are `unknown`. Validate before use.

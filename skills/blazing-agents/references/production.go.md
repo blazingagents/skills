@@ -21,7 +21,7 @@ if _, err := observed.Agents.List(ctx, ba.ListAgentsParams{}); err != nil {
 ```go
 day := "2026-10-16"
 created, err := client.Tasks.Submit(ctx, ba.TaskID("tk_0123456789abcdef"), ba.SubmitTaskParams{
-	IdempotencyKey: new("daily-report:" + day),
+	IdempotencyKey: "daily-report:" + day,
 })
 if err != nil {
 	return err

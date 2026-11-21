@@ -137,7 +137,7 @@ client = BlazingAgents()
 def link_customer(app_user_id: str, customer_id: str) -> MerchantCustomerBinding:
     return client.merchant_bindings.put(
         f"app:{app_user_id}", customer_id=customer_id
-    ).binding
+    )
 ```
 
 ## Step 7: Optionally require a paid plan or positive balance before each Turn, and watch delivery
@@ -151,7 +151,7 @@ client.merchant_connection.update(
     guard={"enabled": True, "product_ids": ["prod_pro_plan"], "meter_id": None},
 )
 
-counts = client.merchant_usage_events.summary(days=7).summary.counts
+counts = client.merchant_usage_events.summary(days=7).counts
 print(counts.accepted, counts.failed)
 
 for event in client.merchant_usage_events.iter(status="failed"):

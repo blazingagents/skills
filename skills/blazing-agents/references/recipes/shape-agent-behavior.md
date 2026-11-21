@@ -24,7 +24,7 @@ declare const client: BlazingAgents;
 const agentId = "ag_0123456789abcdef";
 const providerId = "prv_0123456789abcdef";
 
-const { models } = await client.providers.listModels({ providerId });
+const { data: models } = await client.providers.listModels({ providerId });
 if (!models.some(({ id }) => id === "openai/gpt-6-luna")) {
   throw new Error("Model not offered by this Provider");
 }
@@ -109,7 +109,7 @@ const agentId = "ag_0123456789abcdef";
 await tenant.agents.update({ agentId, memoryInjectionEnabled: true });
 
 const client = tenant.forUser(verifiedUserId);
-const { memory } = await client.memories.create({
+const memory = await client.memories.create({
   agentId,
   text: "Prefers concise status updates.",
 });

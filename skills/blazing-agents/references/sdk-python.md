@@ -239,11 +239,11 @@ Signatures below drop `extra_headers` and `timeout`, which every method accepts.
 | `list(*, cursor=..., limit=..., user_id=..., workspace_id=...)` | `AgentsPage` (`.data`, `.next_cursor`) |
 | `get(agent_id)` | `Agent` |
 | `update(agent_id, *, <create fields except user_id and workspace_tier>)` | `Agent` |
-| `delete(agent_id, *, include_artifacts: bool)` | `None` |
+| `delete(agent_id, *, delete_artifacts: bool)` | `None` |
 | `disable(agent_id)` / `enable(agent_id)` | `Agent` |
 | `upload_avatar(agent_id, file, *, filename=None, content_type=None)` | `Agent` |
 | `remove_avatar(agent_id)` | `Agent` |
-| `list_mcp_attachments(agent_id)` | `McpAttachments` (`.mcp_attachments`) |
+| `list_mcp_attachments(agent_id)` | `McpAttachments` (`.data`) |
 | `update_mcp_attachment(agent_id, mcp_connection_id, *, forward_user_id=..., forwarded_metadata_keys=...)` | `McpAttachment` |
 | `get_spending_limit(agent_id)` | `SpendingLimitResponse`. Tenant client only. |
 | `update_spending_limit(agent_id, *, spending_limit)` | `SpendingLimitResponse`. `None` disables the limit. See [model spending limits](recipes/usage-dashboards.md#model-spending-limits). |
@@ -263,7 +263,7 @@ Signatures below drop `extra_headers` and `timeout`, which every method accepts.
 | `read_file(*, skill_id, path)` | `bytes` |
 | `replace_file(*, skill_id, path, content: bytes)` | `SkillDetail` |
 | `delete_file(*, skill_id, path)` | `SkillDetail` |
-| `copy(*, skill_id, destination_agent_ids, idempotency_key=None)` | `list[SkillCopyResult]` |
+| `copy(*, skill_id, destination_agent_ids, idempotency_key=None)` | `SkillCopyResults` (`.data`: one `SkillCopyResult` per destination) |
 
 ### `client.sessions`
 
@@ -276,7 +276,7 @@ Signatures below drop `extra_headers` and `timeout`, which every method accepts.
 | `fork(agent_id, session_id, *, message_id, idempotency_key)` | `SessionResponse` for the child. `forked_from` names the source Session and message. |
 | `messages(*, agent_id, session_id, cursor=..., after=..., limit=...)` | `SessionMessagesPage` |
 | `tool_approvals(*, agent_id, session_id)` | `ToolApprovals` (`.data`, `.continuation`) |
-| `submit_input(*, agent_id, session_id, request_id, message)` | `SessionInputResponse` (`.data`, `.activity`). Steers the running Turn; raises `steer_not_available` when no Turn can take it. |
+| `submit_input(*, agent_id, session_id, request_id, message)` | `SessionInputResponse` (`.input`, `.activity`). Steers the running Turn; raises `steer_not_available` when no Turn can take it. |
 | `inputs(*, agent_id, session_id, include_completed=..., cursor=..., limit=...)` | `SessionInputsPage` (`.data`, `.next_cursor`, `.activity`): steer receipts plus Session activity |
 | `stop(*, agent_id, session_id, turn_id)` | `SessionStopResponse` (`.stopped_turn_id`, `.activity`) as soon as the stop is recorded; keep reading the existing stream until the Turn settles |
 | `delete(*, agent_id, session_id, delete_artifacts: bool)` | `None` |
@@ -332,9 +332,9 @@ What each receipt state means and how the client-held queue works are in [Add ch
 | Method | Returns |
 | --- | --- |
 | `create(*, name, provider_type, api_key, base_url=...)` | `Provider` |
-| `list()` | `Providers` (`.providers`) |
+| `list()` | `Providers` (`.data`) |
 | `get(provider_id)` | `Provider` |
-| `list_models(provider_id)` | `ProviderModels` (`.models`) |
+| `list_models(provider_id)` | `ProviderModels` (`.data`) |
 | `get_thinking_levels(provider_id, *, model)` | `ThinkingLevels` |
 | `update(provider_id, *, name)` | `Provider` |
 | `delete(provider_id, *, confirm_snapshot_invalidation=False)` | `None` |
@@ -346,7 +346,7 @@ What each receipt state means and how the client-held queue works are in [Add ch
 | Method | Returns |
 | --- | --- |
 | `create(*, name, url, auth_type, bearer_token=..., client_id=..., client_secret=..., scope=...)` | `McpConnection` |
-| `list()` | `McpConnections` (`.mcp_connections`) |
+| `list()` | `McpConnections` (`.data`) |
 | `get(mcp_connection_id)` | `McpConnection` |
 | `update(mcp_connection_id, *, name)` | `McpConnection` |
 | `delete(mcp_connection_id)` | `None` |
@@ -359,11 +359,11 @@ What each receipt state means and how the client-held queue works are in [Add ch
 
 | Method | Returns |
 | --- | --- |
-| `create(*, agent_id, text, user_id=...)` | `MemoryResponse` |
+| `create(*, agent_id, text, user_id=...)` | `Memory` |
 | `list(*, agent_id, user_id=..., search=..., cursor=..., limit=...)` | `MemoriesPage` |
 | `iter(*, agent_id, user_id=..., search=..., cursor=..., limit=...)` | `Iterator[Memory]` |
-| `get(*, agent_id, memory_id)` | `MemoryResponse` |
-| `update(*, agent_id, memory_id, text)` | `MemoryResponse` |
+| `get(*, agent_id, memory_id)` | `Memory` |
+| `update(*, agent_id, memory_id, text)` | `Memory` |
 | `delete(*, agent_id, memory_id)` | `None` |
 
 ### `client.prompts`
@@ -382,8 +382,8 @@ Run a saved Prompt with `client.chat(prompt_id=..., variables={...})` or the oth
 
 | Method | Returns |
 | --- | --- |
-| `list(*, agent_id=..., session_id=..., cursor=...)` | `ArtifactsPage` |
-| `iter(*, agent_id=..., session_id=..., cursor=...)` | `Iterator[Artifact]` |
+| `list(*, agent_id=..., session_id=..., cursor=..., limit=...)` | `ArtifactsPage` (`limit` 1 to 100) |
+| `iter(*, agent_id=..., session_id=..., cursor=..., limit=...)` | `Iterator[Artifact]` |
 | `get(*, artifact_id)` | `Artifact` |
 | `create_download_url(*, artifact_id)` | `ArtifactDownloadUrl` (`url`, `expires_at`; the link works for five minutes without an API key) |
 | `delete(*, artifact_id)` | `None` |
@@ -393,7 +393,7 @@ Run a saved Prompt with `client.chat(prompt_id=..., variables={...})` or the oth
 | Method | Returns |
 | --- | --- |
 | `create(*, platform, credentials, name, agent_id, configuration=..., enabled=...)` | `ChatConnection` |
-| `list()` | `ChatConnections` (`.chat_connections`) |
+| `list()` | `ChatConnections` (`.data`) |
 | `get(chat_connection_id)` | `ChatConnection` |
 | `update(chat_connection_id, *, name=..., configuration=...)` | `ChatConnection` |
 | `rotate_credentials(chat_connection_id, *, platform, credentials)` | `ChatConnection` |
@@ -424,16 +424,16 @@ Monetization: bill your end users through your own Polar or Dodo account. Setup,
 | Method | Returns |
 | --- | --- |
 | `merchant_connection.get()` | `MerchantConnectionResponse` (`connection` is `None` when none exists) |
-| `merchant_connection.create(*, provider, environment, credential, guard=...)` | `MerchantConnectionResponse`. `provider` is `"polar"` or `"dodo"`; `environment` is `"sandbox"` or `"live"`. Replaces the current connection; fails `merchant_connection_in_use` (409) while a request that started on it is still running or one of its usage events is `pending`. |
-| `merchant_connection.update(*, credential=..., guard=...)` | `MerchantConnectionResponse` |
+| `merchant_connection.create(*, provider, environment, credential, guard=...)` | `MerchantConnection`. `provider` is `"polar"` or `"dodo"`; `environment` is `"sandbox"` or `"live"`. Replaces the current connection; fails `merchant_connection_in_use` (409) while a request that started on it is still running or one of its usage events is `pending`. |
+| `merchant_connection.update(*, credential=..., guard=...)` | `MerchantConnection` |
 | `merchant_connection.retire()` | `None`. New usage is no longer recorded against it. Fails `merchant_connection_in_use` (409) while a request that started on the connection is still running or one of its usage events is `pending`. On success its `failed` events are discarded and the credential is deleted at once, so nothing more is delivered through it. |
-| `merchant_bindings.list(*, user_id=..., cursor=..., limit=...)` / `iter(...)` | `MerchantBindingsPage` / `Iterator[MerchantCustomerBinding]`. Raises `merchant_connection_not_found` when there is no connection. |
-| `merchant_bindings.put(user_id, *, customer_id)` | `MerchantBindingResponse`. The API checks the customer exists at the provider. |
+| `merchant_bindings.list(*, user_id=..., cursor=..., limit=...)` / `iter(...)` | `MerchantBindingsPage` / `Iterator[MerchantCustomerBinding]`. Raises `not_found` when there is no connection. |
+| `merchant_bindings.put(user_id, *, customer_id)` | `MerchantCustomerBinding`. The API checks the customer exists at the provider. |
 | `merchant_bindings.delete(user_id)` | `None` |
 | `merchant_usage_events.list(*, status=..., cursor=..., limit=...)` / `iter(...)` | `MerchantUsageEventsPage` / `Iterator[MerchantUsageEvent]` |
-| `merchant_usage_events.get(event_id)` | `MerchantUsageEventResponse` (`event.next_action` says what to do) |
-| `merchant_usage_events.summary(*, days=...)` | `MerchantUsageSummaryResponse` (status counts and a daily window; `days` 1 to 90, default 14) |
-| `merchant_usage_events.retry(event_id)` / `discard(event_id)` | `MerchantUsageEventResponse` |
+| `merchant_usage_events.get(event_id)` | `MerchantUsageEvent` (`next_action` says what to do) |
+| `merchant_usage_events.summary(*, days=...)` | `MerchantUsageSummary` (status counts and a daily window; `days` 1 to 90, default 14) |
+| `merchant_usage_events.retry(event_id)` / `discard(event_id)` | `MerchantUsageEvent` |
 
 `guard` is a dict with exactly `enabled`, `product_ids`, and `meter_id`. Turn billing on with `tenant.update(monetization_enabled=True)` after the connection exists, and off with `monetization_enabled=False` to pause it. To switch providers without losing charges, retry each `failed` event you still want billed and each `pending` event whose `event.next_action` is `retry` (automatic delivery stopped), wait until no event is `pending`, then replace the connection. Details: [Bill your users for model tokens](https://docs.blazingagents.com/platform/monetization).
 
