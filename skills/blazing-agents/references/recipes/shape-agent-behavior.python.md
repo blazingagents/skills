@@ -9,7 +9,7 @@ from blazing_agents import BlazingAgents
 
 
 def configure(client: BlazingAgents, agent_id: str, provider_id: str) -> None:
-    models = client.providers.list_models(provider_id).models
+    models = client.providers.list_models(provider_id).data
     if not any(m.id == "openai/gpt-6-luna" for m in models):
         raise RuntimeError("Model not offered by this Provider")
 
@@ -80,7 +80,7 @@ def curate_memory(client: BlazingAgents, agent_id: str, verified_user_id: str) -
     scoped = client.for_user(verified_user_id)
     memory = scoped.memories.create(
         agent_id=agent_id, text="Prefers concise status updates."
-    ).memory
+    )
 
     page = scoped.memories.list(agent_id=agent_id, search="status")
     print([m.text for m in page.data])

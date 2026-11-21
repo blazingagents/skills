@@ -61,7 +61,7 @@ if (!apiKey || !openRouterKey) {
 const client = new BlazingAgents({ apiKey });
 
 const providerName = "Quickstart OpenRouter";
-const { providers } = await client.providers.list();
+const { data: providers } = await client.providers.list();
 const provider =
   providers.find(({ name }) => name === providerName) ??
   (await client.providers.create({

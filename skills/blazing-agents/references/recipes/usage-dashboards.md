@@ -207,11 +207,10 @@ const client = new BlazingAgents({
 });
 
 export async function linkCustomer(appUserId: string, customerId: string) {
-  const { binding } = await client.merchantBindings.put({
+  return client.merchantBindings.put({
     userId: `app:${appUserId}`,
     customerId,
   });
-  return binding;
 }
 ```
 
@@ -230,10 +229,10 @@ await client.merchantConnection.update({
   guard: { enabled: true, productIds: ["prod_pro_plan"], meterId: null },
 });
 
-const { summary } = await client.merchantUsageEvents.summary({ days: 7 });
+const summary = await client.merchantUsageEvents.summary({ days: 7 });
 console.log(summary.counts.accepted, summary.counts.failed);
 
-const { events } = await client.merchantUsageEvents.list({ status: "failed" });
+const { data: events } = await client.merchantUsageEvents.list({ status: "failed" });
 for (const event of events) {
   console.log(event.userId, event.lastErrorCode, event.nextAction);
   if (event.nextAction === "retry") {

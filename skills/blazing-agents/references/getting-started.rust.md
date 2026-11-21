@@ -37,7 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .providers()
         .list()
         .await?
-        .providers
+        .data
         .iter()
         .find(|provider| provider.name == provider_name)
     {

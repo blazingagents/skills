@@ -252,7 +252,7 @@ Every method is `(ctx, <path IDs>, params, opts...)`; only the arguments after `
 | `List(ba.ListAgentsParams{UserID, WorkspaceID, Limit, Cursor})` / `All(...)` | `*ba.Page[ba.Agent]` / `iter.Seq2[ba.Agent, error]` |
 | `Get(agentID)` | `*ba.Agent` |
 | `Update(agentID, ba.UpdateAgentParams{Name, ProviderID, Model, ThinkingLevel, WorkspaceID, AutoCompaction, CompactionReserveTokens, MemoryInjectionEnabled, Tools, ApprovalInChat, ApprovalInTasks, Instructions, Metadata, MCPConnectionIDs})` | `*ba.Agent` |
-| `Delete(agentID, ba.DeleteAgentParams{IncludeArtifacts})` | `error`. The Workspace is kept |
+| `Delete(agentID, ba.DeleteAgentParams{DeleteArtifacts})` | `error`. The Workspace is kept |
 | `Disable(agentID)` / `Enable(agentID)` | `*ba.Agent` |
 | `UploadAvatar(agentID, ba.Upload)` | `*ba.Agent`. A PNG, JPEG or WebP of 512 KiB or less |
 | `RemoveAvatar(agentID)` | `*ba.Agent` |
@@ -385,7 +385,7 @@ A `ba.Memory` carries `ID`, `UserID` (empty for a general memory), `Text`, and t
 
 | Method | Returns |
 | --- | --- |
-| `List(ba.ListArtifactsParams{AgentID, SessionID, Cursor})` / `All(...)` | `*ba.Page[ba.Artifact]`. The server returns 50 Artifacts per page; follow `NextCursor` or range over `All` |
+| `List(ba.ListArtifactsParams{AgentID, SessionID, Limit, Cursor})` / `All(...)` | `*ba.Page[ba.Artifact]`. The server returns 50 Artifacts per page unless `Limit` (1 to 100) says otherwise; follow `NextCursor` or range over `All` |
 | `Get(artifactID)` | `*ba.Artifact` |
 | `CreateDownloadURL(artifactID)` | `*ba.ArtifactDownloadURL` (`URL`, a `ba.Secret`; `ExpiresAt`; the link works for five minutes without an API key) |
 | `Delete(artifactID)` | `error` |
@@ -432,10 +432,10 @@ Monetization: bill your end users through your own Polar or Dodo account. Setup,
 | `MerchantConnection.Create(ba.CreateMerchantConnectionParams{Provider, Environment, Credential, Guard})` | `*ba.MerchantConnection`. `ba.MerchantProviderPolar` or `Dodo`; `ba.MerchantEnvironmentSandbox` or `Live`. Replaces the current connection; fails `merchant_connection_in_use` (409) while a request that started on it is still running or one of its usage events is `pending` |
 | `MerchantConnection.Update(ba.UpdateMerchantConnectionParams{Credential, Guard})` | `*ba.MerchantConnection` |
 | `MerchantConnection.Retire()` | `error`. New usage is no longer recorded against it. Fails `merchant_connection_in_use` (409) while a request that started on the connection is still running or one of its usage events is `pending`. On success its `failed` events are discarded and the credential is deleted at once, so nothing more is delivered through it. |
-| `MerchantBindings.List(ba.ListMerchantBindingsParams{UserID, Limit, Cursor})` / `All(...)` | `*ba.MerchantBindingList`. Fails `merchant_connection_not_found` when there is no connection |
+| `MerchantBindings.List(ba.ListMerchantBindingsParams{UserID, Limit, Cursor})` / `All(...)` | `*ba.Page[ba.MerchantBinding]`. Fails `not_found` when there is no connection |
 | `MerchantBindings.Set(userID string, ba.SetMerchantBindingParams{CustomerID})` | `*ba.MerchantBinding`. The API checks the customer exists at the provider |
 | `MerchantBindings.Delete(userID string)` | `error` |
-| `MerchantUsageEvents.List(ba.ListMerchantUsageEventsParams{Status, Limit, Cursor})` / `All(...)` | `*ba.MerchantUsageEventList` |
+| `MerchantUsageEvents.List(ba.ListMerchantUsageEventsParams{Status, Limit, Cursor})` / `All(...)` | `*ba.Page[ba.MerchantUsageEvent]` |
 | `MerchantUsageEvents.Get(eventID)` | `*ba.MerchantUsageEvent` (`NextAction` says what to do) |
 | `MerchantUsageEvents.Summary(ba.MerchantUsageSummaryParams{Days})` | `*ba.MerchantUsageSummary` (status counts and a daily window; `Days` 1 to 90, default 14) |
 | `MerchantUsageEvents.Retry(eventID)` / `Discard(eventID)` | `*ba.MerchantUsageEvent` |
@@ -547,7 +547,7 @@ default:
 - Losing `stream.SessionID()` starts a fresh Session on every message. Save it with your user before you return the response.
 - `ForUser` returns an error: handle `ba.ErrInvalidUserID` instead of ignoring it for an ID taken from a request.
 - Agent and Prompt names can repeat. Read every page before resolving a name to an ID; reject multiple exact matches.
-- `Agents.Delete` takes `ba.DeleteAgentParams{IncludeArtifacts}` and `Sessions.Delete` takes `ba.DeleteSessionParams{DeleteArtifacts}`; the flag is always sent, so decide explicitly whether published files go too.
+- `Agents.Delete` takes `ba.DeleteAgentParams{DeleteArtifacts}` and `Sessions.Delete` takes `ba.DeleteSessionParams{DeleteArtifacts}`; the flag is always sent, so decide explicitly whether published files go too.
 - A `ba.Secret` prints as `[redacted]` everywhere, including `%v`, `%+v`, `slog`, and JSON. Two secrets compare equal only when one is a copy of the other; compare `Reveal()` results instead. Never put a secret in a header, name, or URL field.
 - Response integers are `int64` and timestamps are `time.Time`; request integers are `int`, so `new(25)` works for every `Limit`.
 - Enums are open string types and unions have an `Unknown` variant (`ba.UnknownSchedule`, `ba.UnknownToolReference`, ...) that round-trips unchanged, so a type switch over a union needs a default branch.

@@ -245,11 +245,11 @@ Required inputs are arguments; optional inputs are setters on the returned `Call
 | `list()`, `.user_id(...)`, `.workspace_id(...)`, `.limit(...)` | `Page<Agent>` |
 | `get(agent_id)` | `Agent` |
 | `update(agent_id)`, `.name(...)`, `.model(provider_id, model)`, `.model_on_current_provider(model)`, `.clear_model()`, `.thinking_level(...)`, `.clear_thinking_level()`, `.workspace_id(...)`, `.auto_compaction(...)`, `.compaction_reserve_tokens(...)`, `.memory_injection_enabled(...)`, `.tools(...)`, `.approval_in_chat(...)`, `.approval_in_tasks(...)`, `.instructions(...)`, `.metadata(...)`, `.mcp_connection_ids(...)` | `Agent` |
-| `delete(agent_id, include_artifacts: bool)` | `()`. The Workspace is kept |
+| `delete(agent_id, delete_artifacts: bool)` | `()`. The Workspace is kept |
 | `disable(agent_id)` / `enable(agent_id)` | `Agent` |
 | `upload_avatar(agent_id, Upload)` | `Agent`. A PNG, JPEG or WebP of 512 KiB or less |
 | `remove_avatar(agent_id)` | `Agent` |
-| `list_mcp_attachments(agent_id)` | `McpAttachmentList` |
+| `list_mcp_attachments(agent_id)` | `McpAttachmentList` (`.data`) |
 | `update_mcp_attachment(agent_id, mcp_connection_id)`, `.forward_user_id(...)`, `.forwarded_metadata_keys(...)` | `McpAttachment` |
 | `get_spending_limit(agent_id)` / `update_spending_limit(agent_id, Option<SpendingLimitInput>)` | `SpendingLimitStatus`. `None` disables the limit. Tenant client only. See [model spending limits](recipes/usage-dashboards.md#model-spending-limits) |
 
@@ -267,7 +267,7 @@ Required inputs are arguments; optional inputs are setters on the returned `Call
 | `read_file(skill_id, path)` | `Download`, a streamed `Stream<Item = Result<Bytes>>` |
 | `replace_file(skill_id, path, Upload)` | `SkillDetail` |
 | `delete_file(skill_id, path)` | `SkillDetail` |
-| `copy(skill_id, agent_ids)` | `Vec<SkillCopyResult>`, one per destination, in request order |
+| `copy(skill_id, agent_ids)` | `SkillCopyResultList` (`.data`: one `SkillCopyResult` per destination, in request order) |
 
 An `Upload` comes from `Upload::bytes(...)`, `Upload::file(path).await`, or `Upload::stream(...)`, with `.file_name(...)` and `.content_type(...)`.
 
@@ -328,11 +328,11 @@ A network policy is `NetworkPolicy::Unrestricted`, `NetworkPolicy::allowlist(hos
 | Method | Returns |
 | --- | --- |
 | `create(name, ProviderType, api_key)`, `.base_url(...)` | `Provider`. The key is never returned |
-| `list()` | `ProviderList` (`.providers`) |
+| `list()` | `ProviderList` (`.data`) |
 | `get(provider_id)` | `Provider` |
 | `update(provider_id, name)` | `Provider` |
 | `delete(provider_id)`, `.confirm_snapshot_invalidation(true)` | `()` |
-| `list_models(provider_id)` | `ProviderModelList` (`.models`) |
+| `list_models(provider_id)` | `ProviderModelList` (`.data`) |
 | `get_thinking_levels(provider_id, model)` | `ProviderThinkingLevels` |
 
 `ProviderType` is `OpenAi`, `Anthropic`, `OpenRouter`, `Google`, `VercelAiGateway`, or `Custom` (needs `.base_url(...)`).
@@ -342,7 +342,7 @@ A network policy is `NetworkPolicy::Unrestricted`, `NetworkPolicy::allowlist(hos
 | Method | Returns |
 | --- | --- |
 | `create(NewMcpConnection)` | `McpConnection`. Secrets are never returned |
-| `list()` | `McpConnectionList` (`.mcp_connections`) |
+| `list()` | `McpConnectionList` (`.data`) |
 | `get(mcp_connection_id)` | `McpConnection` |
 | `update(mcp_connection_id, name)` | `McpConnection` |
 | `delete(mcp_connection_id)` | `()` |
@@ -379,7 +379,7 @@ Run a saved Prompt with `client.chat(agent_id, SavedPrompt::new(prompt_id).var("
 
 | Method | Returns |
 | --- | --- |
-| `list()`, `.agent_id(...)`, `.session_id(...)` | `Page<Artifact>`. The server returns 50 Artifacts per page; follow `next_cursor` or use `.items()` |
+| `list()`, `.agent_id(...)`, `.session_id(...)`, `.limit(...)` | `Page<Artifact>`. The server returns 50 Artifacts per page unless `.limit(...)` (1 to 100) says otherwise; follow `next_cursor` or use `.items()` |
 | `get(artifact_id)` | `Artifact` |
 | `create_download_url(artifact_id)` | `ArtifactDownloadUrl` (`url`, `expires_at`; the link works for five minutes without an API key) |
 | `delete(artifact_id)` | `()` |
@@ -389,7 +389,7 @@ Run a saved Prompt with `client.chat(agent_id, SavedPrompt::new(prompt_id).var("
 | Method | Returns |
 | --- | --- |
 | `create(NewChatConnection::slack(agent_id, name, SlackCredentials::new(bot_token, signing_secret))` or `::telegram(agent_id, name, TelegramCredentials::new(bot_token)))` | `ChatConnection`. Credentials are never returned |
-| `list()` | `ChatConnectionList` (`.chat_connections`) |
+| `list()` | `ChatConnectionList` (`.data`) |
 | `get(chat_connection_id)` | `ChatConnection` |
 | `update(chat_connection_id)`, `.name(...)`, `.channel_ids(...)`, `.chat_ids(...)`, `.business_mode(...)` | `ChatConnection` |
 | `rotate_credentials(chat_connection_id, ChatCredentials::slack(...)` or `::telegram(...))` | `ChatConnection` |
@@ -423,10 +423,10 @@ Monetization: bill your end users through your own Polar or Dodo account. Setup,
 | `merchant_connection().create(MerchantProvider, MerchantEnvironment, credential)`, `.guard(...)` | `MerchantConnection`. `MerchantProvider::Polar` or `Dodo`; `MerchantEnvironment::Sandbox` or `Live`. Replaces the current connection; fails `merchant_connection_in_use` (409) while a request that started on it is still running or one of its usage events is `pending` |
 | `merchant_connection().update()`, `.credential(...)`, `.guard(...)` | `MerchantConnection` |
 | `merchant_connection().retire()` | `()`. New usage is no longer recorded against it. Fails `merchant_connection_in_use` (409) while a request that started on the connection is still running or one of its usage events is `pending`. On success its `failed` events are discarded and the credential is deleted at once, so nothing more is delivered through it. |
-| `merchant_bindings().list()`, `.user_id(...)`, `.limit(...)` | `BindingsPage`. Fails `merchant_connection_not_found` when there is no connection |
+| `merchant_bindings().list()`, `.user_id(...)`, `.limit(...)` | `Page<MerchantBinding>`. Fails `not_found` when there is no connection |
 | `merchant_bindings().put(user_id, customer_id)` | `MerchantBinding`. The API checks the customer exists at the provider |
 | `merchant_bindings().delete(user_id)` | `()` |
-| `merchant_usage_events().list()`, `.status(...)`, `.limit(...)` | `UsageEventsPage` |
+| `merchant_usage_events().list()`, `.status(...)`, `.limit(...)` | `Page<MerchantUsageEvent>` |
 | `merchant_usage_events().get(event_id)` | `MerchantUsageEvent` (`next_action` says what to do) |
 | `merchant_usage_events().summary()`, `.days(...)` | `MerchantUsageSummary` (status counts and a daily window; `days` 1 to 90, default 14) |
 | `merchant_usage_events().retry(event_id)` / `discard(event_id)` | `MerchantUsageEvent` |
@@ -550,7 +550,7 @@ match client.agents().get("ag_0123456789abcdef").await {
 - Losing `stream.session_id()` starts a fresh Session on every message. Save it with your user before you return the response.
 - `for_user` returns a `Result`: handle `ConfigError::InvalidUserId` instead of unwrapping an ID taken from a request.
 - Agent and Prompt names can repeat. Read every page before resolving a name to an ID; reject multiple exact matches.
-- `delete(agent_id, include_artifacts)` and `sessions().delete(agent_id, session_id, delete_artifacts)` take the flag as an argument. Decide explicitly whether published files go too.
+- `delete(agent_id, delete_artifacts)` and `sessions().delete(agent_id, session_id, delete_artifacts)` take the flag as an argument. Decide explicitly whether published files go too.
 - Response models are `#[non_exhaustive]` structs; construct nothing yourself and match enums with a fallback arm for `Unrecognized`.
 
 ## Go deeper

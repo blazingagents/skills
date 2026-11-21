@@ -67,7 +67,7 @@ def write_report(client: BlazingAgents, agent_id: str, verified_user_id: str) ->
         for _ in stream:
             pass  # or forward each chunk to your client
     page = scoped.artifacts.list(agent_id=agent_id, session_id=session_id)
-    return [artifact.artifact_id for artifact in page.data]
+    return [artifact.id for artifact in page.data]
 ```
 
 ## Step 4: Serve downloads from your backend through the signed-in user's scoped client, then redirect to a fresh download URL

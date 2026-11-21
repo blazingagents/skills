@@ -8,7 +8,7 @@ The Rust code for the steps of [Tune what your Agent does](shape-agent-behavior.
 use blazing_agents::agents::AgentTool;
 
 let provider_id = "prv_0123456789abcdef";
-let models = client.providers().list_models(provider_id).await?.models;
+let models = client.providers().list_models(provider_id).await?.data;
 if !models.iter().any(|model| model.id == "openai/gpt-6-luna") {
     return Err("Model not offered by this Provider".into());
 }
